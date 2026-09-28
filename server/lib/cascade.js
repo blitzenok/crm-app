@@ -102,6 +102,26 @@ export async function chargeCart(input, deps) {
   }
 
   const queue = enabledQueue(settings);
+  // Server-side price (index.js passes input.pricing when card pricing is on): charge the catalog amount, keep the
+  // browser's figure for the record.
+  const pricing = input.pricing && input.pricing.ok ? input.pricing : null;
+  const priceFields = pricing
+    ? {
+        amount: formatAmount(pricing.amount),
+        clientAmount: pricing.clientAmount,
+        priceMismatch: Boolean(pricing.mismatch),
+        priceCheck: {
+          source: pricing.source,
+          clientAmount: pricing.clientAmount,
+          serverAmount: pricing.amount,
+          subtotal: pricing.subtotal,
+          shipping: pricing.shipping,
+          shipMethod: pricing.shipMethod,
+          mismatch: Boolean(pricing.mismatch),
+          lines: pricing.lines,
+        },
+      }
+    : {};
   const order = existing || {
     id: store.nextOrderId(),
     idempotencyKey: key,
@@ -132,6 +152,7 @@ export async function chargeCart(input, deps) {
     lastStatus: null,
     attempts: [],
   };
+  if (pricing) Object.assign(order, priceFields);
 
   order.inFlight = true;
   store.upsertOrder(order);

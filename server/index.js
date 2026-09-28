@@ -7,6 +7,7 @@ import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
 import { pollPending, startPoller } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
+import { priceCryptoCart, priceCardCart } from "./lib/pricing.js";
 import { createMockUmg } from "./lib/processors/umg.js";
 import * as tagada from "./lib/processors/tagada.js";
 import * as centrobill from "./lib/processors/centrobill.js";
@@ -112,6 +113,21 @@ export function createHandler(deps = {}) {
   // or injected by a test, so `npm test` on the server can never post into the live order service.
   const forwardFetch = deps.forwardFetch || (process.env.STORE_FORWARD_ENABLED === "true" ? globalThis.fetch : null);
   const forwardUrl = deps.forwardUrl || process.env.STORE_FORWARD_URL || undefined;
+  // Crypto amount from the catalog (products-api coupon-quote), never from the browser. Injected in tests.
+  const cryptoPricer = deps.cryptoPricer || (process.env.CRYPTO_SERVER_PRICING === "true" ? (input) => priceCryptoCart(input) : null);
+  // Card amount from the catalog too (CARD_SERVER_PRICING=true on the host). Injected in tests.
+  const cardPricer = deps.cardPricer || (process.env.CARD_SERVER_PRICING === "true" ? (input) => priceCardCart(input) : null);
+  async function priceCardBody(body) {
+    if (!cardPricer) return { ok: true, pricing: null };
+    const key = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+    const existing = key ? db.getOrderByIdempotency(key) : null;
+    const st = String(existing?.status || "").toLowerCase();
+    // Replays of an approved / pending / in-flight order are answered from the stored order; no new price, no charge.
+    if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return { ok: true, pricing: null };
+    const pricing = await cardPricer(body || {});
+    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
+    return { ok: true, pricing };
+  }
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
@@ -232,6 +248,20 @@ export function createHandler(deps = {}) {
       return json(200, { orders });
     }
 
+    // Staff: remove orders flagged test:true (QA / soft-QA). Real orders are never deletable here.
+    const delOrder = path.match(/^\/api\/store-orders\/([^/]+)$/);
+    if (delOrder && req.method === "DELETE") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const key = decodeURIComponent(delOrder[1]);
+      const order = db.getOrder(key) || db.getOrderByRef(key);
+      if (!order) return json(404, { ok: false, error: "not_found" });
+      if (order.test !== true) return json(409, { ok: false, error: "not_test_order" });
+      db.deleteOrder(order.id);
+      process.stdout.write(`[store-orders] test order ${order.id}/${order.orderRef || "-"} deleted by ${op.actor || "operator"}\n`);
+      return json(200, { ok: true, deleted: order.id, orderRef: order.orderRef || null });
+    }
+
     const fwdAction = path.match(/^\/api\/store-orders\/([^/]+)\/forward$/);
     if (fwdAction && req.method === "POST") {
       const op = await operatorContext();
@@ -312,7 +342,18 @@ export function createHandler(deps = {}) {
         return json(503, paymentsDisabledBody());
       }
       const body = await readBody(req);
-      const result = await chargeCart(body, { store: db, adapters: resolveAdapters() });
+      const priced = await priceCardBody(body);
+      if (!priced.ok) {
+        const message = priced.error === "unknown_item"
+          ? "One of the items in your cart is no longer available. Please refresh the cart and try again."
+          : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
+        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
+      }
+      const result = await chargeCart(priced.pricing ? { ...body, pricing: priced.pricing } : body, { store: db, adapters: resolveAdapters() });
+      if (result.order) {
+        result.chargedAmount = result.order.amount;
+        result.priceAdjusted = Boolean(result.order.priceMismatch);
+      }
       if (result.ok) {
         markConvertedBySession(db, body.session_id || body.sessionId, {
           via: "charge",
@@ -332,7 +373,15 @@ export function createHandler(deps = {}) {
         return json(429, { ok: false, error: "rate_limited" });
       }
       const body = await readBody(req);
-      const result = createCryptoCheckout(body, { store: db });
+      let pricing = null;
+      const idemKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+      if (cryptoPricer && !(idemKey && db.getOrderByIdempotency(idemKey)) && Array.isArray(body?.items) && body.items.length) {
+        pricing = await cryptoPricer(body);
+        if (!pricing.ok) {
+          return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
+        }
+      }
+      const result = createCryptoCheckout(body, { store: db, pricing });
       if (!result.ok) {
         return json(result.status || 400, { ok: false, error: result.error });
       }
@@ -375,6 +424,20 @@ export function createHandler(deps = {}) {
       const digest = buildLeadsDigest(db, day ? { day } : {});
       if (!digest.ok) return json(digest.status || 400, { error: digest.error });
       return json(200, digest);
+    }
+
+    const delAbandon = path.match(/^\/api\/checkout\/abandon\/([^/]+)$/);
+    if (delAbandon && req.method === "DELETE") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const sid = decodeURIComponent(delAbandon[1]);
+      const rec = db.getAbandonedCheckout(sid);
+      if (!rec) return json(404, { ok: false, error: "not_found" });
+      const email = String(rec.customer?.email || rec.email || "").toLowerCase();
+      const isTest = rec.test === true || /^(qa[-+._]|qa@|dry-run@|probe)/.test(email) || /\+(test|qa)[^@]*@/.test(email);
+      if (!isTest) return json(409, { ok: false, error: "not_test_record" });
+      db.deleteAbandonedCheckout(sid);
+      return json(200, { ok: true, deleted: sid });
     }
 
     if (path === "/api/checkout/abandon" && req.method === "GET") {
@@ -445,7 +508,14 @@ export function createHandler(deps = {}) {
         },
         centrobill,
       };
+      let dryPricing = null;
+      if (body.serverPricing === true) {
+        const priced = await priceCardBody({ ...body, idempotencyKey: body.idempotencyKey || "" });
+        if (!priced.ok) return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, dryRun: true });
+        dryPricing = priced.pricing;
+      }
       const result = await chargeCart({
+        pricing: dryPricing,
         idempotencyKey: body.idempotencyKey || `DRY-${Date.now()}`,
         amount: body.amount || "20.00",
         currency: "USD",

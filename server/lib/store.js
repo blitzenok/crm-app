@@ -133,6 +133,21 @@ export function createStore(opts = {}) {
       const order = data.orders.find((o) => o.idempotencyKey === key);
       return order ? clone(order) : null;
     },
+    deleteOrder(id) {
+      const i = data.orders.findIndex((o) => o.id === id);
+      if (i === -1) return null;
+      const [gone] = data.orders.splice(i, 1);
+      persist();
+      return clone(gone);
+    },
+    deleteAbandonedCheckout(sessionId) {
+      const key = String(sessionId || "");
+      if (!key || !data.abandoned_checkouts[key]) return null;
+      const gone = data.abandoned_checkouts[key];
+      delete data.abandoned_checkouts[key];
+      persist();
+      return clone(gone);
+    },
     nextOrderId() {
       data.seq += 1;
       persist();
