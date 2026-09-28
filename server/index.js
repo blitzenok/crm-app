@@ -40,6 +40,19 @@ import { createRapidClient, rapidConfig, RapidError } from "./lib/rapid.js";
 import { createRapidScheduler, loadSkuMap, pushOrderToRapid, pushSyntheticTestOrder } from "./lib/rapid-orders.js";
 import { seedInventory } from "./lib/inventory-seed.js";
 import { handleInventoryHttp } from "./lib/inventory-http.js";
+import {
+  cleffoSettingsView,
+  confirmCleffoAttempt,
+  descriptorFor,
+  nextStepFor,
+  recordUmgRouting,
+  routeCharge,
+  startCleffoAttempt,
+  startCleffoSweeper,
+  storefrontReturnUrl,
+} from "./lib/cleffo-checkout.js";
+import { routingConfig } from "./lib/routing.js";
+import { loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -82,6 +95,24 @@ function readBody(req) {
     });
     req.on("error", reject);
   });
+}
+
+function readRaw(req, max = 65536) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size <= max) chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", () => resolve(""));
+  });
+}
+
+function hasCard(body) {
+  return String(body?.card?.number || "").replace(/\D/g, "").length >= 12;
+}
+
+function pickDesc(d) {
+  return { statementDescriptor: d.statementDescriptor, statementDescriptorConfirmed: d.statementDescriptorConfirmed };
 }
 
 function callbackUrl() {
@@ -167,6 +198,27 @@ export function createHandler(deps = {}) {
       .then((r) => { if (!r.ok && r.error !== "real_orders_disabled") process.stdout.write(`[rapid] auto-push ${orderId}: ${r.error}\n`); })
       .catch(() => {});
   }
+  // Cleffo: config / fetch injectable for tests; the routing config is read per request (env flags).
+  const cleffoDeps = deps.cleffoDeps || {};
+  const routingCfg = () => (deps.routingConfig ? deps.routingConfig() : routingConfig());
+  const cleffoSigKey = () => (cleffoDeps.config || loadCleffoConfig()).signatureKey;
+  function onCleffoPaid(order) {
+    markConvertedBySession(db, order.session_id, { via: "cleffo", id: order.id });
+    forwardInBackground(order.id, "cleffo");
+    maybeAutoPush(order.id);
+  }
+  function recordConsentFor(req, body) {
+    return (orderId) => {
+      if (!consentLog) return { ok: false };
+      const order = db.getOrder(orderId);
+      if (!order) return { ok: false };
+      const out = recordCheckoutConsent({ log: consentLog, req, body, order, channel: "card-cleffo" });
+      const fresh = db.getOrder(orderId) || order;
+      fresh.consent = out.ok ? { ...out.summary, confirmedBeforeRedirect: true } : { recorded: false, error: out.error };
+      db.upsertOrder(fresh);
+      return out.ok ? { ok: true, hash: out.record?.hash } : { ok: false, error: out.error };
+    };
+  }
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
@@ -249,6 +301,7 @@ export function createHandler(deps = {}) {
       if (await denyUnlessOperator()) return;
       return json(200, {
         settings: db.getSettings(),
+        cleffo: cleffoSettingsView(db),
         health: {
           ...secretHealth(),
           dryRun: DRY_RUN,
@@ -382,6 +435,15 @@ export function createHandler(deps = {}) {
         return json(503, paymentsDisabledBody());
       }
       const body = await readBody(req);
+      // Processor routing (UMG only unless CLEFFO_ENABLED=true): sticky email bucket, soft decline -> other once.
+      const { route, config, cardKey, reusable } = await routeCharge(db, body, { config: routingCfg(), cleffoDeps, onPaid: onCleffoPaid });
+      if (route.blocked) {
+        process.stdout.write(`[routing] refused attempt=${route.attempt} reason=${route.reason}\n`);
+        const message = route.reason === "hard_decline_same_card"
+          ? "This card was declined by the issuer and cannot be retried. You were not charged. Please use a different card, pay with crypto, or contact support."
+          : "We could not complete payment after several attempts. You were not charged on this attempt. Please contact support, pay with crypto, or request a quote.";
+        return json(429, { ok: false, error: route.reason, charged: false, attempt: route.attempt, message });
+      }
       const priced = await priceCardBody(body);
       if (!priced.ok) {
         const message = priced.error === "unknown_item"
@@ -389,11 +451,33 @@ export function createHandler(deps = {}) {
           : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
         return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
       }
-      const result = await chargeCart(priced.pricing ? { ...body, pricing: priced.pricing } : body, { store: db, adapters: resolveAdapters() });
+      let umgRoute = route;
+      if (route.processor === "cleffo") {
+        const cl = await startCleffoAttempt(db, {
+          req, body, pricing: priced.pricing, route, config, consentLog, reusable,
+          recordConsent: recordConsentFor(req, body),
+          publicUrl: PUBLIC_URL || deps.publicUrl || "",
+        }, { cleffoDeps });
+        // Cleffo could not even create a link (no charge happened): UMG takes this attempt if the card is on hand.
+        if (!(cl.linkError && hasCard(body))) return json(cl.status, cl.body);
+        umgRoute = { ...route, processor: "umg", reason: "cleffo_unavailable_fallback" };
+      }
+      const umgSettings = config.cleffoEnabled
+        ? (() => { const st = db.getSettings(); return { ...st, processors: (st.processors || []).filter((p) => p.id === "umg") }; })()
+        : undefined;
+      const result = await chargeCart(priced.pricing ? { ...body, pricing: priced.pricing } : body, { store: db, adapters: resolveAdapters(), ...(umgSettings ? { settings: umgSettings } : {}) });
+      if (result.order?.id && !result.reused) {
+        const logged = recordUmgRouting(db, result.order.id, { route: umgRoute, config, cardKey, result });
+        if (logged) result.order = logged;
+      }
       if (result.order) {
         result.chargedAmount = result.order.amount;
         result.priceAdjusted = Boolean(result.order.priceMismatch);
       }
+      result.processor = "umg";
+      result.attempt = result.order?.attemptNumber ?? umgRoute.attempt;
+      Object.assign(result, (({ statementDescriptor, statementDescriptorConfirmed }) => ({ statementDescriptor, statementDescriptorConfirmed }))(descriptorFor("umg")));
+      if (!result.ok && config.cleffoEnabled) result.next = nextStepFor(db, result.order, config);
       // Consent proof for every card order this request created or re-attempted (approved or declined). The order
       // object in this response is left as-is.
       if (result.order?.id && !result.reused) attachConsent(req, result.order.id, body, "card");
@@ -410,6 +494,79 @@ export function createHandler(deps = {}) {
         maybeAutoPush(result.order.id);
       }
       return out;
+    }
+
+    // Which processor the next card attempt goes to (no side effects), so checkout can show card fields (UMG) or the
+    // "continue to secure payment page" step (Cleffo) and the matching statement line.
+    if (path === "/api/checkout/route" && req.method === "POST") {
+      const body = await readBody(req);
+      const config = routingCfg();
+      if (!config.cleffoEnabled) {
+        return json(200, { ok: true, processor: "umg", cleffoEnabled: false, attempt: 1, ...pickDesc(descriptorFor("umg")) });
+      }
+      const { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
+      if (route.blocked) return json(200, { ok: true, processor: null, blocked: true, reason: route.reason, cleffoEnabled: true, attempt: route.attempt });
+      return json(200, { ok: true, processor: route.processor, cleffoEnabled: true, attempt: route.attempt, reason: route.reason, ...pickDesc(descriptorFor(route.processor)) });
+    }
+
+    // Cleffo hosted page -> back here. Token-checked, then settled from the status API, then 302 to the storefront.
+    if (path === "/api/checkout/cleffo/return" && req.method === "GET") {
+      const o = url.searchParams.get("o") || "";
+      const a = url.searchParams.get("a") || "";
+      const t = url.searchParams.get("t") || "";
+      if (!verifyReturnToken(o, a, t, cleffoSigKey())) {
+        process.stdout.write(`[cleffo] return with bad token for ${o.slice(0, 40)}\n`);
+        res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+        return res.end("Invalid payment return link.");
+      }
+      const r = await confirmCleffoAttempt(db, o, a, { cleffoDeps, onPaid: onCleffoPaid, via: "return" });
+      const status = r.ok ? r.status : "pending";
+      res.writeHead(302, { Location: storefrontReturnUrl(r.order || { id: o }, a, t, status), "Cache-Control": "no-store" });
+      return res.end();
+    }
+
+    if (path === "/api/checkout/cleffo/status" && req.method === "GET") {
+      const o = url.searchParams.get("o") || "";
+      const a = url.searchParams.get("a") || "";
+      const t = url.searchParams.get("t") || "";
+      if (!verifyReturnToken(o, a, t, cleffoSigKey())) return json(403, { ok: false, error: "invalid_token" });
+      const r = await confirmCleffoAttempt(db, o, a, { cleffoDeps, onPaid: onCleffoPaid, via: "status" });
+      if (!r.order) return json(404, { ok: false, error: "not_found" });
+      const d = descriptorFor("cleffo");
+      return json(200, {
+        ok: true,
+        orderId: r.order.id,
+        processor: "cleffo",
+        attempt: Number(a) || null,
+        status: r.ok ? r.status : "pending",
+        amount: r.order.amount,
+        currency: r.order.currency,
+        ...pickDesc(d),
+        next: r.status === "declined" ? nextStepFor(db, r.order, routingCfg()) : null,
+      });
+    }
+
+    // Optional server-to-server notice. Cleffo documents no signed callback: an x-signature is checked when present
+    // and logged, but the status API is what settles the order either way.
+    if (path === "/api/checkout/cleffo/callback" && req.method === "POST") {
+      const raw = await readRaw(req);
+      let body = {};
+      try { body = raw ? JSON.parse(raw) : {}; } catch { return json(400, { ok: false, error: "invalid_json" }); }
+      const sig = req.headers["x-signature"];
+      const sigState = sig ? (verifySignature(raw, sig, cleffoSigKey()) ? "valid" : "invalid") : "absent";
+      const d = body.data && typeof body.data === "object" ? body.data : body;
+      const ref = String(d.transaction_reference_number || d.transactionReferenceNumber || "").replace(/[^A-Za-z0-9_-]/g, "");
+      const found = ref ? db.findAttempt("cleffo", ref) : null;
+      process.stdout.write(`[cleffo] callback ref=${ref || "-"} signature=${sigState} known=${Boolean(found)}\n`);
+      if (!found) return json(200, { ok: false, error: "unknown_transaction" });
+      const r = await confirmCleffoAttempt(db, found.order.id, found.attempt.routingAttempt, { cleffoDeps, onPaid: onCleffoPaid, via: "callback" });
+      return json(200, { ok: true, orderId: found.order.id, status: r.ok ? r.status : "pending", signature: sigState });
+    }
+
+    // Staff: Cleffo flag / split / keys (booleans) / descriptors / counts. Read-only.
+    if (path === "/api/psp/cleffo" && req.method === "GET") {
+      if (await denyUnlessOperator()) return;
+      return json(200, { ok: true, cleffo: cleffoSettingsView(db) });
     }
 
     if (path === "/api/checkout/crypto" && req.method === "POST") {
@@ -718,6 +875,7 @@ export function createHandler(deps = {}) {
   }
   };
   handlerFn.rapidScheduler = rapidScheduler;
+  handlerFn.onCleffoPaid = onCleffoPaid;
   return handlerFn;
 }
 
@@ -743,6 +901,8 @@ if (isMain) {
     const c = rapidConfig();
     process.stdout.write(`[rapid] scheduler on env=${c.env} autoPush=${c.autoPush} allowRealOrders=${c.allowRealOrders}\n`);
   }
+  // Settles open Cleffo payment links from the status API (no-op while there are none).
+  startCleffoSweeper(store, { intervalMs: Number(process.env.CLEFFO_SWEEP_MS || 60000), onPaid: handler.onCleffoPaid });
   if (isAbandonDigestEnabled()) {
     const digestMs = Number(process.env.ABANDON_DIGEST_MS || 6 * 60 * 60 * 1000);
     setInterval(() => {

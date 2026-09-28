@@ -17,6 +17,7 @@
 export const DEFAULT_FORWARD_URL = "http://127.0.0.1:4000/msolpeptides-api/notify-order";
 export const CARD_PAYMENT_METHOD = "card-umg";
 export const CARD_STATEMENT_DESCRIPTOR = "PEPTIDESS SHOP";
+export const CLEFFO_PAYMENT_METHOD = "card-cleffo";
 const MAX_ATTEMPTS = 20;
 
 function nowIso() {
@@ -82,10 +83,15 @@ export function buildNotifyPayload(order, opts = {}) {
   const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
   const addr = [c.address, c.city, c.state, c.zip, c.country].filter(Boolean).join(", ");
   const tag = opts.test ? "[TEST] " : opts.backfill ? "[BACKFILL] " : "";
+  // Cleffo (hosted page) orders: own payment method label; the statement descriptor line only when it is known
+  // (CLEFFO_DESCRIPTOR confirmed) — never the UMG descriptor.
+  const isCleffo = order.winningProcessor === "cleffo";
+  const payMethod = isCleffo ? CLEFFO_PAYMENT_METHOD : CARD_PAYMENT_METHOD;
+  const descriptor = isCleffo ? (order.descriptor || null) : (order.descriptor || CARD_STATEMENT_DESCRIPTOR);
   const noteParts = [
     `${tag}Card payment APPROVED via ${order.winningProcessor || "umg"}`,
     order.winningTxnId ? `processor txn ${order.winningTxnId}` : "",
-    `card statement shows: ${order.descriptor || CARD_STATEMENT_DESCRIPTOR}`,
+    descriptor ? `card statement shows: ${descriptor}` : "card statement descriptor: not confirmed yet",
     order.priceCheck?.volumeDiscount ? `volume discount ${order.priceCheck.volumeDiscount.pct}% (−$${order.priceCheck.volumeDiscount.discount}) included in total` : "",
     order.notes ? `customer notes: ${String(order.notes).slice(0, 800)}` : "",
   ].filter(Boolean);
@@ -96,12 +102,12 @@ export function buildNotifyPayload(order, opts = {}) {
     `Ship to: ${addr}`,
     ...lines,
     `Total charged: $${money(total)} ${order.currency || "USD"}`,
-    `Your card statement will show: ${order.descriptor || CARD_STATEMENT_DESCRIPTOR}`,
-  ].join("\n");
+    descriptor ? `Your card statement will show: ${descriptor}` : "",
+  ].filter(Boolean).join("\n");
   return {
-    subject: `${tag}Order ${ref} [${CARD_PAYMENT_METHOD}] — $${money(total)}`,
+    subject: `${tag}Order ${ref} [${payMethod}] — $${money(total)}`,
     body,
-    paymentMethod: CARD_PAYMENT_METHOD,
+    paymentMethod: payMethod,
     orderData: {
       ref,
       type: "order",
@@ -123,7 +129,7 @@ export function buildNotifyPayload(order, opts = {}) {
       subtotal: money(subtotal),
       shippingCost: money(shippingCost),
       total: money(total),
-      paymentMethod: CARD_PAYMENT_METHOD,
+      paymentMethod: payMethod,
       notes: noteParts.join(" · "),
       timestamp: order.createdAt || nowIso(),
       tc_accepted: true,

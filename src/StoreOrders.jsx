@@ -47,6 +47,7 @@ function ClearingPanel({ order }) {
           ["Order", order.id],
           ["Cart key", order.idempotencyKey],
           ["Winning PSP", order.winningProcessor || "—"],
+          ["Routed to / attempt", `${order.paymentProcessor || "—"} · #${order.attemptNumber || (order.routing?.attempts || []).length || "—"}${order.routing?.bucket ? ` (bucket ${order.routing.bucket})` : ""}`],
           ["Txn / descriptor", `${order.winningTxnId || "—"} · ${order.descriptor || "—"}`],
         ].map(([k, v]) => (
           <div key={k} style={{ background: "rgba(15,23,42,0.6)", borderRadius: 10, padding: "10px 12px" }}>
@@ -55,6 +56,16 @@ function ClearingPanel({ order }) {
           </div>
         ))}
       </div>
+      {(order.routing?.attempts || []).length > 0 && (
+        <div style={{ marginBottom: 14, fontSize: 12, color: "#CBD5E1" }}>
+          <div style={{ fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 6 }}>Processor routing (UMG / Cleffo)</div>
+          {order.routing.attempts.map((r, i) => (
+            <div key={`${r.n}-${i}`}>
+              #{r.n} {r.processor} · {r.reason} · {r.outcome || "open"}{r.retryClass ? ` · retry ${r.retryClass}${r.retryBasis ? ` (${r.retryBasis})` : ""}` : ""}{r.countsAsAttempt === false ? " · not counted" : ""}
+            </div>
+          ))}
+        </div>
+      )}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: "1px solid rgba(148,163,184,0.15)" }}>
