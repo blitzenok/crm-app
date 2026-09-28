@@ -149,10 +149,21 @@ export function createInventoryStore(opts = {}) {
       if (existing && Object.prototype.hasOwnProperty.call(existing, "stock_qty")) {
         next.stock_qty = existing.stock_qty;
       }
+      if (existing && existing.rapid_stock) next.rapid_stock = existing.rapid_stock;
       if (idx === -1) data.skus.push(next);
       else data.skus[idx] = next;
       persist();
       return { ok: true, sku: clone(next) };
+    },
+    /** Rapid 3PL stock snapshot, kept beside (never instead of) stock_qty. Matches the SKU by code (case-insensitive). */
+    setRapidStock(code, snapshot) {
+      const want = String(code || "").trim().toUpperCase();
+      if (!want) return { ok: false, error: "code_required" };
+      const row = data.skus.find((r) => String(r.code || "").toUpperCase() === want);
+      if (!row) return { ok: false, error: "sku_not_found" };
+      row.rapid_stock = { ...snapshot };
+      persist();
+      return { ok: true, sku: clone(row) };
     },
     upsertPurchaseOrder(input) {
       const poId = String(input?.po_id || input?.po_number || input?.id || "").trim();
@@ -291,6 +302,7 @@ export function buildInventoryView(store) {
       value_at_cost: avg == null || onHand <= 0 ? "0.00" : centsToDollars(onHand * avg),
       legacy_stock_qty: legacyPresent ? sku.stock_qty : null,
       legacy_stock_readonly: true,
+      rapid_stock: sku.rapid_stock || null,
       linked_pos: [...linked],
     };
   });

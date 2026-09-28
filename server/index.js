@@ -36,6 +36,8 @@ import {
 } from "./lib/crypto-checkout.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
 import { createConsentLog, recordCheckoutConsent } from "./lib/consent.js";
+import { createRapidClient, rapidConfig, RapidError } from "./lib/rapid.js";
+import { createRapidScheduler, loadSkuMap, pushOrderToRapid, pushSyntheticTestOrder } from "./lib/rapid-orders.js";
 import { seedInventory } from "./lib/inventory-seed.js";
 import { handleInventoryHttp } from "./lib/inventory-http.js";
 
@@ -148,12 +150,29 @@ export function createHandler(deps = {}) {
     db.upsertOrder(fresh);
     if (!out.ok) process.stdout.write(`[consent] log failed for ${orderId}: ${out.error}\n`);
   }
+  // Rapid Fulfillment (3PL). Off unless RAPID_ENABLED=true; auto-push additionally needs RAPID_AUTO_PUSH=true and, for
+  // any real order, RAPID_ALLOW_REAL_ORDERS=true (phase 1: both off). Tests inject rapidClient / rapidEnv.
+  const rapidCfg = rapidConfig(deps.rapidEnv || process.env);
+  const rapidClient = rapidCfg.enabled ? (deps.rapidClient || createRapidClient({ config: rapidCfg })) : null;
+  const rapidSkuMap = deps.rapidSkuMap ? () => deps.rapidSkuMap : () => loadSkuMap(rapidCfg.skuMapPath);
+  const rapidScheduler = rapidClient
+    ? (deps.rapidScheduler || createRapidScheduler({
+        db, inventory: resolveInventory(), client: rapidClient, cfg: rapidCfg, skuMap: rapidSkuMap,
+        statePath: deps.store ? null : join(dirname(STORE_PATH), "rapid-state.json"),
+      }))
+    : null;
+  function maybeAutoPush(orderId) {
+    if (!rapidClient || !rapidCfg.autoPush || !orderId) return;
+    pushOrderToRapid(db, orderId, { client: rapidClient, cfg: rapidCfg, skuMap: rapidSkuMap() })
+      .then((r) => { if (!r.ok && r.error !== "real_orders_disabled") process.stdout.write(`[rapid] auto-push ${orderId}: ${r.error}\n`); })
+      .catch(() => {});
+  }
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
   }
 
-  return async function handler(req, res) {
+  const handlerFn = async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
@@ -313,6 +332,7 @@ export function createHandler(deps = {}) {
             amountReceived: result.amountReceived,
           });
         }
+        if (!result.reused) maybeAutoPush(result.order?.id);
         return json(200, {
           ok: true,
           reused: Boolean(result.reused),
@@ -387,6 +407,7 @@ export function createHandler(deps = {}) {
       // After the answer: a slow or broken order service must never cost the customer the charge response.
       if (result.ok && !result.reused && String(result.order?.status || "").toLowerCase() === "approved") {
         forwardInBackground(result.order.id, "charge");
+        maybeAutoPush(result.order.id);
       }
       return out;
     }
@@ -434,6 +455,72 @@ export function createHandler(deps = {}) {
       if (!ref && !email) return json(400, { ok: false, error: "ref_or_email_required" });
       const records = consentLog.find({ ref, email });
       return json(200, { ok: true, count: records.length, records });
+    }
+
+    if (path.startsWith("/api/rapid/")) {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const summary = {
+        enabled: rapidCfg.enabled, env: rapidCfg.env, endpointHost: new URL(rapidCfg.endpoint).hostname,
+        autoPush: rapidCfg.autoPush, allowRealOrders: rapidCfg.allowRealOrders, orderPrefix: rapidCfg.orderPrefix,
+        testOrderPrefix: rapidCfg.testOrderPrefix, credentials: Boolean(rapidCfg.username && rapidCfg.password),
+        skuMapEntries: Object.keys(rapidSkuMap()).length,
+      };
+      if (path === "/api/rapid/health" && req.method === "GET") {
+        if (!rapidClient) return json(200, { ok: false, error: "rapid_disabled", ...summary });
+        const t0 = Date.now();
+        try {
+          await rapidClient.login();
+          return json(200, { ok: true, login: "ok", latencyMs: Date.now() - t0, ...summary, scheduler: rapidScheduler?.state() || null });
+        } catch (err) {
+          return json(502, { ok: false, login: "failed", error: err.kind || "rapid_error", code: err.code, message: err.message, ...summary });
+        }
+      }
+      if (!rapidClient) return json(503, { ok: false, error: "rapid_disabled" });
+      const fail = (err) => json(err instanceof RapidError && typeof err.code === "number" ? 502 : 503, { ok: false, error: err.kind || "rapid_error", code: err.code, message: err.message });
+      try {
+        if (path === "/api/rapid/couriers" && req.method === "GET") {
+          const couriers = await rapidClient.couriersList();
+          return json(200, { ok: true, env: rapidCfg.env, count: couriers.length, couriers });
+        }
+        if (path === "/api/rapid/stock" && req.method === "GET") {
+          const products = await rapidClient.productsStock();
+          return json(200, { ok: true, env: rapidCfg.env, count: products.length, products });
+        }
+        if (path === "/api/rapid/alerts" && req.method === "GET") {
+          const orders = db.listOrders().filter((o) => o.rapidAlert).map((o) => ({ id: o.id, orderRef: o.orderRef || null, rapid: o.rapid, rapidAlert: o.rapidAlert }));
+          return json(200, { ok: true, count: orders.length, orders });
+        }
+        if (path === "/api/rapid/test-order" && req.method === "POST") {
+          if (rapidCfg.env !== "test") return json(403, { ok: false, error: "refused_on_live" });
+          const r = await pushSyntheticTestOrder({ client: rapidClient, cfg: rapidCfg });
+          process.stdout.write(`[rapid] synthetic test order ${r.prefix}-${r.orderId} by ${op.actor || "operator"}: ${r.ok ? "ok" : "failed"}\n`);
+          return json(r.ok ? 200 : 502, r);
+        }
+        const tOrder = path.match(/^\/api\/rapid\/test-order\/(\d{1,10})$/);
+        if (tOrder && (req.method === "GET" || req.method === "DELETE")) {
+          if (rapidCfg.env !== "test") return json(403, { ok: false, error: "refused_on_live" });
+          const id = Number(tOrder[1]);
+          if (req.method === "GET") {
+            const orders = await rapidClient.ordersSearch({ order_id: id, order_id_prefix: rapidCfg.testOrderPrefix }, { shipping: true, products: true });
+            return json(200, { ok: true, count: orders.length, orders });
+          }
+          const cancelled = await rapidClient.ordersCancel(id, rapidCfg.testOrderPrefix, "QA synthetic test order");
+          return json(200, { ok: cancelled, cancelled, orderId: id, prefix: rapidCfg.testOrderPrefix });
+        }
+        if (path === "/api/rapid/poll-now" && req.method === "POST") {
+          const body = await readBody(req).catch(() => ({}));
+          const job = String(body.job || "all");
+          const out = {};
+          if (job === "all" || job === "status") out.status = await rapidScheduler.runStatusNow();
+          if (job === "all" || job === "shipped") out.shipped = await rapidScheduler.runShippedNow(/^\d{4}-\d{2}-\d{2}$/.test(body.date || "") ? body.date : undefined);
+          if (job === "all" || job === "stock") out.stock = await rapidScheduler.runStockNow();
+          return json(200, { ok: true, job, ...out });
+        }
+      } catch (err) {
+        return fail(err);
+      }
+      return json(404, { error: "not_found" });
     }
 
     if (path === "/api/checkout/quote" && req.method === "POST") {
@@ -630,6 +717,8 @@ export function createHandler(deps = {}) {
     return json(message === "invalid_json" ? 400 : 500, { error: message });
   }
   };
+  handlerFn.rapidScheduler = rapidScheduler;
+  return handlerFn;
 }
 
 const handler = createHandler();
@@ -648,6 +737,11 @@ if (isMain) {
   if (process.env.STORE_FORWARD_ENABLED === "true") {
     // Picks up approvals that arrive via webhook/poll and retries failed forwards (backoff inside).
     startForwardSweeper(store, { intervalMs: Number(process.env.STORE_FORWARD_SWEEP_MS || 60000) });
+  }
+  if (handler.rapidScheduler) {
+    handler.rapidScheduler.start(Number(process.env.RAPID_TICK_MS || 60000));
+    const c = rapidConfig();
+    process.stdout.write(`[rapid] scheduler on env=${c.env} autoPush=${c.autoPush} allowRealOrders=${c.allowRealOrders}\n`);
   }
   if (isAbandonDigestEnabled()) {
     const digestMs = Number(process.env.ABANDON_DIGEST_MS || 6 * 60 * 60 * 1000);

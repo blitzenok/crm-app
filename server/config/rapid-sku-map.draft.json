@@ -1,0 +1,166 @@
+{
+ "bpc-157-tb-500-blend-20mg": {
+  "product_id": "RC01-20",
+  "name": "RC-01 20mg vial",
+  "internal_id": "RC-01"
+ },
+ "nad-plus-500mg": {
+  "product_id": "RC02-500",
+  "name": "RC-02 500mg vial",
+  "internal_id": "RC-02"
+ },
+ "nad-plus-1000mg": {
+  "product_id": "RC02-1000",
+  "name": "RC-02 1000mg vial",
+  "internal_id": "RC-02"
+ },
+ "aod-9604-5mg": {
+  "product_id": "RC03-5",
+  "name": "RC-03 5mg vial",
+  "internal_id": "RC-03"
+ },
+ "aod-9604-10mg": {
+  "product_id": "RC03-10",
+  "name": "RC-03 10mg vial",
+  "internal_id": "RC-03"
+ },
+ "curcumin-phytosome-500mg": {
+  "product_id": "RC04-500",
+  "name": "RC-04 500mg vial",
+  "internal_id": "RC-04"
+ },
+ "tesamorelin-ipamorelin-10mg": {
+  "product_id": "RC05-10",
+  "name": "RC-05 10mg vial",
+  "internal_id": "RC-05"
+ },
+ "bpc-157-10mg": {
+  "product_id": "RC06-10",
+  "name": "RC-06 10mg vial",
+  "internal_id": "RC-06"
+ },
+ "bpc-157-20mg": {
+  "product_id": "RC06-20",
+  "name": "RC-06 20mg vial",
+  "internal_id": "RC-06"
+ },
+ "glow-70-70mg": {
+  "product_id": "RC07-70",
+  "name": "RC-07 70mg vial",
+  "internal_id": "RC-07",
+  "inventory_code": "GLOW"
+ },
+ "epithalon-10mg": {
+  "product_id": "RC08-10",
+  "name": "RC-08 10mg vial",
+  "internal_id": "RC-08"
+ },
+ "epithalon-50mg": {
+  "product_id": "RC08-50",
+  "name": "RC-08 50mg vial",
+  "internal_id": "RC-08"
+ },
+ "ghk-cu-100mg": {
+  "product_id": "RC09-100",
+  "name": "RC-09 100mg vial",
+  "internal_id": "RC-09"
+ },
+ "mots-c-10mg": {
+  "product_id": "RC10-10",
+  "name": "RC-10 10mg vial",
+  "internal_id": "RC-10"
+ },
+ "mots-c-20mg": {
+  "product_id": "RC10-20",
+  "name": "RC-10 20mg vial",
+  "internal_id": "RC-10"
+ },
+ "kpv-10mg": {
+  "product_id": "RC11-10",
+  "name": "RC-11 10mg vial",
+  "internal_id": "RC-11"
+ },
+ "semax-10mg": {
+  "product_id": "RC12-10",
+  "name": "RC-12 10mg vial",
+  "internal_id": "RC-12"
+ },
+ "semax-30mg": {
+  "product_id": "RC12-30",
+  "name": "RC-12 30mg vial",
+  "internal_id": "RC-12"
+ },
+ "kisspeptin-10-10mg": {
+  "product_id": "RC13-10",
+  "name": "RC-13 10mg vial",
+  "internal_id": "RC-13"
+ },
+ "thymosin-alpha-1-10mg": {
+  "product_id": "RC14-10",
+  "name": "RC-14 10mg vial",
+  "internal_id": "RC-14"
+ },
+ "tb-500-10mg": {
+  "product_id": "RC15-10",
+  "name": "RC-15 10mg vial",
+  "internal_id": "RC-15"
+ },
+ "g3-r-10mg": {
+  "product_id": "G3-R-10",
+  "name": "G3-R 10mg vial",
+  "internal_id": "G3-R",
+  "inventory_code": "G3-R-10",
+  "stealth": true
+ },
+ "g3-r-20mg": {
+  "product_id": "G3-R-20",
+  "name": "G3-R 20mg vial",
+  "internal_id": "G3-R",
+  "inventory_code": "G3-R-20",
+  "stealth": true
+ },
+ "g3-r-50mg": {
+  "product_id": "G3-R-50",
+  "name": "G3-R 50mg vial",
+  "internal_id": "G3-R",
+  "stealth": true
+ },
+ "ipamorelin-10mg": {
+  "product_id": "RC16-10",
+  "name": "RC-16 10mg vial",
+  "internal_id": "RC-16"
+ },
+ "tesamorelin-10mg": {
+  "product_id": "RC17-10",
+  "name": "RC-17 10mg vial",
+  "internal_id": "RC-17",
+  "inventory_code": "TES-10"
+ },
+ "tesamorelin-20mg": {
+  "product_id": "RC17-20",
+  "name": "RC-17 20mg vial",
+  "internal_id": "RC-17"
+ },
+ "g2-t-10mg": {
+  "product_id": "G2-T-10",
+  "name": "G2-T 10mg vial",
+  "internal_id": "G2-T",
+  "stealth": true
+ },
+ "g1-s-5mg": {
+  "product_id": "G1-S-5",
+  "name": "G1-S 5mg vial",
+  "internal_id": "G1-S",
+  "stealth": true
+ },
+ "g1-s-10mg": {
+  "product_id": "G1-S-10",
+  "name": "G1-S 10mg vial",
+  "internal_id": "G1-S",
+  "stealth": true
+ },
+ "research-solvent-10ml": {
+  "gift": true,
+  "internal_id": "GIFT-01"
+ }
+}
