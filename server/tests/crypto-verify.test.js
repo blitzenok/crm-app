@@ -185,7 +185,8 @@ test("60-minute timeout cancels an unpaid order and sends the cancel email From 
   assert.ok(mail, "cancel email sent through the order emailer");
   assert.equal(mail.from.address, "support@biolabsresearch.co");
   assert.equal(mail.to, "qa-test+crypto@biolabsresearch.co");
-  assert.match(mail.subject, /^Payment not received, order cancelled \(CR-/);
+  assert.equal(mail.subject, `Payment not received, order cancelled (${x.id})`); // CRM BLR number is the source of truth
+  assert.ok(mail.text.includes(`for order ${x.id} (${x.orderRef}) within`));
   assert.match(mail.text, /For research use only/);
   assert.equal(/bpc|some product/i.test(mail.text), false);
   assert.equal(x.cryptoPayment.cancelEmail.status, "sent");
@@ -482,4 +483,65 @@ test("HTTP: create returns exact amount + token; confirm endpoint needs the sign
     for (const k of Object.keys(process.env)) if (!(k in prev)) delete process.env[k];
     Object.assign(process.env, prev);
   }
+});
+
+test("USDC only on ERC20 (2026-09-28): USDT TRC20/ERC20 + USDC ERC20 are released, USDC TRC20 goes to review; confirmation email shows what was paid", async () => {
+  const { USDC_ERC } = await import("./crypto-mock.js");
+  const t = setup({ env: { CRYPTO_ACCEPTED_TOKENS: "USDT,USDC" } });
+  const usdtTrc = t.create();
+  const usdtErc = t.create({ network: "erc20" });
+  const usdcErc = t.create({ network: "erc20" });
+  const usdcTrc = t.create();
+  t.trc.addTx({ hash: hash(71), to: TRC, units: usdtTrc.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.erc.addTx({ hash: `0x${hash(72)}`, to: ERC, units: usdtErc.cryptoPayment.payUnits, blockNumber: 20000 - 13, timestamp: t.clock });
+  t.erc.addTx({ hash: `0x${hash(73)}`, to: ERC, units: usdcErc.cryptoPayment.payUnits, contract: USDC_ERC, blockNumber: 20000 - 13, timestamp: t.clock });
+  t.trc.addTx({ hash: hash(74), to: TRC, units: usdcTrc.cryptoPayment.payUnits, contract: USDC_TRC, blockNumber: 10000 - 21, timestamp: t.clock });
+  await t.verifier.tick();
+  const get = (o) => t.store.getOrder(o.id);
+  for (const o of [usdtTrc, usdtErc, usdcErc]) {
+    assert.equal(get(o).cryptoPayment.status, "paid", `${o.cryptoPayment.network} ${o.id}`);
+    assert.equal(isCryptoVerified(get(o)), true);
+  }
+  assert.equal(get(usdcErc).cryptoPayment.transfers[0].token, "USDC");
+  const rejected = get(usdcTrc);
+  assert.equal(rejected.cryptoPayment.status, "payment_review");
+  assert.ok(rejected.cryptoPayment.reviewReasons.includes("wrong_token"));
+  assert.equal(rejected.fulfillment.status, "blocked");
+  assert.equal(isCryptoVerified(rejected), false);
+  // confirmation email renders the asset + network actually paid (emails stay OFF in production; this is a render)
+  const em = createOrderEmailer({ db: t.store, cfg: emailConfig({}), log: createEmailLog(null), logger: () => {} });
+  const paidWith = (o) => em.preview("confirmation", get(o)).text.match(/Paid with: (.+)/)[1];
+  assert.equal(paidWith(usdtTrc), "USDT (TRC20)");
+  assert.equal(paidWith(usdtErc), "USDT (ERC20)");
+  assert.equal(paidWith(usdcErc), "USDC (ERC20)");
+});
+
+test("an order already opened as USDC-TRC20 (before the rule) stays verifiable; env can narrow but never widen", async () => {
+  const { isTokenAccepted } = await import("../lib/crypto-payment.js");
+  const t = setup({ env: { CRYPTO_ACCEPTED_TOKENS: "USDT,USDC" } });
+  const legacy = t.create();
+  const lo = t.store.getOrder(legacy.id);
+  lo.cryptoPayment.token = "USDC"; // simulates a USDC-TRC20 order created before 2026-09-28
+  lo.payAsset = "USDC";
+  t.store.upsertOrder(lo);
+  t.trc.addTx({ hash: hash(81), to: TRC, units: lo.cryptoPayment.payUnits, contract: USDC_TRC, blockNumber: 10000 - 21, timestamp: t.clock });
+  await t.verifier.tick();
+  assert.equal(t.store.getOrder(legacy.id).cryptoPayment.status, "paid");
+
+  const def = cryptoVerifyConfig({});
+  const both = cryptoVerifyConfig({ CRYPTO_ACCEPTED_TOKENS: "USDT,USDC" });
+  const usdcOnly = cryptoVerifyConfig({ CRYPTO_ACCEPTED_TOKENS: "USDC" });
+  assert.deepEqual(both.acceptedByNetwork, { trc20: ["USDT"], erc20: ["USDT", "USDC"] });
+  assert.equal(isTokenAccepted(def, "USDC", "erc20"), false); // default env: USDT only
+  assert.equal(isTokenAccepted(def, "USDT", "trc20"), true);
+  assert.equal(isTokenAccepted(both, "USDC", "erc20"), true);
+  assert.equal(isTokenAccepted(both, "USDC", "trc20"), false);
+  assert.equal(isTokenAccepted(both, "USDC", "trc20", { token: "USDC", network: "trc20" }), true); // grandfathered order
+  assert.equal(isTokenAccepted(def, "USDC", "trc20", { token: "USDC", network: "trc20" }), false); // token disabled -> no
+  assert.equal(isTokenAccepted(usdcOnly, "USDT", "trc20"), false);
+  assert.equal(isTokenAccepted(usdcOnly, "USDC", "erc20"), true);
+  assert.equal(isTokenAccepted(both, "DAI", "erc20"), false);
+  const { ACCEPTABLE_TOKENS, TOKENS } = await import("../lib/crypto-chains.js");
+  assert.deepEqual(ACCEPTABLE_TOKENS.trc20, ["USDT"]);
+  assert.equal(TOKENS.trc20[USDC_TRC].token, "USDC"); // still recognised so a stray deposit reaches review
 });

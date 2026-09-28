@@ -374,7 +374,7 @@ test("legal: every draft SKU maps to a neutral id/name; no INN or compound name 
   assert.ok(skus.length >= 30);
   // one order holding every catalog SKU, with the storefront's real (compound) item names and the BAC gift
   const order = paidCard({
-    items: skus.map((sku) => ({ sku, name: sku.startsWith("research-solvent") ? "Research solvent 30ml" : `${sku.replace(/-/g, " ")} BPC-157 NAD+`, qty: 1, amount: "1.00" })),
+    items: skus.map((sku) => ({ sku, name: sku.startsWith("research-solvent") ? "Research solvent 10mL" : `${sku.replace(/-/g, " ")} BPC-157 NAD+`, qty: 1, amount: "1.00" })),
     notes: "customer wants BPC-157 and bacteriostatic water",
   });
   const d = mapOrderToRapid(order, { cfg: cfgOf(), skuMap: map });
@@ -432,7 +432,7 @@ test("legal: BAC gift omitted by default and flagged for manual packing; neutral
   assert.equal(/solvent|bac|research-solvent|GIFT/i.test(x.replace(/biolabsresearch/g, "")), false);
   assert.match(x, /ordersProductsData\[1\]/);
   // gift detected by name too (no map entry)
-  const byName = mapOrderToRapid(paidCard({ items: [{ sku: "bpc-157-10mg", qty: 1 }, { sku: "free-gift", name: "Research solvent 30ml", qty: 1 }] }), { cfg: cfgOf(), skuMap: SKU_MAP });
+  const byName = mapOrderToRapid(paidCard({ items: [{ sku: "bpc-157-10mg", qty: 1 }, { sku: "free-gift", name: "Research solvent 10mL", qty: 1 }] }), { cfg: cfgOf(), skuMap: SKU_MAP });
   assert.equal(byName.products.length, 1);
   const neutral = mapOrderToRapid(paidCard(), { cfg: cfgOf({ RAPID_GIFT_MODE: "neutral" }), skuMap: SKU_MAP });
   assert.deepEqual(neutral.products[1], { product_id: "INS-01", name: "Accessory insert", qty: 1 });

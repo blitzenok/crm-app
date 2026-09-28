@@ -272,7 +272,7 @@ export function sampleOrder(type = "confirmation", now = new Date()) {
     items: [
       { sku: "bpc-157-10mg", name: "BPC-157 10mg", qty: 2, amount: "79.00" },
       { sku: "g3-r-10mg", name: "G3-R", qty: 1, amount: "85.00" },
-      { sku: "research-solvent-10ml", name: "Research solvent 30ml", qty: 1, amount: "0.00" },
+      { sku: "research-solvent-10ml", name: "Research solvent 10mL", qty: 1, amount: "0.00" },
     ],
     priceCheck: { subtotal: "243.00", shipping: "18.99", shipMethod: "express", volumeDiscount: { pct: 5, merch: "243.00", discount: "12.15", merchAfter: "230.85" },
       lines: [{ sku: "bpc-157-10mg", qty: 2, unit: "79.00", line: "158.00" }, { sku: "g3-r-10mg", qty: 1, unit: "85.00", line: "85.00" }] },

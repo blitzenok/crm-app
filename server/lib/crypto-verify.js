@@ -9,7 +9,7 @@
 //   cancelled + later payment -> payment_review (late_payment; never auto-ships)
 // A customer-entered tx hash is only a lookup hint. Every release needs a transfer that the chain itself reports.
 import { depositWallets, readyFulfillment, blockedFulfillment, CRYPTO_PAID, AWAITING_CRYPTO, CRYPTO_REVIEW, CRYPTO_CANCELLED } from "./crypto-checkout.js";
-import { PAY, OPEN_STATUSES, cryptoVerifyConfig, paymentDeadline, fixed, normalizeHint } from "./crypto-payment.js";
+import { PAY, OPEN_STATUSES, cryptoVerifyConfig, isTokenAccepted, paymentDeadline, fixed, normalizeHint } from "./crypto-payment.js";
 import { createChainAdapters, explorerTxUrl, explorerAddressUrl, amountToUnits } from "./crypto-chains.js";
 import { createSanctionsScreener } from "./crypto-sanctions.js";
 import { sendCancelEmail, sendInternalAlert, sendGa4Purchase } from "./crypto-notify.js";
@@ -36,7 +36,7 @@ export function evaluatePayment(order, cfg) {
   const transfers = (cp.transfers || []).filter((t) => t.success !== false);
   const reasons = [];
   const required = (n) => cfg.confirmations[n] ?? 20;
-  const accepted = transfers.filter((t) => cfg.acceptedTokens.includes(t.token) && !t.wrongNetwork && (!cp.network || t.network === cp.network));
+  const accepted = transfers.filter((t) => isTokenAccepted(cfg, t.token, t.network, cp) && !t.wrongNetwork && (!cp.network || t.network === cp.network));
   const wrong = transfers.filter((t) => !accepted.includes(t));
   for (const t of wrong) reasons.push(t.wrongNetwork || (cp.network && t.network !== cp.network) ? "wrong_network" : "wrong_token");
   const sum = accepted.reduce((s, t) => s + BigInt(t.units || "0"), 0n);
@@ -588,7 +588,7 @@ export function createCryptoVerifier({
         return { ok: false, status: 503, error: "chain_unavailable" };
       }
       const fresh = store.getOrder(orderId);
-      const ok = (fresh.cryptoPayment.transfers || []).filter((x) => x.success === true && x.finalChecked && cfg.acceptedTokens.includes(x.token));
+      const ok = (fresh.cryptoPayment.transfers || []).filter((x) => x.success === true && x.finalChecked && isTokenAccepted(cfg, x.token, x.network, fresh.cryptoPayment));
       if (!ok.length) return { ok: false, status: 409, error: "no_confirmed_onchain_transfer" };
       const sr = await screenOrder(fresh);
       if (sr.status === "match") {

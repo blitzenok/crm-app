@@ -42,6 +42,11 @@ Same endpoint and request body as today. One new optional field: `gaClientId`.
 
 Request fields:
 - `network`: `"trc20"` or `"erc20"`. **Required in practice**, because the unique amount is reserved per network.
+- `token` (added 2026-09-29): the asset the customer will send, `"USDT"` (default when omitted, unchanged behaviour) or `"USDC"`. Case-insensitive; `asset` / `payAsset` are accepted as aliases.
+  - **USDC is ERC20 only.** Send `{"token":"USDC","network":"erc20"}`. `USDC` + `trc20` → `400 {error:"token_not_accepted"}`; `USDC` with no network → `400 {error:"network_required"}`; any other token → `400 {error:"invalid_asset"}`. No order is created on these errors.
+  - A token that is not enabled on the server (`CRYPTO_ACCEPTED_TOKENS`) → `400 token_not_accepted`.
+  - USDC is paid to the same ERC20 deposit address (`wallet` in the response). The response echoes `token` / `payAsset` = `"USDC"`, `network` = `"erc20"`.
+  - Only offer USDC when the customer picked ERC20; the TRC20 option shows USDT only.
 - `gaClientId` (optional, new): the `_ga` cookie client id (the `XXXXXXXXXX.YYYYYYYYYY` part after `GA1.1.`). It lets the server-side purchase join the browser session. Omit it if you can't read it.
 - `idempotencyKey`: resending the same key returns the same order (`"reused": true`), with the same amount and the same `confirmToken`.
 
@@ -99,14 +104,14 @@ Fields to use:
 | `payAmount` | **The amount to show and copy.** A string with every decimal kept. Show it exactly as given (`"158.34"`). Don't round it, don't pass it through `toFixed`, and don't show `amount` as the amount to send. `amountDue` holds the same value (kept for the current page). |
 | `amount` | The cart total in USD (server price). Show it only as "Order total" if you want. |
 | `amountOffset` | The added cents. Optional small print, e.g. "includes 0.34 USDT order identifier". |
-| `token`, `network` | "USDT" plus "TRC20" / "ERC20". |
+| `token`, `network` | "USDT" + "trc20" / "erc20", or "USDC" + "erc20" (echo of what the order was created with). |
 | `wallet` | The deposit address for the chosen network. Use this instead of reading the address from page config. |
 | `expiresAt` | 60 minutes after creation. Use it for the countdown. |
 | `cancelAt` | When the order is actually cancelled. Equals `expiresAt`, or `expiresAt` + 60 min after the customer confirms. Stop polling after this time. |
 | `confirmToken` | Keep it in memory or sessionStorage for this order. It's returned **only** by this call (and by an idempotent replay), never by GET. Needed for the button in section 2. |
 | `confirmUrl`, `statusUrl` | Paths relative to `https://crm.biolabsresearch.co`. |
 
-Errors are unchanged: `400 {error: invalid_network | email_required | items_required | …}`, `409 idempotency_conflict`, `429 rate_limited`. One new error: `503 pay_amount_unavailable` (all 99 offsets are taken on that network; practically never happens). Show a generic retry message for it.
+Errors: `400 {error: invalid_network | invalid_asset | token_not_accepted | network_required | email_required | items_required | …}`, `409 idempotency_conflict`, `429 rate_limited`. One new error: `503 pay_amount_unavailable` (all 99 offsets are taken on that network; practically never happens). Show a generic retry message for it.
 
 ### Page copy (payment step)
 
