@@ -3,7 +3,7 @@ import { formatAmount } from "./card.js";
 import { stripSecrets } from "./sanitize.js";
 import { findForbiddenCardField } from "./abandon.js";
 import {
-  PAY, allocatePayAmount, confirmSecret, cryptoVerifyConfig, isCryptoVerified, normalizeHint, paymentDeadline, signConfirmToken,
+  PAY, allocatePayAmount, confirmSecret, cryptoVerifyConfig, isCryptoVerified, isTokenAccepted, normalizeHint, paymentDeadline, signConfirmToken,
 } from "./crypto-payment.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -128,7 +128,7 @@ export function validateCryptoCheckout(input) {
   }
 
   const currency = String(input.currency || "USD").trim().toUpperCase() || "USD";
-  if (currency !== "USD" && currency !== "USDT") {
+  if (currency !== "USD" && currency !== "USDT" && currency !== "USDC") {
     return { ok: false, error: "invalid_currency", status: 400 };
   }
 
@@ -138,6 +138,13 @@ export function validateCryptoCheckout(input) {
   if (network && network !== "erc20" && network !== "trc20") {
     return { ok: false, error: "invalid_network", status: 400 };
   }
+
+  // Asset the customer will send. Default USDT (unchanged behaviour). USDC exists on ERC20 only (owner decision
+  // 2026-09-28): USDC needs network "erc20" explicitly; USDC on TRC20 is refused here, before any order is created.
+  const token = String(input.token || input.asset || input.payAsset || "USDT").trim().toUpperCase();
+  if (token !== "USDT" && token !== "USDC") return { ok: false, error: "invalid_asset", status: 400 };
+  if (token === "USDC" && !network) return { ok: false, error: "network_required", status: 400 };
+  if (token === "USDC" && network !== "erc20") return { ok: false, error: "token_not_accepted", status: 400 };
 
   const customer = readCustomer(input.customer);
   if (!customer.email) return { ok: false, error: "email_required", status: 400 };
@@ -160,6 +167,7 @@ export function validateCryptoCheckout(input) {
       amount: formatAmount(input.amount),
       currency,
       network: network || null,
+      token,
       customer,
       items,
       notes: String(input.notes || "").slice(0, 2000),
@@ -298,6 +306,11 @@ export function createCryptoCheckout(input, deps) {
   if (!orderRef) return { ok: false, error: "order_ref_unavailable", status: 500 };
 
   const cfg = cryptoVerifyConfig(env);
+  // The token must be enabled (CRYPTO_ACCEPTED_TOKENS) for the order's network; USDT with no network yet stays allowed.
+  const token = parsed.value.token || "USDT";
+  if (!cfg.acceptedTokens.includes(token) || (parsed.value.network && !isTokenAccepted(cfg, token, parsed.value.network))) {
+    return { ok: false, error: "token_not_accepted", status: 400 };
+  }
   const nowMs = deps.now ? deps.now().getTime() : Date.now();
   // Unique exact amount among open orders on this network, so a deposit can be matched to exactly one order.
   const alloc = allocatePayAmount(store.listOrders(), { baseAmount: amount, network: parsed.value.network, cfg, nowMs, rand: deps.rand });
@@ -339,7 +352,7 @@ export function createCryptoCheckout(input, deps) {
         }
       : {}),
     currency: parsed.value.currency,
-    payAsset: "USDT",
+    payAsset: token,
     customer: parsed.value.customer,
     items: parsed.value.items,
     notes: parsed.value.notes,
@@ -357,7 +370,7 @@ export function createCryptoCheckout(input, deps) {
       version: 1,
       status: PAY.AWAITING,
       network,
-      token: "USDT",
+      token,
       wallet: network === "trc20" ? wallets.usdtTrc20 : network === "erc20" ? wallets.usdtErc20 : null,
       baseAmount: amount,
       offset: alloc.offset,

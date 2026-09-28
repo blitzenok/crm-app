@@ -438,3 +438,57 @@ test("direct chargeCart still approves a card when payments are on", async () =>
   assert.equal(result.order.status, "approved");
   assert.equal(isShippable(result.order), true);
 });
+
+test("crypto checkout create: token param — USDC on ERC20 only, USDT unchanged, env gate (CRYPTO_ACCEPTED_TOKENS)", async () => {
+  for (const envTokens of ["USDT,USDC", "USDT"]) {
+    await withEnv({
+      PAYMENTS_ENABLED: undefined, MARKETING_DIGEST_KEY: KEY, CRYPTO_USDT_ERC: ERC, CRYPTO_USDT_TRC: TRC, CRYPTO_ACCEPTED_TOKENS: envTokens,
+    }, async () => {
+      const store = createStore({ memoryOnly: true });
+      await withServer({
+        store, cryptoChains: { trc20: createMockChain("trc20", { latest: 5000 }), erc20: createMockChain("erc20", { latest: 9000 }) },
+        cryptoScreener: createMockScreener(), cryptoConfirmSecret: "x".repeat(40),
+      }, async (port) => {
+        let n = 0;
+        const create = async (extra) => {
+          const res = await fetch(`http://127.0.0.1:${port}/api/checkout/crypto`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...SAMPLE, idempotencyKey: `TOK-${envTokens}-${(n += 1)}`, ...extra }),
+          });
+          return { status: res.status, body: await res.json() };
+        };
+        // USDT unchanged: no token field, trc20 / erc20 / no network yet
+        for (const extra of [{ network: "trc20" }, { network: "erc20" }, { network: undefined }, { token: "usdt", network: "trc20" }]) {
+          const r = await create(extra);
+          assert.equal(r.status, 200, JSON.stringify(extra));
+          assert.equal(r.body.token, "USDT");
+          assert.equal(r.body.payAsset, "USDT");
+        }
+        // USDC on TRC20 is always refused, no order created
+        const before = store.listOrders().length;
+        const trcUsdc = await create({ token: "USDC", network: "trc20" });
+        assert.equal(trcUsdc.status, 400);
+        assert.equal(trcUsdc.body.error, "token_not_accepted");
+        assert.equal((await create({ token: "USDC", network: undefined })).body.error, "network_required");
+        assert.equal((await create({ token: "DAI", network: "erc20" })).body.error, "invalid_asset");
+        assert.equal(store.listOrders().length, before);
+        const ercUsdc = await create({ token: "USDC", network: "erc20" });
+        if (envTokens === "USDT") {
+          // USDC not enabled in env -> refused on every network
+          assert.equal(ercUsdc.status, 400);
+          assert.equal(ercUsdc.body.error, "token_not_accepted");
+        } else {
+          assert.equal(ercUsdc.status, 200);
+          assert.equal(ercUsdc.body.status, "awaiting_crypto");
+          assert.equal(ercUsdc.body.token, "USDC");
+          assert.equal(ercUsdc.body.payAsset, "USDC");
+          assert.equal(ercUsdc.body.network, "erc20");
+          assert.equal(ercUsdc.body.wallet, ERC);
+          const saved = store.listOrders().find((o) => o.cryptoPayment?.token === "USDC");
+          assert.equal(saved.cryptoPayment.network, "erc20");
+          assert.equal(saved.payAsset, "USDC");
+        }
+      });
+    });
+  }
+});
