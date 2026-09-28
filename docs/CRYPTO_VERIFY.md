@@ -20,7 +20,7 @@ Storefront side: [CRYPTO_STOREFRONT_CONTRACT.md](CRYPTO_STOREFRONT_CONTRACT.md).
    - Transfers under 1 USDT are ignored (address-poisoning dust).
    - The **tx ledger** (`store.crypto.ledger`) binds each tx hash to one order forever, so reusing a tx across orders is refused.
 3. **Evaluation** (`evaluatePayment`):
-   - only accepted tokens (`CRYPTO_ACCEPTED_TOKENS`, default `USDT`) on the order's network count; anything else → `payment_review` (`wrong_token` / `wrong_network`);
+   - only accepted tokens on the order's network count: USDT on TRC20 and ERC20, USDC on ERC20 only (`ACCEPTABLE_TOKENS`, owner decision 2026-09-28), narrowed by `CRYPTO_ACCEPTED_TOKENS` (default `USDT`). USDC on TRC20 is recognised but always → `payment_review` (`wrong_token`), except an order that was itself opened as USDC-TRC20 before the rule. Anything else → `payment_review` (`wrong_token` / `wrong_network`);
    - `success` must be true and confirmations must be ≥ 20 (TRC20) / 12 (ERC20), re-checked by tx hash (`finalChecked`) → otherwise `confirming`;
    - sum < payAmount → `payment_review` `partial_payment`; sum > payAmount → `payment_review` `overpaid`. The tolerance is 0.000001, so the amount must be exact;
    - payment after cancellation → `payment_review` `late_payment`. Watched for `CRYPTO_LATE_WATCH_HOURS` (72).
@@ -106,7 +106,7 @@ Internal alerts (unmatched deposit, review, sanctions match, screening hold, lat
 | `CRYPTO_LATE_WATCH_HOURS` | 72 | |
 | `CRYPTO_CONFIRMATIONS_TRC20` / `_ERC20` | 20 / 12 | |
 | `CRYPTO_AMOUNT_TOLERANCE` / `CRYPTO_OVERPAY_TOLERANCE` | 0.000001 | |
-| `CRYPTO_ACCEPTED_TOKENS` | USDT | USDC is detected but goes to review unless listed. |
+| `CRYPTO_ACCEPTED_TOKENS` | USDT | Narrows the per-network list (it cannot widen it). `USDT,USDC` enables USDC on ERC20 only; USDC on TRC20 always goes to review. |
 | `CRYPTO_TRONGRID_URL`, `TRONGRID_API_KEY` | api.trongrid.io, none | A key is optional (raises rate limits). |
 | `CRYPTO_ETH_RPC_URL` | publicnode, drpc | Comma list; falls through on errors or null receipts. |
 | `CRYPTO_API_MIN_GAP_MS` | 400 | Pacing between explorer calls. |

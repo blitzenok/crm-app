@@ -9,16 +9,22 @@ import { createHash } from "node:crypto";
 
 export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+// Token contracts we RECOGNISE on each network. Recognising is not accepting: USDC on TRC20 stays listed only so a
+// deposit of it is seen and sent to staff review (wrong_token) instead of being silently ignored.
 export const TOKENS = {
   trc20: {
     TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t: { token: "USDT", decimals: 6 },
-    TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8: { token: "USDC", decimals: 6 },
+    TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8: { token: "USDC", decimals: 6 }, // USDC_TRC: recognised, NOT accepted (2026-09-28)
   },
   erc20: {
     "0xdac17f958d2ee523a2206206994597c13d831ec7": { token: "USDT", decimals: 6 },
     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { token: "USDC", decimals: 6 },
   },
 };
+
+// Tokens that can ever be ACCEPTED per network (2026-09-28, owner decision): USDT on TRC20 + ERC20, USDC on ERC20 only.
+// CRYPTO_ACCEPTED_TOKENS (env) further narrows this; it can never widen it.
+export const ACCEPTABLE_TOKENS = Object.freeze({ trc20: Object.freeze(["USDT"]), erc20: Object.freeze(["USDT", "USDC"]) });
 
 export function explorerTxUrl(network, txHash) {
   if (!txHash) return null;

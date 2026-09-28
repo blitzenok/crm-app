@@ -218,8 +218,18 @@ const orderNo = (o) => String(o.orderRef && o.paymentMethod === "crypto" ? `${o.
 function addressLines(c = {}) {
   return [[c.first_name, c.last_name].filter(Boolean).join(" "), c.address, [c.city, c.state, c.zip].filter(Boolean).join(", ").replace(/, (\d)/, " $1"), c.country].filter(Boolean);
 }
+/** Asset + network the customer actually paid with, from the order's crypto payment record: "USDC (ERC20)". */
+export function cryptoPaidWith(o) {
+  const cp = o.cryptoPayment || {};
+  const paid = (cp.transfers || []).filter((t) => t && t.success !== false && t.token && !t.wrongNetwork);
+  const tokens = [...new Set(paid.map((t) => String(t.token).toUpperCase()))];
+  const nets = [...new Set(paid.map((t) => t.network).filter(Boolean))];
+  const token = tokens.length === 1 ? tokens[0] : String(cp.token || o.payAsset || "USDT").toUpperCase();
+  const network = nets.length === 1 ? nets[0] : cp.network || o.crypto?.network || "";
+  return `${token}${network ? ` (${String(network).toUpperCase()})` : ""}`;
+}
 function paymentLines(o, ctx = {}) {
-  if (o.paymentMethod === "crypto") return [["Payment", `USDT${o.crypto?.network ? ` (${String(o.crypto.network).toUpperCase()})` : ""}`]];
+  if (o.paymentMethod === "crypto") return [["Paid with", cryptoPaidWith(o)]];
   const proc = o.winningProcessor === "cleffo" ? "cleffo" : "umg";
   const d = descriptorFor(proc);
   // The descriptor is set by the processor (e.g. PEPTIDESS SHOP); it is shown verbatim and not guard-scanned.

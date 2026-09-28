@@ -4,7 +4,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { amountToUnits, unitsToAmount } from "./crypto-chains.js";
+import { ACCEPTABLE_TOKENS, amountToUnits, unitsToAmount } from "./crypto-chains.js";
 
 export const PAY = Object.freeze({
   AWAITING: "awaiting_payment",
@@ -37,10 +37,23 @@ export function cryptoVerifyConfig(env = process.env) {
     toleranceUnits: amountToUnits(String(env.CRYPTO_AMOUNT_TOLERANCE || "0.000001"), DECIMALS),
     overpayToleranceUnits: amountToUnits(String(env.CRYPTO_OVERPAY_TOLERANCE || "0.000001"), DECIMALS),
     acceptedTokens: tokens.length ? tokens : ["USDT"],
+    // per network: env list ∩ ACCEPTABLE_TOKENS (USDC never on TRC20)
+    acceptedByNetwork: Object.fromEntries(Object.entries(ACCEPTABLE_TOKENS).map(([n, list]) => [n, (tokens.length ? tokens : ["USDT"]).filter((t) => list.includes(t))])),
     clockSkewMs: 5 * 60 * 1000,
     maxHints: 5,
     backoffMaxMs: 15 * 60 * 1000,
   };
+}
+
+/**
+ * Is a transfer of `token` on `network` acceptable payment for this order? Per-network rules (USDT on TRC20/ERC20,
+ * USDC on ERC20 only), narrowed by CRYPTO_ACCEPTED_TOKENS. An order that was itself created for that exact
+ * token+network (e.g. a USDC-TRC20 order opened before this rule) stays verifiable as long as the token is enabled.
+ */
+export function isTokenAccepted(cfg, token, network, cp = null) {
+  if (!token || !network) return false;
+  if ((cfg.acceptedByNetwork?.[network] || []).includes(token)) return true;
+  return Boolean(cp && cp.token === token && cp.network === network && cfg.acceptedTokens.includes(token));
 }
 
 export function isCryptoVerified(order) {

@@ -375,7 +375,27 @@ test("order number never wraps in HTML (nowrap span), plain text unchanged; also
   const c = em.preview(CANCEL_EMAIL_TYPE, order, { minutes: 60 });
   assert.deepEqual(c.guard, []);
   assert.ok(c.html.includes('<span style="white-space:nowrap;">CR-R9N3N3MR</span>'));
+  assert.ok(c.html.includes('<span style="white-space:nowrap;">BLR-1100</span>'));
   assert.ok(!/CR-R9N3N3MR/.test(c.html.split("<body")[1].replace(/<span style="white-space:nowrap;">CR-R9N3N3MR<\/span>/g, "")));
-  assert.ok(c.text.includes("order CR-R9N3N3MR within 60 minutes"));
+  assert.ok(c.text.includes("order BLR-1100 (CR-R9N3N3MR) within 60 minutes"));
+  assert.equal(c.subject, "Payment not received, order cancelled (BLR-1100)");
   assert.ok(c.text.includes(RUO_FOOTER));
+});
+
+test("crypto confirmation: 'Paid with' shows the asset + network from the crypto payment record (3 combos + fallback)", async () => {
+  const { cryptoPaidWith } = await import("../lib/email-templates.js");
+  const base = { ...sampleOrder("confirmation"), paymentMethod: "crypto", status: "crypto_paid", paymentConfirmed: true };
+  const mk = (token, network, transfers = [{ token, network, success: true }]) => ({ ...base, crypto: { network }, cryptoPayment: { token: "USDT", network, transfers } });
+  const cases = [["USDT", "trc20", "USDT (TRC20)"], ["USDT", "erc20", "USDT (ERC20)"], ["USDC", "erc20", "USDC (ERC20)"]];
+  for (const [tok, net, want] of cases) {
+    assert.equal(cryptoPaidWith(mk(tok, net)), want);
+    const r = renderEmail("confirmation", mk(tok, net));
+    assert.ok(r.text.includes(`Paid with: ${want}`), want);
+    assert.ok(!r.text.includes("TRC20/ERC20"));
+    assert.deepEqual(r.guard, []);
+  }
+  // no transfer recorded yet -> the order's own token/network
+  assert.equal(cryptoPaidWith({ ...base, crypto: { network: "erc20" }, cryptoPayment: { token: "USDC", network: "erc20", transfers: [] } }), "USDC (ERC20)");
+  // card orders are unchanged
+  assert.ok(renderEmail("confirmation", sampleOrder("confirmation")).text.includes("Payment: Card"));
 });

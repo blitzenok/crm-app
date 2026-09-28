@@ -14,13 +14,13 @@ const netLabel = (n) => (n === "trc20" ? "Tron (TRC-20)" : n === "erc20" ? "Ethe
 // Customer email through the order-email helper (docs/ORDER_EMAILS.md): layout, RUO footer, compliance guard,
 // SMTP gate, retries, log and per-order idempotency come with it. No product names in this email.
 registerEmailType(CANCEL_EMAIL_TYPE, {
-  subject: (order) => `${CANCEL_SUBJECT} (${order.orderRef || order.id})`,
+  subject: (order) => `${CANCEL_SUBJECT} (${order.id})`,
   preheader: () => "We did not receive the crypto payment in time, so the order was cancelled.",
   blocks: (order, ctx) => {
     const cp = order.cryptoPayment || {};
     return [
       h.heading(CANCEL_SUBJECT),
-      h.p(`We did not receive the ${cp.payAmount || order.amountDue || order.amount} ${cp.token || "USDT"} payment on ${netLabel(cp.network)} for order ${order.orderRef || order.id} within ${ctx.data?.minutes || 60} minutes, so the order was cancelled automatically.`),
+      h.p(`We did not receive the ${cp.payAmount || order.amountDue || order.amount} ${cp.token || "USDT"} payment on ${netLabel(cp.network)} for order ${order.orderRef ? `${order.id} (${order.orderRef})` : order.id} within ${ctx.data?.minutes || 60} minutes, so the order was cancelled automatically.`),
       h.p("If you already sent the payment, please do not send it again. Reply to this email with the transaction hash and our team will review it manually."),
       h.p("You are welcome to place a new order at any time."),
     ];
