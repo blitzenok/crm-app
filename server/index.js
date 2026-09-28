@@ -209,6 +209,7 @@ export function createHandler(deps = {}) {
     db, cfg: emailConfig(deps.emailEnv || process.env),
     ...(deps.store ? { log: createEmailLog(deps.emailLogPath || null) } : {}),
     ...(deps.emailTransportFactory ? { transportFactory: deps.emailTransportFactory } : {}),
+    ...(deps.emailSleep ? { sleep: deps.emailSleep } : {}),
   });
   const kickEmails = (orderId) => { try { orderEmailer.kick(orderId); } catch { /* never block the order flow */ } };
   function onCleffoPaid(order) {
