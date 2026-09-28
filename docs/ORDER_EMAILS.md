@@ -8,6 +8,9 @@ Three emails, sent from `"BioLabs Research" <support@biolabsresearch.co>` (no Re
 | `shipping` | paid + fulfillment `shipped` + tracking number (Rapid poller, ship/tracking endpoints, `POST /api/fulfillment/:id/tracking`) | `Order BLR-1234 has shipped` |
 | `followup` | 7 days after `shippedAt` (`ORDER_EMAILS_FOLLOWUP_DAYS`) | `Did your order arrive complete and intact?` |
 
+## Header logo
+All email types show the official BioLabs logo (blue helix + black "BIO LABS", transparent PNG, 400x167 shown at 200px, alt "BioLabs Research") in a white header above the gold rule. The image is loaded from `https://biolabsresearch.co/media/email/biolabs-logo-email.png`, which must be hosted there before sending is enabled. `ORDER_EMAIL_LOGO_URL` can override this, but only with an https URL. Previews may pass `renderEmail(type, order, { logoUrl: "data:image/png;base64,..." })`. The plain-text part is unchanged.
+
 ## Content rules (Marketing + Legal)
 - Products are shown only by catalog name (`server/config/rapid-sku-map.draft.json`: stealth names such as G3-R, otherwise the RC-nn id), with `Strength: 10mg`. INN/compound names are never shown.
 - The gift line (research solvent) is never shown in items or totals. The totals always equal the checkout total to the cent: subtotal − volume discount (5/10/15%) + shipping = amount charged. If the stored figures don't reconcile, per-line prices are hidden and only shipping + total are shown.

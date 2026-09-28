@@ -225,7 +225,7 @@ test("sweeper: confirmation when paid, shipping when tracking, follow-up at +7 d
 });
 
 test("registerEmailType: reusable helper for a new customer email (e.g. payment not received, order cancelled)", async () => {
-  registerEmailType("payment_cancelled", {
+  registerEmailType("qa_payment_cancelled", {
     subject: (o) => `Order ${o.id} cancelled – payment not received`,
     blocks: (o, ctx) => [h.heading("Your order was cancelled"), h.p(`We did not receive payment for order ${o.id} within ${ctx.data.hours} hours, so it was cancelled.`)],
   });
@@ -234,11 +234,11 @@ test("registerEmailType: reusable helper for a new customer email (e.g. payment 
   const { e, store } = emailer(ON, mt);
   const o = paidCard({ status: "crypto_pending", paymentMethod: "crypto" });
   store.upsertOrder(o);
-  const r = await e.send(o.id, "payment_cancelled", { data: { hours: 24 } });
+  const r = await e.send(o.id, "qa_payment_cancelled", { data: { hours: 24 } });
   assert.equal(r.status, "sent");
   assert.match(mt.sent[0].text, /within 24 hours/);
   assert.ok(mt.sent[0].text.includes(RUO_FOOTER));
-  assert.equal((await e.send(o.id, "payment_cancelled")).status, "duplicate");
+  assert.equal((await e.send(o.id, "qa_payment_cancelled")).status, "duplicate");
   const bad = await e.send(o.id, "nope");
   assert.equal(bad.status, "unknown_type");
 });
@@ -331,4 +331,51 @@ test("routes: card checkout 200 even when SMTP throws; crypto mark-paid + tracki
     for (const k of Object.keys(process.env)) if (!(k in prev)) delete process.env[k];
     Object.assign(process.env, prev);
   }
+});
+
+test("header logo: all three templates show the hosted https logo (alt, ~200px), text part and RUO footer unchanged", async () => {
+  const { EMAIL_LOGO_URL, logoSrc } = await import("../lib/email-templates.js");
+  assert.equal(EMAIL_LOGO_URL, "https://biolabsresearch.co/media/email/biolabs-logo-email.png");
+  for (const type of ["confirmation", "shipping", "followup"]) {
+    const r = renderEmail(type, sampleOrder(type));
+    const imgs = r.html.match(/<img [^>]*>/g) || [];
+    assert.equal(imgs.length, 1, type);
+    assert.ok(imgs[0].includes(`src="${EMAIL_LOGO_URL}"`), type);
+    assert.ok(imgs[0].includes('alt="BioLabs Research"'), type);
+    const w = Number(imgs[0].match(/width="(\d+)"/)[1]);
+    assert.ok(w >= 180 && w <= 200, type);
+    assert.ok(!r.html.includes(">BIO LABS</span>"), type); // old text header replaced
+    assert.ok(!r.text.includes("biolabs-logo"), type);      // plain-text part has no header/logo
+    assert.ok(r.text.includes(RUO_FOOTER) && r.html.includes(RUO_FOOTER), type);
+    assert.deepEqual(r.guard, [], type);
+  }
+  // previews may inline the image; real emails only take https URLs
+  const data = "data:image/png;base64,iVBORw0KGgo=";
+  assert.ok(renderEmail("shipping", sampleOrder("shipping"), { logoUrl: data }).html.includes(`src="${data}"`));
+  assert.equal(logoSrc("http://biolabsresearch.co/x.png", {}), EMAIL_LOGO_URL);
+  assert.equal(logoSrc('https://x.test/a.png" onerror="x', {}), EMAIL_LOGO_URL);
+  assert.equal(logoSrc(undefined, { ORDER_EMAIL_LOGO_URL: "https://cdn.biolabsresearch.co/l.png" }), "https://cdn.biolabsresearch.co/l.png");
+  assert.equal(logoSrc(undefined, { ORDER_EMAIL_LOGO_URL: "javascript:alert(1)" }), EMAIL_LOGO_URL);
+});
+
+test("order number never wraps in HTML (nowrap span), plain text unchanged; also in the crypto cancel email", async () => {
+  const { escNb } = await import("../lib/email-templates.js");
+  assert.equal(escNb("order BLR-1099 (CR-R9N3N3MR)."), 'order <span style="white-space:nowrap;">BLR-1099</span> (<span style="white-space:nowrap;">CR-R9N3N3MR</span>).');
+  for (const type of ["confirmation", "shipping", "followup"]) {
+    const r = renderEmail(type, sampleOrder(type));
+    const body = r.html.split("<body")[1].replace(/<div style="display:none;[^>]*>[^<]*<\/div>/, ""); // hidden preheader excluded
+    const bare = body.replace(/<span style="white-space:nowrap;">BLR-1099<\/span>/g, "").replace(/mailto:[^"]+/g, "");
+    assert.ok(body.includes('<span style="white-space:nowrap;">BLR-1099</span>'), type);
+    assert.ok(!/BLR-1099/.test(bare), `${type}: unwrapped order number in HTML`);
+    assert.ok(r.text.includes("BLR-1099") && !r.text.includes("white-space") && !r.text.includes("\u2011"), type);
+  }
+  const { CANCEL_EMAIL_TYPE } = await import("../lib/crypto-notify.js");
+  const em = createOrderEmailer({ db: createStore({ memoryOnly: true }), cfg: emailConfig({}), log: createEmailLog(null), logger: () => {} });
+  const order = { ...sampleOrder("confirmation"), id: "BLR-1100", orderRef: "CR-R9N3N3MR", paymentMethod: "crypto", status: "crypto_cancelled", amountDue: "150.10", crypto: { network: "trc20" } };
+  const c = em.preview(CANCEL_EMAIL_TYPE, order, { minutes: 60 });
+  assert.deepEqual(c.guard, []);
+  assert.ok(c.html.includes('<span style="white-space:nowrap;">CR-R9N3N3MR</span>'));
+  assert.ok(!/CR-R9N3N3MR/.test(c.html.split("<body")[1].replace(/<span style="white-space:nowrap;">CR-R9N3N3MR<\/span>/g, "")));
+  assert.ok(c.text.includes("order CR-R9N3N3MR within 60 minutes"));
+  assert.ok(c.text.includes(RUO_FOOTER));
 });
