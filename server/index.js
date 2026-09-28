@@ -29,6 +29,7 @@ import {
   markCryptoPaid,
   publicCryptoStatus,
   shipOrder,
+  updateTracking,
   walletFlags,
 } from "./lib/crypto-checkout.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
@@ -222,7 +223,7 @@ export function createHandler(deps = {}) {
       return json(200, { orders });
     }
 
-    const cryptoAction = path.match(/^\/api\/store-orders\/([^/]+)\/(mark-paid|ship)$/);
+    const cryptoAction = path.match(/^\/api\/store-orders\/([^/]+)\/(mark-paid|ship|tracking)$/);
     if (cryptoAction && req.method === "POST") {
       const op = await operatorContext();
       if (!op.ok) return json(401, { error: "unauthorized" });
@@ -238,6 +239,8 @@ export function createHandler(deps = {}) {
             orderStatus: result.orderStatus,
             fulfillment: result.fulfillment,
             paymentConfirmed: result.paymentConfirmed,
+            amountDue: result.amountDue,
+            amountReceived: result.amountReceived,
           });
         }
         return json(200, {
@@ -249,7 +252,11 @@ export function createHandler(deps = {}) {
           fulfillment: result.order?.fulfillment?.status || null,
         });
       }
-      const result = shipOrder(id, { store: db, actor: op.actor, via: op.via });
+      const shipBody = await readBody(req).catch(() => ({}));
+      const result =
+        action === "tracking"
+          ? updateTracking(id, shipBody, { store: db, actor: op.actor, via: op.via })
+          : shipOrder(id, { store: db, actor: op.actor, via: op.via }, shipBody);
       if (!result.ok) {
         return json(result.status || 400, {
           ok: false,

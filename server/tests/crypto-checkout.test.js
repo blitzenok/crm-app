@@ -9,6 +9,7 @@ const ERC = `0x${"ab".repeat(20)}`;
 const TRC = `T${"9".repeat(33)}`;
 const KEY = "test-marketing-digest-key";
 const TX = `0x${"cd".repeat(32)}`;
+const TX_TRON = "ef".repeat(32);
 
 const SAMPLE = {
   idempotencyKey: "BL-CRYPTO-TEST-1",
@@ -189,10 +190,42 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       });
       assert.equal(badHash.status, 400);
 
+      const noTx = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ amountReceived: "158.00" }),
+      });
+      assert.equal(noTx.status, 400);
+      assert.equal((await noTx.json()).error, "tx_hash_required");
+
+      const noAmt = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ txHash: TX_TRON }),
+      });
+      assert.equal(noAmt.status, 400);
+      assert.equal((await noAmt.json()).error, "amount_received_required");
+
+      const short = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ txHash: TX_TRON, amountReceived: "150" }),
+      });
+      assert.equal(short.status, 409);
+      assert.equal((await short.json()).error, "amount_short");
+
+      const mismatch = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ txHash: TX, amountReceived: "158.00" }),
+      });
+      assert.equal(mismatch.status, 400);
+      assert.equal((await mismatch.json()).error, "tx_hash_network_mismatch");
+
       const paidRes = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
         method: "POST",
         headers: staff,
-        body: JSON.stringify({ txHash: TX }),
+        body: JSON.stringify({ txHash: TX_TRON, amountReceived: "158.00" }),
       });
       assert.equal(paidRes.status, 200);
       const paid = await paidRes.json();
@@ -202,7 +235,9 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       assert.equal(paid.order.fulfillment.status, "ready");
       assert.equal(paid.order.fulfillment.shippedAt, null);
       assert.equal(paid.order.crypto.markedPaidBy, "staff@biolabsresearch.co");
-      assert.equal(paid.order.crypto.txHash, TX);
+      assert.equal(paid.order.crypto.txHash, TX_TRON);
+      assert.equal(paid.order.crypto.amountReceived, "158.00");
+      assert.equal(paid.order.crypto.network, "trc20");
       assert.ok(paid.order.crypto.markedPaidAt);
 
       const pollPaid = await fetch(`${base}/api/checkout/crypto/${created.orderRef}`).then((r) => r.json());
@@ -213,13 +248,33 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       assert.equal(pollPaid.fulfillment, "ready");
       assert.equal(JSON.stringify(pollPaid).toLowerCase().includes("payment successful"), false);
 
+      const early = await fetch(`${base}/api/store-orders/${created.orderRef}/tracking`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ carrier: "USPS", trackingNumber: "9400100000000000000000" }),
+      });
+      assert.equal(early.status, 409);
+
       const shipped = await fetch(`${base}/api/store-orders/${created.orderRef}/ship`, {
         method: "POST",
         headers: staff,
+        body: JSON.stringify({ carrier: "USPS", trackingNumber: "9400100000000000000000" }),
       });
       assert.equal(shipped.status, 200);
       const shippedBody = await shipped.json();
       assert.equal(shippedBody.fulfillment, "shipped");
+      assert.equal(shippedBody.order.fulfillment.carrier, "USPS");
+      assert.equal(shippedBody.order.fulfillment.trackingNumber, "9400100000000000000000");
+
+      const fix = await fetch(`${base}/api/store-orders/${created.orderRef}/tracking`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ carrier: "UPS", trackingNumber: "1Z999AA10123456784", trackingUrl: "javascript:alert(1)" }),
+      });
+      assert.equal(fix.status, 200);
+      const fixed = await fix.json();
+      assert.equal(fixed.order.fulfillment.carrier, "UPS");
+      assert.equal(fixed.order.fulfillment.trackingUrl, null);
       assert.equal(shippedBody.order.fulfillment.shippedBy, "staff@biolabsresearch.co");
       assert.equal(isShippable(shippedBody.order), false);
     });

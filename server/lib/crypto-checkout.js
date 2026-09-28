@@ -153,6 +153,7 @@ export function validateCryptoCheckout(input) {
       items,
       notes: String(input.notes || "").slice(0, 2000),
       session_id: String(input.session_id || input.sessionId || "").trim(),
+      test: input.test === true,
     },
   };
 }
@@ -260,6 +261,7 @@ export function createCryptoCheckout(input, deps) {
     items: parsed.value.items,
     notes: parsed.value.notes,
     session_id: parsed.value.session_id,
+    ...(parsed.value.test ? { test: true } : {}),
     depositWallets: wallets,
     crypto: {
       network: parsed.value.network,
@@ -303,6 +305,31 @@ export function normalizeTxHash(raw) {
   return { ok: true, value };
 }
 
+function readNetwork(raw) {
+  let n = String(raw || "").trim().toLowerCase();
+  if (n === "erc" || n === "erc-20" || n === "eth") n = "erc20";
+  if (n === "trc" || n === "trc-20" || n === "trx") n = "trc20";
+  return n === "erc20" || n === "trc20" ? n : null;
+}
+
+function readReceivedAmount(input) {
+  const raw = input?.amountReceived ?? input?.amount_received;
+  if (raw == null || String(raw).trim() === "") return { ok: false, error: "amount_received_required" };
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000) return { ok: false, error: "invalid_amount_received" };
+  return { ok: true, value: formatAmount(n) };
+}
+
+export function readTracking(input) {
+  const src = input && typeof input === "object" ? input : {};
+  const clean = (v, max) => String(v ?? "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, max);
+  const carrier = clean(src.carrier, 60);
+  const trackingNumber = clean(src.trackingNumber ?? src.tracking_number ?? src.tracking, 80);
+  let trackingUrl = clean(src.trackingUrl ?? src.tracking_url, 500);
+  if (trackingUrl && !/^https:\/\//i.test(trackingUrl)) trackingUrl = "";
+  return { carrier: carrier || null, trackingNumber: trackingNumber || null, trackingUrl: trackingUrl || null };
+}
+
 function findCryptoOrder(store, idOrRef) {
   const key = String(idOrRef || "").trim();
   if (!key) return null;
@@ -334,6 +361,18 @@ export function markCryptoPaid(idOrRef, input, deps) {
     return { ok: false, error: "not_awaiting_crypto", status: 409, order };
   }
 
+  // Legal: confirm only after an on-chain check, with the TXID and the amount received on record.
+  if (!tx.value) return { ok: false, error: "tx_hash_required", status: 400 };
+  const received = readReceivedAmount(input);
+  if (!received.ok) return { ok: false, error: received.error, status: 400 };
+  const due = Number(order.amountDue || order.amount);
+  if (Number.isFinite(due) && Number(received.value) + 0.005 < due) {
+    return { ok: false, error: "amount_short", status: 409, amountDue: formatAmount(due), amountReceived: received.value };
+  }
+  const network = readNetwork(input?.network) || order.crypto?.network || null;
+  if (!network) return { ok: false, error: "network_required", status: 400 };
+  if (network === "trc20" && tx.value.startsWith("0x")) return { ok: false, error: "tx_hash_network_mismatch", status: 400 };
+
   const at = nowIso();
   order.status = CRYPTO_PAID;
   order.paymentConfirmed = true;
@@ -341,7 +380,9 @@ export function markCryptoPaid(idOrRef, input, deps) {
   order.updatedAt = at;
   order.crypto = {
     ...(order.crypto || {}),
+    network,
     txHash: tx.value,
+    amountReceived: received.value,
     markedPaidAt: at,
     markedPaidBy: String(deps.actor || "operator").slice(0, 160),
     markedPaidVia: String(deps.via || "operator").slice(0, 40),
@@ -352,7 +393,7 @@ export function markCryptoPaid(idOrRef, input, deps) {
   return { ok: true, reused: false, status: 200, order: saved, public: toPublicCryptoView(saved, deps.env) };
 }
 
-export function shipOrder(idOrRef, deps) {
+export function shipOrder(idOrRef, deps, input) {
   const store = deps.store;
   const order = findCryptoOrder(store, idOrRef);
   if (!order) return { ok: false, error: "not_found", status: 404 };
@@ -380,6 +421,27 @@ export function shipOrder(idOrRef, deps) {
     blockedReason: null,
     shippedAt: at,
     shippedBy: String(deps.actor || "operator").slice(0, 160),
+    ...readTracking(input),
+  };
+  order.updatedAt = at;
+  store.upsertOrder(order);
+  return { ok: true, status: 200, order: store.getOrder(order.id) };
+}
+
+/** Set or correct carrier / tracking number on an order that is already shipped. */
+export function updateTracking(idOrRef, input, deps) {
+  const store = deps.store;
+  const order = findCryptoOrder(store, idOrRef);
+  if (!order) return { ok: false, error: "not_found", status: 404 };
+  if (order.fulfillment?.status !== "shipped") return { ok: false, error: "not_shipped", status: 409, order };
+  const t = readTracking(input);
+  if (!t.trackingNumber) return { ok: false, error: "tracking_number_required", status: 400 };
+  const at = nowIso();
+  order.fulfillment = {
+    ...order.fulfillment,
+    ...t,
+    trackingUpdatedAt: at,
+    trackingUpdatedBy: String(deps.actor || "operator").slice(0, 160),
   };
   order.updatedAt = at;
   store.upsertOrder(order);

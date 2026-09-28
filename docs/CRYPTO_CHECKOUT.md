@@ -53,8 +53,11 @@ Detail includes amount, order ref, customer, line items, created time, and who/w
 
 | Action | Effect |
 |---|---|
-| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "optional" }` | `status` → `crypto_paid`, records `crypto.markedPaidBy` and `crypto.markedPaidAt`. Fulfillment becomes `ready`. **Does not ship.** |
-| `POST /api/store-orders/:id/ship` | **409 `ship_blocked`** until `crypto_paid`. After that, sets fulfillment `shipped` with who/when. |
+| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "required", "amountReceived": "158.00", "network": "trc20\|erc20" }` | 2026-09-28: TXID and amount received are **required** (legal: confirm on-chain, record amount + TXID). `400 tx_hash_required` / `amount_received_required` / `network_required` / `tx_hash_network_mismatch` (0x hash on TRC20); `409 amount_short` if received < due. On success `status` → `crypto_paid`, records `crypto.{network,txHash,amountReceived,markedPaidBy,markedPaidAt}`. Fulfillment becomes `ready`. **Does not ship.** |
+| `POST /api/store-orders/:id/ship` `{ "carrier": "USPS", "trackingNumber": "…", "trackingUrl": "https://…" }` | **409 `ship_blocked`** until `crypto_paid` (card: until `approved`). After that, sets fulfillment `shipped` with who/when plus optional carrier / tracking number / https tracking URL. |
+| `POST /api/store-orders/:id/tracking` `{ "carrier", "trackingNumber", "trackingUrl" }` | Set or correct tracking on an already shipped order (`409 not_shipped` otherwise). No customer email is sent (not built). |
+
+Checkout body may carry `"test": true`; the order is stored with `test: true` so smoke orders can be found and removed.
 
 `:id` may be the internal `BLR-…` id or the public `CR-…` order ref. Mark-paid on a card order returns **409 `not_crypto_order`**.
 
