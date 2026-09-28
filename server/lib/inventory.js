@@ -14,7 +14,9 @@ export const MOVEMENT_TYPE_PO_INTAKE = "PO_INTAKE";
  * Retatrutide, Reta, and the other INNs are not display names.
  * Alias notes on a PO record are a different field and are not checked here.
  */
-const PUBLIC_NAME_BANNED = /retatrutide|\breta\b|tirzepatide|semaglutide/i;
+// INN names plus their short forms / supplier aliases; the short forms only as a standalone word (no letter on either side),
+// so "Semax" or "retail" are not caught but "R3TA 10mg", "Reta", "tirz", "GLP-1" are. Same list as rapid-orders STANDALONE_TERMS.
+const PUBLIC_NAME_BANNED = /retatrutide|tirzepatide|semaglutide|(^|[^a-z])(r3ta|reta|sema|tirz|glp|trutide)($|[^a-z])/i;
 
 export function dollarsToCents(value) {
   const s = String(value ?? "").trim();

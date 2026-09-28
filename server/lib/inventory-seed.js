@@ -246,11 +246,14 @@ export function applyPvcPurchaseOrder(store, rawLines) {
     }
     const line = normalized.line;
     const mappedSku = resolveApprovedSkuId(store, line);
+    const lineId = `ln:${PVC_PO.po_id}:${line.line_no}`;
+    // A mapping Yehuda approved and staff applied to the stored line survives re-seed / restart (same as #081226).
+    const existingLine = store.listLines().find((row) => row.id === lineId);
     store.upsertLine({
-      id: `ln:${PVC_PO.po_id}:${line.line_no}`,
+      id: lineId,
       po_id: PVC_PO.po_id,
       line_no: line.line_no,
-      sku_id: mappedSku,
+      sku_id: mappedSku || existingLine?.sku_id || null,
       supplier_name: line.supplier_name,
       qty: line.qty,
       unit_cost_cents: line.unit_cost_cents,
