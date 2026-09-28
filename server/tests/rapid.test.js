@@ -429,3 +429,27 @@ test("legal: BAC gift omitted by default and flagged for manual packing; neutral
   assert.deepEqual(neutral.products[1], { product_id: "INS-01", name: "Accessory insert", qty: 1 });
   assert.equal(neutral.manualPack.length, 0);
 });
+
+test("legal: street/slang blend name 'Wolverine' is blocked (any case, any printable field)", async () => {
+  for (const name of ["Wolverine 10mg", "WOLVERINE", "wolverine blend", "RC-06 (Wolverine) vial"]) {
+    assert.throws(
+      () => mapOrderToRapid(paidCard(), { cfg: cfgOf(), skuMap: { ...SKU_MAP, "bpc-157-10mg": { product_id: "RC06-10", name } } }),
+      (e) => e.code === "compound_name_blocked" && /wolverine/i.test(e.message),
+      name,
+    );
+  }
+  assert.throws(
+    () => mapOrderToRapid(paidCard(), { cfg: cfgOf(), skuMap: { ...SKU_MAP, "bpc-157-10mg": { product_id: "WOLVERINE-10", name: "RC-06 10mg vial" } } }),
+    (e) => e.code === "compound_name_blocked",
+  );
+  assert.ok(findCompoundLeaks({ products: [{ product_id: "RC06-10", name: "RC-06 10mg vial", extra: "WoLvErInE" }] }).includes("wolverine"));
+  assert.ok(findCompoundLeaks({ products: [], message: "Wolverine stack" }).includes("wolverine"));
+  assert.ok(findCompoundLeaks({ products: [], custom_data: [{ key: "orig_order_id", value: "wolverine" }] }).includes("wolverine"));
+  // push path: nothing reaches Rapid
+  const db = createStore({ memoryOnly: true });
+  db.upsertOrder(paidCard());
+  const t = mockTransport(baseHandlers({ orders_new: () => bool("orders_new") }));
+  const r = await pushOrderToRapid(db, "BLR-1042", { client: client(t), cfg: cfgOf({ RAPID_ALLOW_REAL_ORDERS: "true" }), skuMap: { ...SKU_MAP, "bpc-157-10mg": { product_id: "RC06-10", name: "Wolverine 10mg" } } });
+  assert.equal(r.error, "compound_name_blocked");
+  assert.equal(t.count("orders_new"), 0);
+});
