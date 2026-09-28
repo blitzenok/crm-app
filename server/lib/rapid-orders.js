@@ -101,7 +101,18 @@ export const COMPOUND_TERMS = [
   "kpv", "nad", "semax", "selank", "kisspeptin", "retatrutide", "tirzepatide", "semaglutide", "cagrilintide", "liraglutide", "sermorelin",
   "cjc-1295", "cjc1295", "ghrp", "hexarelin", "igf-1", "igf1", "melanotan", "pt-141", "bremelanotide", "dsip", "oxytocin",
   "5-amino-1mq", "adamax", "wolverine", "glow", "klow", "bacteriostatic", "bac water", "research solvent", "solvent", "peptide",
+  // INN short forms / supplier aliases (Legal, approved 2026-09-29). Whole word only, see STANDALONE_TERMS.
+  "r3ta", "reta", "sema", "tirz", "glp", "trutide",
 ];
+/**
+ * Matched as a standalone word only, case-insensitive: a letter on either side means no hit, so "Semax", "retail",
+ * "Tirzah" or "semantic" pass, while "R3TA", "Reta 10mg", "R3TA10", "GLP-1" and "tirz" are blocked.
+ */
+export const STANDALONE_TERMS = new Set(["r3ta", "reta", "sema", "tirz", "glp", "trutide"]);
+const escRe = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export function standaloneHit(text, term) {
+  return new RegExp(`(^|[^a-z])${escRe(term.toLowerCase())}($|[^a-z])`).test(String(text || "").toLowerCase());
+}
 const norm = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9+]/g, "");
 /** Terms from the SKU map keys (storefront slugs) of non-stealth products, e.g. "bpc-157-10mg" -> "bpc157". */
 export function compoundTermsFor(skuMap = {}) {
@@ -128,7 +139,7 @@ export function findCompoundLeaks(data, terms = COMPOUND_TERMS) {
       const nt = norm(t);
       if (!nt) continue;
       // short terms (kpv, ghk, nad+, glow...) must stand alone; longer ones match inside run-together text too
-      const hit = nt.length <= 4
+      const hit = STANDALONE_TERMS.has(t.toLowerCase()) ? standaloneHit(lower, t) : nt.length <= 4
         ? new RegExp(`(^|[^a-z0-9])${t.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z0-9])`).test(lower)
         : n.includes(nt);
       if (hit) hits.add(t);

@@ -462,3 +462,26 @@ test("legal: street/slang blend name 'Wolverine' is blocked (any case, any print
   assert.equal(r.error, "compound_name_blocked");
   assert.equal(t.count("orders_new"), 0);
 });
+
+test("Legal 2026-09-29: INN short forms blocked as standalone words only (r3ta, reta, sema, tirz, glp, trutide)", async () => {
+  const { STANDALONE_TERMS } = await import("../lib/rapid-orders.js");
+  const hits = (s) => findCompoundLeaks({ products: [{ product_id: "X-1", name: s }] });
+  for (const s of ["R3TA", "r3ta 10mg", "Reta 10mg", "RETA", "tirz", "Tirz 20mg", "R3TA10", "GLP-1", "GLP2", "GLP2-TPT", "Reta-trutide", "sema 10mg"]) {
+    assert.ok(hits(s).some((t) => STANDALONE_TERMS.has(t)), `${s} must be blocked`);
+  }
+  for (const s of ["retail", "Semax", "semantic", "Tirzah", "G3-R-10", "RC02-500", "G3-R 10mg vial", "RC-02 500mg vial"]) {
+    assert.ok(!hits(s).some((t) => STANDALONE_TERMS.has(t)), `${s} must not trip the new terms`);
+  }
+  // "Semax" is still blocked on packing slips by the pre-existing compound term "semax" (not by "sema")
+  assert.deepEqual(hits("Semax"), ["semax"]);
+  // every stealth / catalog code and neutral name in use passes the whole filter
+  const neutral = ["G3-R-10", "G3-R-20", "G3-R-30", "G3-R-50", "G3-R-60", "G2-T-10", "G2-T-20", "G1-S-5", "G1-S-10", "G1-S-20", "RC02-500", "RC02-1000",
+    "G3-R 10mg", "G3-R 30mg", "G3-R 60mg", "G2-T 20mg", "G1-S 10mg", "G1-S 20mg", "RC-02 500mg", "G3-R 10mg vial", "G2-T 10mg vial", "G1-S 5mg vial"];
+  for (const s of neutral) assert.deepEqual(hits(s), [], s);
+  // the draft SKU map's product ids / names (what Rapid would print) never trip the new terms
+  const map = JSON.parse(readFileSync(new URL("../config/rapid-sku-map.draft.json", import.meta.url), "utf8"));
+  for (const m of Object.values(map)) {
+    if (!m || !m.product_id) continue;
+    assert.ok(!hits(`${m.product_id} ${m.name || ""}`).some((t) => STANDALONE_TERMS.has(t)), m.product_id);
+  }
+});

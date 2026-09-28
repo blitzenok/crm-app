@@ -411,3 +411,34 @@ test("inventory HTTP is operator-only, idempotent, and does not expose catalog q
     {},
   );
 });
+
+test("PVC: an approved sku_id applied to a stored line survives re-seed; unmapped lines stay null; no movements", () => {
+  const { store } = seedStore();
+  store.upsertSku({ id: "sku:G1-S-10", code: "G1-S-10", name: "G1-S 10mg" });
+  const before = store.listLines().find((row) => row.id === "ln:PVC-092326:25");
+  assert.equal(before.sku_id, null);
+  store.upsertLine({ ...before, sku_id: "sku:G1-S-10" });
+  store.upsertLine({ ...store.listLines().find((row) => row.id === "ln:PVC-092326:18"), sku_id: "sku:G3-R-10" });
+  seedInventory(store);
+  seedInventory(store);
+  const lines = store.listLines().filter((row) => row.po_id === "PVC-092326");
+  assert.equal(lines.length, 28);
+  assert.equal(lines.find((row) => row.id === "ln:PVC-092326:25").sku_id, "sku:G1-S-10");
+  assert.equal(lines.find((row) => row.id === "ln:PVC-092326:18").sku_id, "sku:G3-R-10");
+  assert.equal(lines.find((row) => row.id === "ln:PVC-092326:25").supplier_name, "Semaglutide 10mg");
+  assert.equal(lines.filter((row) => row.sku_id).length, 2);
+  assert.equal(store.listMovements().length, 5);
+  assert.equal(buildInventoryView(store).on_hand_units, 400);
+  assert.equal(store.listPurchaseOrders().find((row) => row.po_id === "PVC-092326").status, "PAID_IN_TRANSIT");
+});
+
+test("Legal 2026-09-29: SKU names reject INN short forms as whole words, accept the stealth codes", () => {
+  const store = createInventoryStore({ memoryOnly: true });
+  for (const name of ["R3TA 10mg", "Reta 10mg", "tirz", "GLP-1 20mg", "GLP2", "GLP2-TPT", "Sema 10mg", "Retatrutide 10mg", "Tirzepatide", "Semaglutide 10mg"]) {
+    assert.equal(store.upsertSku({ code: "X-1", name }).error, "public_name_banned", name);
+  }
+  for (const [code, name] of [["G3-R-10", "G3-R 10mg"], ["G3-R-30", "G3-R 30mg"], ["G3-R-60", "G3-R 60mg"], ["G2-T-20", "G2-T 20mg"],
+    ["G1-S-10", "G1-S 10mg"], ["G1-S-20", "G1-S 20mg"], ["RC02-500", "RC-02 500mg"], ["SEMAX-10", "Semax 10mg"], ["RET-1", "retail kit"]]) {
+    assert.equal(store.upsertSku({ code, name }).ok, true, name);
+  }
+});
