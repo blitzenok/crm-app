@@ -163,3 +163,22 @@ only the cart drawer shows the tiered total; the checkout page total, the crypto
 `/api/checkout/charge` and `/api/checkout/crypto` are undiscounted. Turn it on in the same release that makes checkout
 show the tiered total. With it on, a client that sends either the undiscounted or the discounted total is not flagged;
 tampered lines are still repriced to the catalog pack tier and flagged. Order `priceCheck.volumeDiscount` records pct/discount.
+
+---
+
+## Checkout consent log (2026-09-28)
+
+`POST /api/checkout/charge` and `POST /api/checkout/crypto` accept an optional
+`consent: { checks: { <checkboxId>: boolean }, acceptedAt: ISO, pageVersion: string }`
+(checkout ids today: `agreeTerms`, `agreeRuo`; entry gate: `tcCheck1..3`). Sanitised: ≤ 20 checks, ids `[A-Za-z0-9_.:-]{1,64}`,
+booleans only, pageVersion ≤ 64 chars, acceptedAt normalised to ISO. Missing/invalid consent never blocks an order; it is
+recorded as `consent: null, missing: true`. Prices and charging are unaffected.
+
+For every order a route creates (card approved or declined, crypto; not idempotent replays) one line is appended to
+`CONSENT_LOG_PATH` (default: `consent-log.jsonl` next to `STORE_PATH`, i.e. `/var/lib/crm-umg/consent-log.jsonl`),
+O_APPEND + fsync, mode 600: schema, channel, server receivedAt (UTC), orderId / orderRef / idempotencyKey, email, amount,
+currency, shipMethod, orderStatus, ip (existing X-Forwarded-For rule), xRealIp (nginx `$remote_addr`), userAgent (≤ 400),
+consent, missing, prevHash, hash = sha256 of the canonical JSON (sorted keys) of the record without `hash`.
+The order gets `consent` (recorded, missing, allChecked, checks, pageVersion, acceptedAt, receivedAt, ip, hash).
+Staff read: `GET /api/consent?ref=<BLR-id|CR-ref|idempotencyKey>` or `?email=` (operator auth), each record with `hashOk`.
+Keep the file 7+ years; include it in backups; never edit it (deleting a test order leaves its consent line).

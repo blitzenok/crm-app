@@ -35,6 +35,7 @@ import {
   walletFlags,
 } from "./lib/crypto-checkout.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
+import { createConsentLog, recordCheckoutConsent } from "./lib/consent.js";
 import { seedInventory } from "./lib/inventory-seed.js";
 import { handleInventoryHttp } from "./lib/inventory-http.js";
 
@@ -45,6 +46,11 @@ const DRY_RUN = process.env.UMG_DRY_RUN === "1" || process.env.UMG_DRY_RUN === "
 const PUBLIC_URL = (process.env.CRM_PUBLIC_URL || "").replace(/\/$/, "");
 
 const store = createStore({ filePath: STORE_PATH });
+let defaultConsentLog = null;
+function sharedConsentLog() {
+  if (!defaultConsentLog) defaultConsentLog = createConsentLog();
+  return defaultConsentLog;
+}
 let defaultInventoryStore = null;
 
 function sharedInventoryStore() {
@@ -127,6 +133,20 @@ export function createHandler(deps = {}) {
     const pricing = await cardPricer(body || {});
     if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
     return { ok: true, pricing };
+  }
+  // Consent proof log. A test that injects its own store gets no log unless it injects one too (never the live file).
+  const consentLog = deps.consentLog !== undefined ? deps.consentLog : (deps.store ? null : sharedConsentLog());
+  // Append the consent record for a newly created order and attach the summary to the stored order. Never throws and
+  // never changes the charge / amount; a failure is noted on the order and in the service log.
+  function attachConsent(req, orderId, body, channel) {
+    if (!consentLog || !orderId) return;
+    const order = db.getOrder(orderId);
+    if (!order) return;
+    const out = recordCheckoutConsent({ log: consentLog, req, body, order, channel });
+    const fresh = db.getOrder(orderId) || order;
+    fresh.consent = out.ok ? out.summary : { recorded: false, error: out.error };
+    db.upsertOrder(fresh);
+    if (!out.ok) process.stdout.write(`[consent] log failed for ${orderId}: ${out.error}\n`);
   }
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
@@ -354,6 +374,9 @@ export function createHandler(deps = {}) {
         result.chargedAmount = result.order.amount;
         result.priceAdjusted = Boolean(result.order.priceMismatch);
       }
+      // Consent proof for every card order this request created or re-attempted (approved or declined). The order
+      // object in this response is left as-is.
+      if (result.order?.id && !result.reused) attachConsent(req, result.order.id, body, "card");
       if (result.ok) {
         markConvertedBySession(db, body.session_id || body.sessionId, {
           via: "charge",
@@ -386,6 +409,7 @@ export function createHandler(deps = {}) {
         return json(result.status || 400, { ok: false, error: result.error });
       }
       if (!result.reused) {
+        attachConsent(req, result.order?.id, body, "crypto");
         markConvertedBySession(db, body.session_id || body.sessionId, {
           via: "crypto",
           id: result.order?.id || null,
@@ -399,6 +423,17 @@ export function createHandler(deps = {}) {
       const view = publicCryptoStatus(db, ref);
       if (!view) return json(404, { ok: false, error: "not_found" });
       return json(200, view);
+    }
+
+    // Staff: consent proof records for an order (BLR-id, CR-ref or idempotency key) or an email. Read-only.
+    if (path === "/api/consent" && req.method === "GET") {
+      if (await denyUnlessOperator()) return;
+      if (!consentLog) return json(503, { ok: false, error: "consent_log_disabled" });
+      const ref = (url.searchParams.get("ref") || "").trim();
+      const email = (url.searchParams.get("email") || "").trim();
+      if (!ref && !email) return json(400, { ok: false, error: "ref_or_email_required" });
+      const records = consentLog.find({ ref, email });
+      return json(200, { ok: true, count: records.length, records });
     }
 
     if (path === "/api/checkout/quote" && req.method === "POST") {
