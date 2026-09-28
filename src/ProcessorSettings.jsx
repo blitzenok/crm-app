@@ -52,6 +52,7 @@ export default function ProcessorSettings({ isAdmin }) {
   }
 
   const health = data?.health || {};
+  const cleffo = data?.cleffo || null;
 
   return (
     <div>
@@ -61,6 +62,16 @@ export default function ProcessorSettings({ isAdmin }) {
           Locked SoT: UMG is #1, then Tagada, then Centrobill. Soft decline / timeout / 5xx / processor-down moves to the next enabled PSP with the same cart key. Hard decline (fraud / do-not-honor / invalid card) stops. Clearing stays in CRM only.
         </p>
       </div>
+      {cleffo && (
+        <div style={{ marginBottom: 22, padding: "14px 16px", background: "rgba(15,23,42,0.6)", borderRadius: 10, fontSize: 13, color: "#CBD5E1" }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Cleffo split (read-only — set on the server)</div>
+          <div>Enabled: <b>{cleffo.cleffoEnabled ? "yes" : "no"}</b> · Env: {cleffo.cleffoEnv} · Split to Cleffo: {cleffo.splitPct}% · Max attempts: {cleffo.maxAttempts}</div>
+          <div>Keys ready: {cleffo.keys?.ready ? "yes" : "no"} ({cleffo.keys?.baseUrl})</div>
+          <div>Statement descriptor — UMG: {cleffo.descriptors?.umg?.configured} · Cleffo: {cleffo.descriptors?.cleffo?.configured}{cleffo.descriptors?.cleffo?.statementDescriptorConfirmed ? "" : " (not confirmed)"}</div>
+          <div>Routed attempts: UMG {cleffo.counts?.umg ?? 0} · Cleffo {cleffo.counts?.cleffo ?? 0}</div>
+          <div style={{ color: "#94A3B8", marginTop: 4 }}>{cleffo.rules}</div>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ background: "rgba(30,41,59,0.8)", border: "1px solid rgba(148,163,184,0.12)", borderRadius: 14, padding: 18 }}>
