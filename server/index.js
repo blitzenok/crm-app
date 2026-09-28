@@ -36,8 +36,9 @@ import {
 } from "./lib/crypto-checkout.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
 import { createConsentLog, recordCheckoutConsent } from "./lib/consent.js";
+import { createEmailLog, createOrderEmailer, emailConfig, emailTypes, maskEmail, canSend, sampleOrder } from "./lib/order-emails.js";
 import { createRapidClient, rapidConfig, RapidError } from "./lib/rapid.js";
-import { createRapidScheduler, loadSkuMap, pushOrderToRapid, pushSyntheticTestOrder } from "./lib/rapid-orders.js";
+import { createRapidScheduler, isPaidOrder, loadSkuMap, pushOrderToRapid, pushSyntheticTestOrder } from "./lib/rapid-orders.js";
 import { seedInventory } from "./lib/inventory-seed.js";
 import { handleInventoryHttp } from "./lib/inventory-http.js";
 import {
@@ -202,10 +203,20 @@ export function createHandler(deps = {}) {
   const cleffoDeps = deps.cleffoDeps || {};
   const routingCfg = () => (deps.routingConfig ? deps.routingConfig() : routingConfig());
   const cleffoSigKey = () => (cleffoDeps.config || loadCleffoConfig()).signatureKey;
+  // Transactional customer emails (confirmation / shipping / follow-up). A test with its own store gets no log file
+  // unless it injects one. kickEmails never throws and never delays the response.
+  const orderEmailer = deps.orderEmailer || createOrderEmailer({
+    db, cfg: emailConfig(deps.emailEnv || process.env),
+    ...(deps.store ? { log: createEmailLog(deps.emailLogPath || null) } : {}),
+    ...(deps.emailTransportFactory ? { transportFactory: deps.emailTransportFactory } : {}),
+    ...(deps.emailSleep ? { sleep: deps.emailSleep } : {}),
+  });
+  const kickEmails = (orderId) => { try { orderEmailer.kick(orderId); } catch { /* never block the order flow */ } };
   function onCleffoPaid(order) {
     markConvertedBySession(db, order.session_id, { via: "cleffo", id: order.id });
     forwardInBackground(order.id, "cleffo");
     maybeAutoPush(order.id);
+    kickEmails(order.id);
   }
   function recordConsentFor(req, body) {
     return (orderId) => {
@@ -385,7 +396,7 @@ export function createHandler(deps = {}) {
             amountReceived: result.amountReceived,
           });
         }
-        if (!result.reused) maybeAutoPush(result.order?.id);
+        if (!result.reused) { maybeAutoPush(result.order?.id); kickEmails(result.order?.id); }
         return json(200, {
           ok: true,
           reused: Boolean(result.reused),
@@ -409,6 +420,7 @@ export function createHandler(deps = {}) {
           paymentConfirmed: result.paymentConfirmed ?? Boolean(result.order?.paymentConfirmed),
         });
       }
+      kickEmails(result.order?.id);
       return json(200, {
         ok: true,
         order: result.order,
@@ -491,6 +503,7 @@ export function createHandler(deps = {}) {
       // After the answer: a slow or broken order service must never cost the customer the charge response.
       if (result.ok && !result.reused && String(result.order?.status || "").toLowerCase() === "approved") {
         forwardInBackground(result.order.id, "charge");
+        kickEmails(result.order.id);
         maybeAutoPush(result.order.id);
       }
       return out;
@@ -612,6 +625,66 @@ export function createHandler(deps = {}) {
       if (!ref && !email) return json(400, { ok: false, error: "ref_or_email_required" });
       const records = consentLog.find({ ref, email });
       return json(200, { ok: true, count: records.length, records });
+    }
+
+    // Staff: set tracking on any paid order (card / Cleffo / crypto) -> shipped; the shipping email follows.
+    const trk = path.match(/^\/api\/fulfillment\/([^/]+)\/tracking$/);
+    if (trk && req.method === "POST") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const order = db.getOrder(decodeURIComponent(trk[1])) || db.getOrderByRef(decodeURIComponent(trk[1]));
+      if (!order) return json(404, { ok: false, error: "not_found" });
+      const body = await readBody(req).catch(() => ({}));
+      const number = String(body.trackingNumber || body.tracking_number || "").replace(/[^A-Za-z0-9 -]/g, "").trim().slice(0, 60);
+      if (!number) return json(400, { ok: false, error: "tracking_number_required" });
+      if (!isPaidOrder(order)) return json(409, { ok: false, error: "not_paid" });
+      const at = new Date().toISOString();
+      const f = order.fulfillment || {};
+      order.fulfillment = {
+        ...f, status: "shipped", shippable: false, blockedReason: null, shippedAt: f.shippedAt || at, shippedBy: f.shippedBy || String(op.actor || "operator").slice(0, 160),
+        carrier: String(body.carrier || f.carrier || "").slice(0, 60) || null, trackingNumber: number, trackingUpdatedAt: at, trackingUpdatedBy: String(op.actor || "operator").slice(0, 160),
+      };
+      order.updatedAt = at;
+      db.upsertOrder(order);
+      kickEmails(order.id);
+      return json(200, { ok: true, order: db.getOrder(order.id) });
+    }
+
+    if (path.startsWith("/api/emails/")) {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      if (path === "/api/emails/status" && req.method === "GET") {
+        const c = orderEmailer.cfg;
+        return json(200, { ok: true, enabled: c.enabled, canSend: canSend(c), supportHost: c.support.host || null, supportUser: c.support.user ? maskEmail(c.support.user) : null,
+          supportPasswordSet: Boolean(c.support.pass), noreplyPasswordSet: Boolean(c.noreply.pass), alertTo: c.alertTo || null, since: c.since ? new Date(c.since).toISOString() : null,
+          followupDays: c.followupDays, types: emailTypes() });
+      }
+      if (path === "/api/emails/log" && req.method === "GET") {
+        const full = url.searchParams.get("full") === "1";
+        const rows = orderEmailer.log.read({ orderId: url.searchParams.get("orderId") || undefined, type: url.searchParams.get("type") || undefined, limit: Math.min(1000, Number(url.searchParams.get("limit")) || 200) });
+        return json(200, { ok: true, count: rows.length, entries: full ? rows : rows.map((r) => ({ ...r, to: maskEmail(r.to) })) });
+      }
+      const pv = path.match(/^\/api\/emails\/preview\/([a-z0-9_]+)$/);
+      if (pv && req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        if (!emailTypes().includes(pv[1])) return json(404, { ok: false, error: "unknown_type" });
+        const order = body.orderId ? db.getOrder(body.orderId) || db.getOrderByRef(body.orderId) : sampleOrder(pv[1]);
+        if (!order) return json(404, { ok: false, error: "not_found" });
+        const r = orderEmailer.preview(pv[1], order, body.data);
+        return json(200, { ok: true, type: pv[1], subject: r.subject, guard: r.guard, text: r.text, html: r.html });
+      }
+      const rs = path.match(/^\/api\/emails\/resend\/([^/]+)\/([a-z0-9_]+)$/);
+      if (rs && req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        const r = await orderEmailer.send(decodeURIComponent(rs[1]), rs[2], { force: true, qa: body.qa === true, via: `resend:${op.actor || "operator"}` });
+        return json(r.status === "not_found" ? 404 : r.status === "unknown_type" ? 404 : 200, r);
+      }
+      if (path === "/api/emails/process" && req.method === "POST") {
+        const body = await readBody(req).catch(() => ({}));
+        const r = await orderEmailer.processDue({ orderId: body.orderId || undefined, qa: body.qa === true && Boolean(body.orderId), forceFollowup: body.forceFollowup === true && Boolean(body.orderId) });
+        return json(200, { ok: true, ...r });
+      }
+      return json(404, { error: "not_found" });
     }
 
     if (path.startsWith("/api/rapid/")) {
@@ -876,6 +949,7 @@ export function createHandler(deps = {}) {
   };
   handlerFn.rapidScheduler = rapidScheduler;
   handlerFn.onCleffoPaid = onCleffoPaid;
+  handlerFn.orderEmailer = orderEmailer;
   return handlerFn;
 }
 
@@ -901,6 +975,12 @@ if (isMain) {
     const c = rapidConfig();
     process.stdout.write(`[rapid] scheduler on env=${c.env} autoPush=${c.autoPush} allowRealOrders=${c.allowRealOrders}\n`);
   }
+  handler.orderEmailer.start(Number(process.env.ORDER_EMAILS_SWEEP_MS || 30000));
+  {
+    const c = handler.orderEmailer.cfg;
+    process.stdout.write(`[emails] sweeper on enabled=${c.enabled} canSend=${canSend(c)} since=${c.since ? new Date(c.since).toISOString() : "none"}\n`);
+  }
+
   // Settles open Cleffo payment links from the status API (no-op while there are none).
   startCleffoSweeper(store, { intervalMs: Number(process.env.CLEFFO_SWEEP_MS || 60000), onPaid: handler.onCleffoPaid });
   if (isAbandonDigestEnabled()) {
