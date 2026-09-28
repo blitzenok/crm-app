@@ -17,6 +17,28 @@ export const DEFAULT_QUOTE_URL = "http://127.0.0.1:4000/msolpeptides-api/coupon-
 export const EXPRESS_SHIPPING = 18.99;
 export const FREE_SLUGS = new Set(["research-solvent"]);
 
+/**
+ * Storefront volume tier, mirrored from cart-vial.js "Footer v4" (volumePct / updateTotals, v3.00k8m4d):
+ *   merch = sum(price * qty) over non-gift lines (gift / research-solvent excluded), before shipping
+ *   pct   = merch >= 500 ? 15 : merch >= 250 ? 10 : merch >= 100 ? 5 : 0      (thresholds inclusive, undiscounted merch)
+ *   now   = Math.round(merch * (1 - pct / 100) * 100) / 100                     (rounded to the cent, JS Math.round)
+ * Shipping is not discounted and no coupon is applied (the checkout coupon note never changes the total).
+ * NOTE: as of v3.00k8m4d only the cart drawer shows this; the checkout page total and the amount it sends are
+ * undiscounted. Off unless VOLUME_DISCOUNT_ENABLED=true (or opts.volumeDiscount).
+ */
+export function volumePct(merchDollars) {
+  if (merchDollars >= 500) return 15;
+  if (merchDollars >= 250) return 10;
+  if (merchDollars >= 100) return 5;
+  return 0;
+}
+export function volumeDiscountedCents(merchCents) {
+  const merch = merchCents / 100;
+  const pct = volumePct(merch);
+  if (!pct) return { pct: 0, cents: merchCents };
+  return { pct, cents: Math.round(merch * (1 - pct / 100) * 100) };
+}
+
 function cents(n) {
   return Math.round(Number(n) * 100);
 }
@@ -100,7 +122,10 @@ export async function priceCart(input, opts = {}) {
   if (unknownItems.length) return { ok: false, error: "unknown_item", status: 400, unknownItems };
   const subtotalCents = priced.reduce((a, l) => a + l.lineCents, 0);
   if (!(subtotalCents > 0)) return { ok: false, error: "pricing_unavailable", status: 503 };
-  const amountCents = subtotalCents + shippingCents;
+  const volumeOn = opts.volumeDiscount !== undefined ? Boolean(opts.volumeDiscount) : process.env.VOLUME_DISCOUNT_ENABLED === "true";
+  const vol = volumeOn ? volumeDiscountedCents(subtotalCents) : { pct: 0, cents: subtotalCents };
+  const amountCents = vol.cents + shippingCents;
+  const undiscountedCents = subtotalCents + shippingCents;
   return {
     ok: true,
     amount: fmt(amountCents),
@@ -108,7 +133,9 @@ export async function priceCart(input, opts = {}) {
     shipping: fmt(shippingCents),
     shipMethod: express ? "express" : "ground",
     clientAmount: Number.isFinite(clientAmountCents) ? fmt(clientAmountCents) : null,
-    mismatch: !Number.isFinite(clientAmountCents) || clientAmountCents !== amountCents,
+    // The checkout page sends the undiscounted total; either figure is an honest storefront number.
+    mismatch: !Number.isFinite(clientAmountCents) || (clientAmountCents !== amountCents && clientAmountCents !== undiscountedCents),
+    volumeDiscount: vol.pct ? { pct: vol.pct, merch: fmt(subtotalCents), discount: fmt(subtotalCents - vol.cents), merchAfter: fmt(vol.cents) } : null,
     source: "products-api:coupon-quote",
     lines: priced.map((l) => ({ sku: l.sku, slug: l.slug, mg: l.mg, qty: l.qty, line: fmt(l.lineCents), unit: fmt(Math.round(l.lineCents / l.qty)), rule: l.rule })),
   };

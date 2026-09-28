@@ -272,6 +272,8 @@ export function createCryptoCheckout(input, deps) {
             shipMethod: pricing.shipMethod,
             mismatch: pricing.mismatch,
             discountInfo: pricing.discountInfo,
+            volumeDiscount: pricing.volumeDiscount || null,
+            lines: pricing.lines,
           },
           priceMismatch: pricing.mismatch,
         }

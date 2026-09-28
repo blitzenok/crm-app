@@ -86,6 +86,7 @@ export function buildNotifyPayload(order, opts = {}) {
     `${tag}Card payment APPROVED via ${order.winningProcessor || "umg"}`,
     order.winningTxnId ? `processor txn ${order.winningTxnId}` : "",
     `card statement shows: ${order.descriptor || CARD_STATEMENT_DESCRIPTOR}`,
+    order.priceCheck?.volumeDiscount ? `volume discount ${order.priceCheck.volumeDiscount.pct}% (−$${order.priceCheck.volumeDiscount.discount}) included in total` : "",
     order.notes ? `customer notes: ${String(order.notes).slice(0, 800)}` : "",
   ].filter(Boolean);
   const lines = items.map((i) => `${i.qty}x ${i.name}${i.mg ? ` ${i.mg}` : ""} @ $${money(i.price)}`);
