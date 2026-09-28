@@ -9,6 +9,15 @@ export const RESPONSE_HOURS = "8:00 AM – 9:00 PM ET";
 export const RUO_FOOTER = "For research use only. Not for human or veterinary use. Not a drug, food, or cosmetic.";
 export const MANUAL_CONFIRM_LINE = "We confirm your order manually within one business day.";
 export const FOLLOWUP_QUESTION = "Did your order arrive complete and intact?";
+// Header logo (blue helix + black "BIO LABS", transparent PNG, 400x167 = 2x for a 200px display width). Must be an
+// absolute https URL in real emails; ORDER_EMAIL_LOGO_URL may override it (https only). Previews may pass a data: URI.
+export const EMAIL_LOGO_URL = "https://biolabsresearch.co/media/email/biolabs-logo-email.png";
+export const EMAIL_LOGO = { alt: "BioLabs Research", width: 200, height: 84 };
+export function logoSrc(override, env = process.env) {
+  if (override && (/^https:\/\/[^\s"'<>]+$/.test(override) || /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(override))) return override;
+  const fromEnv = env.ORDER_EMAIL_LOGO_URL;
+  return fromEnv && /^https:\/\/[^\s"'<>]+$/.test(fromEnv) ? fromEnv : EMAIL_LOGO_URL;
+}
 const C = { black: "#000000", gold: "#B08D57", cream: "#F5F2EC", white: "#FFFFFF", text: "#111111", muted: "#555555", rule: "#E6E0D4" };
 const HEAD = "Archivo, Arial, Helvetica, sans-serif";
 const BODY = "'DM Sans', Arial, Helvetica, sans-serif";
@@ -142,17 +151,22 @@ export function deliveryWindow(shippedAt, { shipMethod = "", courierCode = "" } 
 // ---- building blocks --------------------------------------------------------------------------------------
 export const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
+// Order numbers (BLR-1099, CR-R9N3N3MR) never wrap at the hyphen in HTML. A nowrap span is used rather than a
+// non-breaking-hyphen character so that copying the number still gives a plain "-". The text part is untouched.
+export const ORDER_NO_RE = /\b(?:BLR|CR)-[A-Z0-9]+\b/g;
+export const escNb = (v) => esc(v).replace(ORDER_NO_RE, (m) => `<span style="white-space:nowrap;">${m}</span>`);
+
 /** Blocks return { html, text }. Templates compose them; renderLayout wraps them in the brand shell + footer. */
 export const h = {
-  heading: (t) => ({ html: `<h1 style="margin:0 0 16px;font-family:${HEAD};font-size:22px;line-height:1.3;font-weight:700;color:${C.black};">${esc(t)}</h1>`, text: `${t}\n${"=".repeat(Math.min(60, t.length))}` }),
-  p: (t) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:15px;line-height:1.6;color:${C.text};">${esc(t)}</p>`, text: t }),
-  strong: (t) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:15px;line-height:1.6;color:${C.text};font-weight:700;">${esc(t)}</p>`, text: t }),
+  heading: (t) => ({ html: `<h1 style="margin:0 0 16px;font-family:${HEAD};font-size:22px;line-height:1.3;font-weight:700;color:${C.black};">${escNb(t)}</h1>`, text: `${t}\n${"=".repeat(Math.min(60, t.length))}` }),
+  p: (t) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:15px;line-height:1.6;color:${C.text};">${escNb(t)}</p>`, text: t }),
+  strong: (t) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:15px;line-height:1.6;color:${C.text};font-weight:700;">${escNb(t)}</p>`, text: t }),
   kv: (rows) => ({
-    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;border-collapse:collapse;">${rows.map(([k, v]) => `<tr><td style="padding:4px 0;font-family:${BODY};font-size:14px;color:${C.muted};width:40%;vertical-align:top;">${esc(k)}</td><td style="padding:4px 0;font-family:${BODY};font-size:14px;color:${C.text};text-align:right;vertical-align:top;">${esc(v)}</td></tr>`).join("")}</table>`,
+    html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 16px;border-collapse:collapse;">${rows.map(([k, v]) => `<tr><td style="padding:4px 0;font-family:${BODY};font-size:14px;color:${C.muted};width:40%;vertical-align:top;">${esc(k)}</td><td style="padding:4px 0;font-family:${BODY};font-size:14px;color:${C.text};text-align:right;vertical-align:top;">${escNb(v)}</td></tr>`).join("")}</table>`,
     text: rows.map(([k, v]) => `${k}: ${v}`).join("\n"),
   }),
   section: (t) => ({ html: `<p style="margin:20px 0 8px;font-family:${HEAD};font-size:13px;letter-spacing:1px;text-transform:uppercase;font-weight:700;color:${C.gold};">${esc(t)}</p>`, text: `\n${t.toUpperCase()}` }),
-  lines: (texts) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:14px;line-height:1.6;color:${C.text};">${texts.map(esc).join("<br>")}</p>`, text: texts.join("\n") }),
+  lines: (texts) => ({ html: `<p style="margin:0 0 14px;font-family:${BODY};font-size:14px;line-height:1.6;color:${C.text};">${texts.map(escNb).join("<br>")}</p>`, text: texts.join("\n") }),
   button: (label, href) => ({
     html: `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 18px;"><tr><td style="background:${C.black};border:1px solid ${C.gold};"><a href="${esc(href)}" style="display:inline-block;padding:12px 22px;font-family:${HEAD};font-size:14px;font-weight:700;color:${C.white};text-decoration:none;">${esc(label)}</a></td></tr></table>`,
     text: `${label}: ${href}`,
@@ -177,7 +191,7 @@ export const h = {
   },
 };
 
-export function renderLayout({ title, preheader = "", blocks }) {
+export function renderLayout({ title, preheader = "", blocks, logoUrl }) {
   const bodyHtml = blocks.map((b) => b.html).join("\n");
   const bodyText = blocks.map((b) => b.text).join("\n\n").replace(/\n{3,}/g, "\n\n");
   const footerHtml = `<p style="margin:0 0 8px;font-family:${BODY};font-size:13px;line-height:1.6;color:${C.text};">Questions? Email <a href="mailto:${SUPPORT_EMAIL}" style="color:${C.black};text-decoration:underline;">${SUPPORT_EMAIL}</a><br>Response hours: ${esc(RESPONSE_HOURS)}</p><p style="margin:0 0 8px;font-family:${BODY};font-size:12px;line-height:1.6;color:${C.muted};">${esc(RUO_FOOTER)}</p><p style="margin:0;font-family:${BODY};font-size:12px;line-height:1.6;color:${C.muted};">BioLabs Research · biolabsresearch.co<br>This is a transactional email about your order.</p>`;
@@ -190,7 +204,7 @@ export function renderLayout({ title, preheader = "", blocks }) {
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${esc(preheader)}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.cream};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" class="wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:${C.white};border:1px solid ${C.gold};">
-<tr><td style="background:${C.black};padding:20px 28px;border-bottom:3px solid ${C.gold};"><span style="font-family:${HEAD};font-size:22px;font-weight:700;letter-spacing:4px;color:${C.white};">BIO LABS</span><span style="font-family:${HEAD};font-size:11px;letter-spacing:3px;color:${C.gold};padding-left:10px;">RESEARCH</span></td></tr>
+<tr><td align="left" style="background:${C.white};padding:22px 28px 18px;border-bottom:3px solid ${C.gold};"><img src="${esc(logoSrc(logoUrl))}" width="${EMAIL_LOGO.width}" height="${EMAIL_LOGO.height}" alt="${EMAIL_LOGO.alt}" style="display:block;width:${EMAIL_LOGO.width}px;max-width:${EMAIL_LOGO.width}px;height:auto;border:0;outline:none;text-decoration:none;font-family:${HEAD};font-size:20px;font-weight:700;color:${C.black};"></td></tr>
 <tr><td class="pad" style="padding:30px 28px 10px;">
 ${bodyHtml}
 </td></tr>
@@ -272,11 +286,11 @@ export function emailGuard({ subject, text }, nameMap = loadNameMap()) {
 }
 
 /** Render one email. templates: registry (built-ins + registered types). ctx.data is passed through to templates. */
-export function renderEmail(type, order, { templates = TEMPLATES, nameMap = loadNameMap(), data = {} } = {}) {
+export function renderEmail(type, order, { templates = TEMPLATES, nameMap = loadNameMap(), data = {}, logoUrl } = {}) {
   const tpl = templates[type];
   if (!tpl) throw new Error(`unknown email type ${type}`);
   const ctx = { nameMap, data };
-  const out = renderLayout({ title: tpl.subject(order, ctx), preheader: tpl.preheader ? tpl.preheader(order, ctx) : "", blocks: tpl.blocks(order, ctx) });
+  const out = renderLayout({ title: tpl.subject(order, ctx), preheader: tpl.preheader ? tpl.preheader(order, ctx) : "", blocks: tpl.blocks(order, ctx), logoUrl });
   const redacted = renderLayout({ title: "", blocks: tpl.blocks(order, { ...ctx, redact: true }) });
   const subject = tpl.subject(order, ctx);
   return { subject, html: out.html, text: out.text, guard: emailGuard({ subject, text: redacted.text }, nameMap) };
