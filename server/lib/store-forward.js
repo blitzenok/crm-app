@@ -63,9 +63,21 @@ export function buildNotifyPayload(order, opts = {}) {
       price: Number.isFinite(price) && price >= 0 ? Number(price.toFixed(2)) : 0,
     };
   });
-  const subtotal = items.reduce((a, i) => a + i.price * i.qty, 0);
+  // Server-priced orders: forward the catalog line prices and the charged amount, never the browser's figures.
+  const pc = order.priceCheck && Array.isArray(order.priceCheck.lines) ? order.priceCheck : null;
+  if (pc && pc.lines.length === items.length) {
+    pc.lines.forEach((l, i) => {
+      const unit = Number(l.unit);
+      if (Number.isFinite(unit)) items[i].price = Number(unit.toFixed(2));
+      if (!items[i].slug && l.slug) items[i].slug = l.slug;
+      if (!items[i].mg && l.mg) items[i].mg = l.mg;
+    });
+  }
   const total = Number(order.amount) || 0;
-  const shippingCost = Math.max(0, Math.round((total - subtotal) * 100) / 100);
+  const subtotal = pc && Number.isFinite(Number(pc.subtotal)) ? Number(pc.subtotal) : items.reduce((a, i) => a + i.price * i.qty, 0);
+  const shippingCost = pc && Number.isFinite(Number(pc.shipping))
+    ? Number(pc.shipping)
+    : Math.max(0, Math.round((total - subtotal) * 100) / 100);
   const ref = String(order.id || "").slice(0, 64);
   const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
   const addr = [c.address, c.city, c.state, c.zip, c.country].filter(Boolean).join(", ");

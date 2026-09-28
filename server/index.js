@@ -7,7 +7,7 @@ import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
 import { pollPending, startPoller } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
-import { priceCryptoCart } from "./lib/pricing.js";
+import { priceCryptoCart, priceCardCart } from "./lib/pricing.js";
 import { createMockUmg } from "./lib/processors/umg.js";
 import * as tagada from "./lib/processors/tagada.js";
 import * as centrobill from "./lib/processors/centrobill.js";
@@ -115,6 +115,19 @@ export function createHandler(deps = {}) {
   const forwardUrl = deps.forwardUrl || process.env.STORE_FORWARD_URL || undefined;
   // Crypto amount from the catalog (products-api coupon-quote), never from the browser. Injected in tests.
   const cryptoPricer = deps.cryptoPricer || (process.env.CRYPTO_SERVER_PRICING === "true" ? (input) => priceCryptoCart(input) : null);
+  // Card amount from the catalog too (CARD_SERVER_PRICING=true on the host). Injected in tests.
+  const cardPricer = deps.cardPricer || (process.env.CARD_SERVER_PRICING === "true" ? (input) => priceCardCart(input) : null);
+  async function priceCardBody(body) {
+    if (!cardPricer) return { ok: true, pricing: null };
+    const key = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+    const existing = key ? db.getOrderByIdempotency(key) : null;
+    const st = String(existing?.status || "").toLowerCase();
+    // Replays of an approved / pending / in-flight order are answered from the stored order; no new price, no charge.
+    if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return { ok: true, pricing: null };
+    const pricing = await cardPricer(body || {});
+    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
+    return { ok: true, pricing };
+  }
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
@@ -329,7 +342,18 @@ export function createHandler(deps = {}) {
         return json(503, paymentsDisabledBody());
       }
       const body = await readBody(req);
-      const result = await chargeCart(body, { store: db, adapters: resolveAdapters() });
+      const priced = await priceCardBody(body);
+      if (!priced.ok) {
+        const message = priced.error === "unknown_item"
+          ? "One of the items in your cart is no longer available. Please refresh the cart and try again."
+          : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
+        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
+      }
+      const result = await chargeCart(priced.pricing ? { ...body, pricing: priced.pricing } : body, { store: db, adapters: resolveAdapters() });
+      if (result.order) {
+        result.chargedAmount = result.order.amount;
+        result.priceAdjusted = Boolean(result.order.priceMismatch);
+      }
       if (result.ok) {
         markConvertedBySession(db, body.session_id || body.sessionId, {
           via: "charge",
@@ -484,7 +508,14 @@ export function createHandler(deps = {}) {
         },
         centrobill,
       };
+      let dryPricing = null;
+      if (body.serverPricing === true) {
+        const priced = await priceCardBody({ ...body, idempotencyKey: body.idempotencyKey || "" });
+        if (!priced.ok) return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, dryRun: true });
+        dryPricing = priced.pricing;
+      }
       const result = await chargeCart({
+        pricing: dryPricing,
         idempotencyKey: body.idempotencyKey || `DRY-${Date.now()}`,
         amount: body.amount || "20.00",
         currency: "USD",

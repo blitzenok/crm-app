@@ -130,3 +130,21 @@ Unknown catalog items → `400 unknown_item`; catalog/products-api down → `503
 Staff cleanup (operator auth):
 - `DELETE /api/store-orders/:id|:orderRef` — only orders with `test: true` (`409 not_test_order` otherwise).
 - `DELETE /api/checkout/abandon/:session_id` — only records with a QA/test email (`qa-…`, `qa+…`, `…+test@`, `dry-run@`, `probe…`) or `test: true`.
+
+---
+
+## Server-side card amount (2026-09-28)
+
+`CARD_SERVER_PRICING=true` (host drop-in `card-pricing.conf`; rollback `/root/rollback-card-pricing.sh`).
+Before any processor call, `/api/checkout/charge` prices the cart with `priceCardCart` (card items carry the **unit** price;
+crypto items carry the line total). The charged amount (sent to UMG) is the server amount; `clientAmount`, `priceMismatch`
+and `priceCheck` (per-line rule) are stored on the order. Response adds `chargedAmount` and `priceAdjusted`.
+`400 unknown_item` / `503 pricing_unavailable` return `charged: false` and create no order. Replays of an approved,
+pending or in-flight order are answered from the stored order (no re-pricing, no second charge).
+Dry-run can exercise it with `"serverPricing": true`.
+
+Line rule (both card and crypto): each line is priced per line through coupon-quote at its qty (pack tier) and at qty 1.
+A client line equal to the pack-tier total or to the single-bottle total (older add paths keep the 1-bottle price at 2+) is
+honoured exactly; anything else is repriced to the pack-tier total and flagged. The free research solvent
+(`research-solvent`, BAC gift) is $0 and is not sent to the catalog (it used to come back `unknown_item`).
+The card forward to notify-order uses the stored server line prices, subtotal, shipping and the charged amount.
