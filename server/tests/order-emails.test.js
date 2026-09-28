@@ -8,6 +8,7 @@ import { priceCardCart, priceCryptoCart } from "../lib/pricing.js";
 import { RUO_FOOTER, FOLLOWUP_QUESTION, orderTotals, renderEmail, h } from "../lib/email-templates.js";
 import { createEmailLog, createOrderEmailer, emailConfig, registerEmailType, sampleOrder, maskEmail } from "../lib/order-emails.js";
 import { startCrmServer } from "../index.js";
+import { createMockChain, createMockScreener } from "./crypto-mock.js";
 
 const KEY = "test-marketing-digest-key";
 const TRC = `T${"9".repeat(33)}`;
@@ -256,8 +257,15 @@ test("routes: card checkout 200 even when SMTP throws; crypto mark-paid + tracki
   };
   let smtpCalls = 0;
   const logPath = tmpLog();
+  // 2026-09-28: crypto mark-paid verifies the tx on-chain (mocked chain here)
+  const TRC_W = "TXfrivx3QHrYDwPcaj3ojEDQFvAzX8EdKv";
+  const trcChain = createMockChain("trc20", { latest: 5000 });
   const server = await startCrmServer(0, {
     store,
+    cryptoEnv: { ...process.env, CRYPTO_USDT_TRC: TRC_W, CRYPTO_VERIFY_ENABLED: "true" },
+    cryptoChains: { trc20: trcChain, erc20: createMockChain("erc20") },
+    cryptoScreener: createMockScreener(),
+    cryptoConfirmSecret: "c".repeat(40),
     emailEnv: ON,
     emailLogPath: logPath,
     emailSleep: async () => {},
@@ -293,6 +301,7 @@ test("routes: card checkout 200 even when SMTP throws; crypto mark-paid + tracki
     }
     const early = await fetch(`${base}/api/fulfillment/${kb.orderId}/tracking`, { method: "POST", headers: staff, body: JSON.stringify({ carrier: "USPS", trackingNumber: "9400111899223197428490" }) });
     assert.equal(early.status, 409);
+    trcChain.addTx({ hash: TX_TRON, to: TRC_W, units: kb.payAmountUnits, blockNumber: 5000 - 25 });
     const paid = await fetch(`${base}/api/store-orders/${kb.orderId}/mark-paid`, { method: "POST", headers: staff, body: JSON.stringify({ txHash: TX_TRON, amountReceived: kb.amountDue }) });
     assert.equal(paid.status, 200);
     assert.ok(await waitFor(() => store.getOrder(kb.orderId)?.emails?.confirmation?.status === "sent"));
