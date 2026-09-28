@@ -202,6 +202,7 @@ export function toPublicCryptoView(order, env = process.env) {
     amount: order.amount,
     currency: order.currency,
     amountDue: order.amountDue || order.amount,
+    priceAdjusted: Boolean(order.priceMismatch),
     payAsset: "USDT",
     network: order.crypto?.network || null,
     paymentConfirmed: paid,
@@ -237,6 +238,11 @@ export function createCryptoCheckout(input, deps) {
     };
   }
 
+  // Server-side price (route passes deps.pricing when CRYPTO_SERVER_PRICING is on): the browser's amount is kept for
+  // the record only; the customer is told to send the server amount.
+  const pricing = deps.pricing && deps.pricing.ok ? deps.pricing : null;
+  const amount = pricing ? pricing.amount : parsed.value.amount;
+
   const orderRef = allocateOrderRef(store);
   if (!orderRef) return { ok: false, error: "order_ref_unavailable", status: 500 };
 
@@ -253,8 +259,23 @@ export function createCryptoCheckout(input, deps) {
     paymentConfirmed: false,
     analyticsEvent: null,
     inFlight: false,
-    amount: parsed.value.amount,
-    amountDue: parsed.value.amount,
+    amount,
+    amountDue: amount,
+    ...(pricing
+      ? {
+          priceCheck: {
+            source: pricing.source,
+            clientAmount: pricing.clientAmount,
+            serverAmount: pricing.amount,
+            subtotal: pricing.subtotal,
+            shipping: pricing.shipping,
+            shipMethod: pricing.shipMethod,
+            mismatch: pricing.mismatch,
+            discountInfo: pricing.discountInfo,
+          },
+          priceMismatch: pricing.mismatch,
+        }
+      : {}),
     currency: parsed.value.currency,
     payAsset: "USDT",
     customer: parsed.value.customer,

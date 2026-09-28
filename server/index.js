@@ -7,6 +7,7 @@ import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
 import { pollPending, startPoller } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
+import { priceCryptoCart } from "./lib/pricing.js";
 import { createMockUmg } from "./lib/processors/umg.js";
 import * as tagada from "./lib/processors/tagada.js";
 import * as centrobill from "./lib/processors/centrobill.js";
@@ -112,6 +113,8 @@ export function createHandler(deps = {}) {
   // or injected by a test, so `npm test` on the server can never post into the live order service.
   const forwardFetch = deps.forwardFetch || (process.env.STORE_FORWARD_ENABLED === "true" ? globalThis.fetch : null);
   const forwardUrl = deps.forwardUrl || process.env.STORE_FORWARD_URL || undefined;
+  // Crypto amount from the catalog (products-api coupon-quote), never from the browser. Injected in tests.
+  const cryptoPricer = deps.cryptoPricer || (process.env.CRYPTO_SERVER_PRICING === "true" ? (input) => priceCryptoCart(input) : null);
   function forwardInBackground(orderId, via) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
@@ -232,6 +235,20 @@ export function createHandler(deps = {}) {
       return json(200, { orders });
     }
 
+    // Staff: remove orders flagged test:true (QA / soft-QA). Real orders are never deletable here.
+    const delOrder = path.match(/^\/api\/store-orders\/([^/]+)$/);
+    if (delOrder && req.method === "DELETE") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const key = decodeURIComponent(delOrder[1]);
+      const order = db.getOrder(key) || db.getOrderByRef(key);
+      if (!order) return json(404, { ok: false, error: "not_found" });
+      if (order.test !== true) return json(409, { ok: false, error: "not_test_order" });
+      db.deleteOrder(order.id);
+      process.stdout.write(`[store-orders] test order ${order.id}/${order.orderRef || "-"} deleted by ${op.actor || "operator"}\n`);
+      return json(200, { ok: true, deleted: order.id, orderRef: order.orderRef || null });
+    }
+
     const fwdAction = path.match(/^\/api\/store-orders\/([^/]+)\/forward$/);
     if (fwdAction && req.method === "POST") {
       const op = await operatorContext();
@@ -332,7 +349,15 @@ export function createHandler(deps = {}) {
         return json(429, { ok: false, error: "rate_limited" });
       }
       const body = await readBody(req);
-      const result = createCryptoCheckout(body, { store: db });
+      let pricing = null;
+      const idemKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+      if (cryptoPricer && !(idemKey && db.getOrderByIdempotency(idemKey)) && Array.isArray(body?.items) && body.items.length) {
+        pricing = await cryptoPricer(body);
+        if (!pricing.ok) {
+          return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
+        }
+      }
+      const result = createCryptoCheckout(body, { store: db, pricing });
       if (!result.ok) {
         return json(result.status || 400, { ok: false, error: result.error });
       }
@@ -375,6 +400,20 @@ export function createHandler(deps = {}) {
       const digest = buildLeadsDigest(db, day ? { day } : {});
       if (!digest.ok) return json(digest.status || 400, { error: digest.error });
       return json(200, digest);
+    }
+
+    const delAbandon = path.match(/^\/api\/checkout\/abandon\/([^/]+)$/);
+    if (delAbandon && req.method === "DELETE") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      const sid = decodeURIComponent(delAbandon[1]);
+      const rec = db.getAbandonedCheckout(sid);
+      if (!rec) return json(404, { ok: false, error: "not_found" });
+      const email = String(rec.customer?.email || rec.email || "").toLowerCase();
+      const isTest = rec.test === true || /^(qa[-+._]|qa@|dry-run@|probe)/.test(email) || /\+(test|qa)[^@]*@/.test(email);
+      if (!isTest) return json(409, { ok: false, error: "not_test_record" });
+      db.deleteAbandonedCheckout(sid);
+      return json(200, { ok: true, deleted: sid });
     }
 
     if (path === "/api/checkout/abandon" && req.method === "GET") {
