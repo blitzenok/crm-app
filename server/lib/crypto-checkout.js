@@ -2,6 +2,9 @@ import { randomBytes } from "node:crypto";
 import { formatAmount } from "./card.js";
 import { stripSecrets } from "./sanitize.js";
 import { findForbiddenCardField } from "./abandon.js";
+import {
+  PAY, allocatePayAmount, confirmSecret, cryptoVerifyConfig, isCryptoVerified, normalizeHint, paymentDeadline, signConfirmToken,
+} from "./crypto-payment.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ERC20_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -12,11 +15,19 @@ const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const AWAITING_CRYPTO = "awaiting_crypto";
 export const CRYPTO_PAID = "crypto_paid";
 
-export const AWAITING_MESSAGE =
-  "Awaiting crypto confirmation. Send the exact USDT amount and put the order reference in the transfer memo. This is not a completed payment. Do not record a purchase.";
+export const CRYPTO_REVIEW = "crypto_review";
+export const CRYPTO_CANCELLED = "crypto_cancelled";
 
+export const AWAITING_MESSAGE =
+  "Send the exact amount within 60 minutes. Unpaid orders are cancelled automatically. This is not a completed payment until it is confirmed on the blockchain.";
+export const CONFIRMED_BY_CUSTOMER_MESSAGE =
+  "Thanks. We're checking the blockchain and will email you once your payment is confirmed.";
 export const PAID_MESSAGE =
-  "Crypto payment confirmed by staff. Fulfillment may proceed only after this confirmation. Shipping is a separate staff action.";
+  "Payment confirmed on the blockchain. Your order is being prepared. Shipping is a separate step.";
+export const REVIEW_MESSAGE =
+  "We received a payment that needs a manual check (amount, token or network). Our team will contact you by email.";
+export const CANCELLED_MESSAGE =
+  "Payment was not received within the payment window, so this order was cancelled. If you already paid, reply to our email with the transaction hash.";
 
 function nowIso() {
   return new Date().toISOString();
@@ -154,35 +165,37 @@ export function validateCryptoCheckout(input) {
       notes: String(input.notes || "").slice(0, 2000),
       session_id: String(input.session_id || input.sessionId || "").trim(),
       test: input.test === true,
+      gaClientId: /^\d{1,12}\.\d{1,12}$/.test(String(input.gaClientId || "")) ? String(input.gaClientId) : null,
     },
   };
 }
 
+/** 2026-09-28: "paid" for a crypto order means on-chain verified (+ sanctions clear). A staff flag alone never counts. */
 export function isCryptoPaid(order) {
-  return Boolean(order && order.paymentMethod === "crypto" && order.status === CRYPTO_PAID && order.paymentConfirmed === true);
+  return isCryptoVerified(order);
 }
 
 export function isShippable(order) {
   if (!order || order.fulfillment?.status === "shipped") return false;
-  if (order.paymentMethod === "crypto" || order.status === AWAITING_CRYPTO || order.status === CRYPTO_PAID) {
+  if (order.paymentMethod === "crypto" || order.status === AWAITING_CRYPTO || order.status === CRYPTO_PAID || order.status === CRYPTO_REVIEW || order.status === CRYPTO_CANCELLED) {
     return isCryptoPaid(order) && order.fulfillment?.status !== "shipped";
   }
   return order.status === "approved";
 }
 
-function blockedFulfillment() {
+export function blockedFulfillment(reason = "awaiting_payment") {
   return {
     status: "blocked",
     shippable: false,
-    blockedReason: "awaiting_crypto",
+    blockedReason: reason,
     shippedAt: null,
     shippedBy: null,
   };
 }
 
-function readyFulfillment(prev) {
+export function readyFulfillment(prev) {
   return {
-    status: "ready",
+    status: "ready_to_ship",
     shippable: true,
     blockedReason: null,
     shippedAt: prev?.shippedAt || null,
@@ -190,31 +203,69 @@ function readyFulfillment(prev) {
   };
 }
 
-export function toPublicCryptoView(order, env = process.env) {
+function messageFor(order) {
+  const st = order.cryptoPayment?.status;
+  if (isCryptoPaid(order)) return PAID_MESSAGE;
+  if (st === PAY.CANCELLED) return CANCELLED_MESSAGE;
+  if (st === PAY.REVIEW || st === PAY.SANCTIONS || st === PAY.HOLD) return REVIEW_MESSAGE;
+  if (order.cryptoPayment?.customerConfirmedAt) return CONFIRMED_BY_CUSTOMER_MESSAGE;
+  return AWAITING_MESSAGE;
+}
+
+/** Customer-facing status. Review / sanctions details are never exposed (only "payment_review"). */
+function publicPaymentStatus(order) {
+  const st = order.cryptoPayment?.status || PAY.AWAITING;
+  if (st === PAY.SANCTIONS || st === PAY.HOLD) return PAY.REVIEW;
+  if (st === PAY.PAID && !isCryptoPaid(order)) return PAY.REVIEW;
+  return st;
+}
+
+export function toPublicCryptoView(order, env = process.env, opts = {}) {
   const paid = isCryptoPaid(order);
-  const fulfillment = order.fulfillment?.status || (paid ? "ready" : "blocked");
+  const fulfillment = order.fulfillment?.status || (paid ? "ready_to_ship" : "blocked");
   const wallets = order.depositWallets || depositWallets(env);
+  const cp = order.cryptoPayment || {};
+  const cfg = cryptoVerifyConfig(env);
+  const network = cp.network || order.crypto?.network || null;
+  const deadline = cp.expiresAt ? new Date(paymentDeadline(cp, cfg)).toISOString() : null;
+  const transfers = Array.isArray(cp.transfers) ? cp.transfers : [];
   return {
     ok: true,
     orderId: order.id,
     orderRef: order.orderRef,
     status: order.status,
+    paymentStatus: publicPaymentStatus(order),
     amount: order.amount,
     currency: order.currency,
     amountDue: order.amountDue || order.amount,
+    payAmount: cp.payAmount || order.amountDue || order.amount,
+    payAmountUnits: cp.payUnits || null,
+    payDecimals: cp.decimals || 6,
+    amountOffset: cp.offset || null,
     priceAdjusted: Boolean(order.priceMismatch),
-    payAsset: "USDT",
-    network: order.crypto?.network || null,
+    payAsset: cp.token || "USDT",
+    token: cp.token || "USDT",
+    network,
+    wallet: network === "trc20" ? wallets.usdtTrc20 : network === "erc20" ? wallets.usdtErc20 : null,
     paymentConfirmed: paid,
-    analyticsEvent: paid ? "purchase" : null,
+    analyticsEvent: null, // crypto purchase is sent server-side (GA4 Measurement Protocol) after on-chain verification
     fulfillment,
-    shippable: paid && fulfillment === "ready",
+    shippable: paid && fulfillment === "ready_to_ship",
     wallets,
     walletsReady: walletsReady(wallets),
     statusUrl: statusUrlFor(order.orderRef, env),
+    confirmUrl: `${statusUrlFor(order.orderRef, env)}/confirm`,
+    ...(opts.confirmToken ? { confirmToken: opts.confirmToken } : {}),
     createdAt: order.createdAt,
-    paidAt: order.crypto?.markedPaidAt || null,
-    message: paid ? PAID_MESSAGE : AWAITING_MESSAGE,
+    expiresAt: cp.expiresAt || null,
+    cancelAt: deadline,
+    customerConfirmed: Boolean(cp.customerConfirmedAt),
+    customerConfirmedAt: cp.customerConfirmedAt || null,
+    txSeen: transfers.length > 0,
+    confirmations: transfers.length ? Math.min(...transfers.map((t) => Number(t.confirmations) || 0)) : 0,
+    requiredConfirmations: cp.requiredConfirmations || null,
+    paidAt: paid ? cp.verifiedAt || null : null,
+    message: messageFor(order),
   };
 }
 
@@ -234,7 +285,7 @@ export function createCryptoCheckout(input, deps) {
       reused: true,
       status: 200,
       order: existing,
-      public: toPublicCryptoView(existing, env),
+      public: toPublicCryptoView(existing, env, { confirmToken: signConfirmToken(existing, deps.confirmSecret || confirmSecret(env)) }),
     };
   }
 
@@ -246,8 +297,15 @@ export function createCryptoCheckout(input, deps) {
   const orderRef = allocateOrderRef(store);
   if (!orderRef) return { ok: false, error: "order_ref_unavailable", status: 500 };
 
-  const createdAt = nowIso();
+  const cfg = cryptoVerifyConfig(env);
+  const nowMs = deps.now ? deps.now().getTime() : Date.now();
+  // Unique exact amount among open orders on this network, so a deposit can be matched to exactly one order.
+  const alloc = allocatePayAmount(store.listOrders(), { baseAmount: amount, network: parsed.value.network, cfg, nowMs, rand: deps.rand });
+  if (!alloc) return { ok: false, error: "pay_amount_unavailable", status: 503 };
+
+  const createdAt = new Date(nowMs).toISOString();
   const wallets = depositWallets(env);
+  const network = parsed.value.network;
   const order = {
     id: store.nextOrderId(),
     orderRef,
@@ -260,7 +318,9 @@ export function createCryptoCheckout(input, deps) {
     analyticsEvent: null,
     inFlight: false,
     amount,
-    amountDue: amount,
+    amountDue: alloc.payAmount,
+    paymentStatus: PAY.AWAITING,
+    ...(parsed.value.gaClientId ? { gaClientId: parsed.value.gaClientId } : {}),
     ...(pricing
       ? {
           priceCheck: {
@@ -293,6 +353,33 @@ export function createCryptoCheckout(input, deps) {
       markedPaidBy: null,
       markedPaidVia: null,
     },
+    cryptoPayment: {
+      version: 1,
+      status: PAY.AWAITING,
+      network,
+      token: "USDT",
+      wallet: network === "trc20" ? wallets.usdtTrc20 : network === "erc20" ? wallets.usdtErc20 : null,
+      baseAmount: amount,
+      offset: alloc.offset,
+      payAmount: alloc.payAmount,
+      payUnits: alloc.payUnits,
+      decimals: 6,
+      requiredConfirmations: network ? cfg.confirmations[network] : null,
+      createdAt,
+      expiresAt: new Date(nowMs + cfg.timeoutMin * 60000).toISOString(),
+      customerConfirmedAt: null,
+      txHints: [],
+      transfers: [],
+      receivedAmount: "0.00",
+      reviewReasons: [],
+      sanctions: null,
+      verifiedOnChain: false,
+      verifiedAt: null,
+      verifiedVia: null,
+      staffActions: [],
+      refunds: [],
+      alerts: [],
+    },
     fulfillment: blockedFulfillment(),
     winningProcessor: null,
     winningTxnId: null,
@@ -309,7 +396,7 @@ export function createCryptoCheckout(input, deps) {
     reused: false,
     status: 200,
     order: saved,
-    public: toPublicCryptoView(saved, env),
+    public: toPublicCryptoView(saved, env, { confirmToken: signConfirmToken(saved, deps.confirmSecret || confirmSecret(env)) }),
   };
 }
 
@@ -335,14 +422,6 @@ function readNetwork(raw) {
   return n === "erc20" || n === "trc20" ? n : null;
 }
 
-function readReceivedAmount(input) {
-  const raw = input?.amountReceived ?? input?.amount_received;
-  if (raw == null || String(raw).trim() === "") return { ok: false, error: "amount_received_required" };
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0 || n > 1_000_000) return { ok: false, error: "invalid_amount_received" };
-  return { ok: true, value: formatAmount(n) };
-}
-
 export function readTracking(input) {
   const src = input && typeof input === "object" ? input : {};
   const clean = (v, max) => String(v ?? "").replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, max);
@@ -359,61 +438,24 @@ function findCryptoOrder(store, idOrRef) {
   return store.getOrder(key) || store.getOrderByRef(key);
 }
 
-export function markCryptoPaid(idOrRef, input, deps) {
+/**
+ * Staff "mark paid" (2026-09-28): no longer flips the order. It only validates the tx hash the operator found; the route then
+ * verifies that tx on-chain (crypto-verify.js) and the order is released only if the chain says so.
+ */
+export function validateStaffTxHint(idOrRef, input, deps) {
   const store = deps.store;
   const order = findCryptoOrder(store, idOrRef);
   if (!order) return { ok: false, error: "not_found", status: 404 };
-  if (order.paymentMethod !== "crypto") {
-    return { ok: false, error: "not_crypto_order", status: 409 };
-  }
-
+  if (order.paymentMethod !== "crypto") return { ok: false, error: "not_crypto_order", status: 409 };
   const tx = normalizeTxHash(input?.txHash ?? input?.tx_hash ?? input?.paymentHash);
   if (!tx.ok) return { ok: false, error: tx.error, status: 400 };
-
-  if (order.status === CRYPTO_PAID && order.paymentConfirmed === true) {
-    if (tx.value && !order.crypto?.txHash) {
-      order.crypto = { ...(order.crypto || {}), txHash: tx.value };
-      order.updatedAt = nowIso();
-      store.upsertOrder(order);
-    }
-    const saved = store.getOrder(order.id);
-    return { ok: true, reused: true, status: 200, order: saved, public: toPublicCryptoView(saved, deps.env) };
-  }
-
-  if (order.status !== AWAITING_CRYPTO) {
-    return { ok: false, error: "not_awaiting_crypto", status: 409, order };
-  }
-
-  // Legal: confirm only after an on-chain check, with the TXID and the amount received on record.
+  if (isCryptoPaid(order)) return { ok: true, alreadyPaid: true, order };
   if (!tx.value) return { ok: false, error: "tx_hash_required", status: 400 };
-  const received = readReceivedAmount(input);
-  if (!received.ok) return { ok: false, error: received.error, status: 400 };
-  const due = Number(order.amountDue || order.amount);
-  if (Number.isFinite(due) && Number(received.value) + 0.005 < due) {
-    return { ok: false, error: "amount_short", status: 409, amountDue: formatAmount(due), amountReceived: received.value };
-  }
-  const network = readNetwork(input?.network) || order.crypto?.network || null;
+  const network = readNetwork(input?.network) || order.cryptoPayment?.network || order.crypto?.network || null;
   if (!network) return { ok: false, error: "network_required", status: 400 };
   if (network === "trc20" && tx.value.startsWith("0x")) return { ok: false, error: "tx_hash_network_mismatch", status: 400 };
-
-  const at = nowIso();
-  order.status = CRYPTO_PAID;
-  order.paymentConfirmed = true;
-  order.analyticsEvent = "purchase";
-  order.updatedAt = at;
-  order.crypto = {
-    ...(order.crypto || {}),
-    network,
-    txHash: tx.value,
-    amountReceived: received.value,
-    markedPaidAt: at,
-    markedPaidBy: String(deps.actor || "operator").slice(0, 160),
-    markedPaidVia: String(deps.via || "operator").slice(0, 40),
-  };
-  order.fulfillment = readyFulfillment(order.fulfillment);
-  store.upsertOrder(order);
-  const saved = store.getOrder(order.id);
-  return { ok: true, reused: false, status: 200, order: saved, public: toPublicCryptoView(saved, deps.env) };
+  if (network === "erc20" && !tx.value.startsWith("0x")) return { ok: false, error: "tx_hash_network_mismatch", status: 400 };
+  return { ok: true, order, network, hint: normalizeHint(tx.value, network) };
 }
 
 export function shipOrder(idOrRef, deps, input) {

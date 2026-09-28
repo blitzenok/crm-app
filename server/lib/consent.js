@@ -181,3 +181,37 @@ export function recordCheckoutConsent({ log, req, body, order, channel }) {
     return { ok: false, error: err?.message || "consent_log_failed" };
   }
 }
+
+/**
+ * Crypto "I've sent the payment" (2026-09-28): one record in the same hash-chained log, same writer and same IP / UA
+ * fields as the checkout consent records. Never throws.
+ */
+export function recordCryptoPaymentConfirmed({ log, req, body, order, txHint }) {
+  try {
+    const realIp = cleanStr(firstHeader(req?.headers?.["x-real-ip"]), 64);
+    const rec = {
+      schema: CONSENT_SCHEMA,
+      type: "crypto_payment_confirmed",
+      channel: "crypto",
+      receivedAt: log.now().toISOString(),
+      orderId: order.id,
+      orderRef: order.orderRef || null,
+      idempotencyKey: cleanStr(order.idempotencyKey, 128),
+      email: String(order.customer?.email || "").trim().toLowerCase().slice(0, 254) || null,
+      amount: order.cryptoPayment?.payAmount || order.amountDue || null,
+      currency: order.cryptoPayment?.token || "USDT",
+      network: order.cryptoPayment?.network || null,
+      orderStatus: order.status || null,
+      paymentStatus: order.cryptoPayment?.status || null,
+      txHint: txHint || null,
+      pageVersion: cleanStr(body?.pageVersion ?? body?.consent?.pageVersion, 64),
+      ip: cleanStr(clientIp(req), 64),
+      ...(realIp ? { xRealIp: realIp } : {}),
+      userAgent: cleanStr(firstHeader(req?.headers?.["user-agent"]), UA_MAX),
+    };
+    const saved = log.append(rec);
+    return { ok: true, record: saved };
+  } catch (err) {
+    return { ok: false, error: err?.message || "consent_log_failed" };
+  }
+}

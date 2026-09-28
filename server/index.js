@@ -28,12 +28,17 @@ import { buildLeadsDigest } from "./lib/leads-digest.js";
 import { marketingDigestKeyOk, operatorAuthorized, resolveOperator } from "./lib/operator-auth.js";
 import {
   createCryptoCheckout,
-  markCryptoPaid,
   publicCryptoStatus,
   shipOrder,
+  toPublicCryptoView,
   updateTracking,
+  validateStaffTxHint,
   walletFlags,
 } from "./lib/crypto-checkout.js";
+import { createCryptoVerifier, staffCryptoView } from "./lib/crypto-verify.js";
+import { confirmSecret, verifyConfirmToken, isCryptoVerified } from "./lib/crypto-payment.js";
+import { ga4Config } from "./lib/crypto-notify.js";
+import { recordCryptoPaymentConfirmed } from "./lib/consent.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
 import { createConsentLog, recordCheckoutConsent } from "./lib/consent.js";
 import { createEmailLog, createOrderEmailer, emailConfig, emailTypes, maskEmail, canSend, sampleOrder } from "./lib/order-emails.js";
@@ -199,6 +204,15 @@ export function createHandler(deps = {}) {
       .then((r) => { if (!r.ok && r.error !== "real_orders_disabled") process.stdout.write(`[rapid] auto-push ${orderId}: ${r.error}\n`); })
       .catch(() => {});
   }
+  // On-chain crypto verification (read-only chain APIs). Tests inject chains / screener / mailer / clock.
+  const cryptoEnv = deps.cryptoEnv || process.env;
+  const cryptoSecret = () => deps.cryptoConfirmSecret || confirmSecret(cryptoEnv);
+  const cryptoConfirmLimiter = deps.cryptoConfirmLimiter || createRateLimiter({ max: 10, windowMs: 10 * 60 * 1000 });
+  const cryptoVerifier = deps.cryptoVerifier || createCryptoVerifier({
+    store: db, env: cryptoEnv, chains: deps.cryptoChains, screener: deps.cryptoScreener, fetchImpl: deps.cryptoFetch || globalThis.fetch,
+    skuMap: () => rapidSkuMap(), now: deps.now, onPaid: (id) => onCryptoPaid(id),
+    orderEmailer: { send: (...a) => orderEmailer.send(...a) },
+  });
   // Cleffo: config / fetch injectable for tests; the routing config is read per request (env flags).
   const cleffoDeps = deps.cleffoDeps || {};
   const routingCfg = () => (deps.routingConfig ? deps.routingConfig() : routingConfig());
@@ -234,6 +248,25 @@ export function createHandler(deps = {}) {
     if (!forwardFetch || !orderId) return;
     forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
   }
+
+  function cryptoHealth() {
+    const sc = cryptoVerifier.screener?.config || {};
+    const list = cryptoVerifier.screener?.localList ? (() => { try { return cryptoVerifier.screener.localList(); } catch { return null; } })() : null;
+    const g = ga4Config(cryptoEnv);
+    return {
+      enabled: cryptoVerifier.config.enabled,
+      shippingGate: "onchain_verified_only",
+      timeoutMin: cryptoVerifier.config.timeoutMin,
+      graceMin: cryptoVerifier.config.graceMin,
+      confirmations: cryptoVerifier.config.confirmations,
+      chainalysisKey: Boolean(sc.chainalysisKey),
+      ofacList: list ? { size: list.size, fresh: list.fresh } : null,
+      sanctionsFailClosed: sc.failClosed !== false,
+      ga4ServerPurchase: g.enabled,
+      ga4ApiSecret: Boolean(g.apiSecret),
+    };
+  }
+  function onCryptoPaid(orderId) { maybeAutoPush(orderId); kickEmails(orderId); }
 
   const handlerFn = async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -304,6 +337,7 @@ export function createHandler(deps = {}) {
         paymentsEnabled: enabled,
         mode: paymentsMode(),
         cryptoWallets: walletFlags(),
+        cryptoVerify: cryptoHealth(),
         ...secretHealth(),
       });
     }
@@ -383,27 +417,29 @@ export function createHandler(deps = {}) {
       const id = decodeURIComponent(cryptoAction[1]);
       const action = cryptoAction[2];
       if (action === "mark-paid") {
+        // 2026-09-28: staff give the tx hash they found; the sidecar verifies it on-chain. No blind flip to paid.
         const body = await readBody(req);
-        const result = markCryptoPaid(id, body, { store: db, actor: op.actor, via: op.via });
-        if (!result.ok) {
-          return json(result.status || 400, {
-            ok: false,
-            error: result.error,
-            orderStatus: result.orderStatus,
-            fulfillment: result.fulfillment,
-            paymentConfirmed: result.paymentConfirmed,
-            amountDue: result.amountDue,
-            amountReceived: result.amountReceived,
-          });
+        const v = validateStaffTxHint(id, body, { store: db });
+        if (!v.ok) return json(v.status || 400, { ok: false, error: v.error });
+        if (v.alreadyPaid) {
+          return json(200, { ok: true, reused: true, order: v.order, paymentConfirmed: true, analyticsEvent: null, fulfillment: v.order.fulfillment?.status || null });
         }
-        if (!result.reused) { maybeAutoPush(result.order?.id); kickEmails(result.order?.id); }
-        return json(200, {
-          ok: true,
-          reused: Boolean(result.reused),
-          order: result.order,
-          paymentConfirmed: Boolean(result.order?.paymentConfirmed),
-          analyticsEvent: result.order?.analyticsEvent || null,
-          fulfillment: result.order?.fulfillment?.status || null,
+        const r = await cryptoVerifier.staffAction(v.order.id, { action: "add_tx", txHash: v.hint, network: v.network, note: body.note }, op.actor || "operator");
+        const order = db.getOrder(v.order.id);
+        if (isCryptoVerified(order)) {
+          onCryptoPaid(order.id);
+          return json(200, { ok: true, reused: false, order, paymentConfirmed: true, analyticsEvent: null, fulfillment: order.fulfillment?.status || null, paymentStatus: order.cryptoPayment.status });
+        }
+        const hint = (order.cryptoPayment?.txHints || []).find((h) => h.hash === v.hint) || null;
+        return json(r.error === "verification_disabled" ? 503 : r.error === "chain_unavailable" ? 503 : 409, {
+          ok: false,
+          error: r.error || "not_verified_on_chain",
+          paymentStatus: order.cryptoPayment?.status || null,
+          orderStatus: order.status,
+          fulfillment: order.fulfillment?.status || null,
+          paymentConfirmed: false,
+          txHint: hint,
+          crypto: staffCryptoView(order, cryptoEnv),
         });
       }
       const shipBody = await readBody(req).catch(() => ({}));
@@ -595,7 +631,7 @@ export function createHandler(deps = {}) {
           return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
         }
       }
-      const result = createCryptoCheckout(body, { store: db, pricing });
+      const result = createCryptoCheckout(body, { store: db, pricing, env: cryptoEnv, confirmSecret: cryptoSecret(), now: deps.now });
       if (!result.ok) {
         return json(result.status || 400, { ok: false, error: result.error });
       }
@@ -609,11 +645,62 @@ export function createHandler(deps = {}) {
       return json(200, { ...result.public, reused: Boolean(result.reused) });
     }
 
+    // Customer "I've sent the payment" (public, rate-limited, signed token). Never releases the order.
+    const cryptoConfirm = path.match(/^\/api\/checkout\/crypto\/([^/]+)\/confirm$/);
+    if (cryptoConfirm && req.method === "POST") {
+      if (!cryptoConfirmLimiter.allow(clientIp(req))) return json(429, { ok: false, error: "rate_limited" });
+      const body = await readBody(req);
+      const ref = decodeURIComponent(cryptoConfirm[1]);
+      const order = db.getOrderByRef(ref) || null;
+      if (!order || order.paymentMethod !== "crypto" || !order.cryptoPayment || !verifyConfirmToken(order, body.token || body.confirmToken, cryptoSecret())) {
+        return json(403, { ok: false, error: "invalid_token" });
+      }
+      const r = cryptoVerifier.customerConfirm(order.id, { txHash: body.txHash ?? body.txid });
+      if (!r.ok) return json(r.status || 400, { ok: false, error: r.error });
+      if (consentLog) {
+        const logged = recordCryptoPaymentConfirmed({ log: consentLog, req, body, order: r.order, txHint: r.txHint });
+        if (!logged.ok) process.stdout.write(`[consent] crypto confirm log failed for ${order.id}: ${logged.error}\n`);
+      }
+      process.stdout.write(`[crypto] customer confirmed ${order.id}${r.txHint ? " with tx hint" : ""}\n`);
+      return json(200, { ...toPublicCryptoView(r.order, cryptoEnv), txHintReceived: Boolean(r.txHint) });
+    }
+
     if (path.startsWith("/api/checkout/crypto/") && req.method === "GET") {
       const ref = decodeURIComponent(path.slice("/api/checkout/crypto/".length));
-      const view = publicCryptoStatus(db, ref);
+      const view = publicCryptoStatus(db, ref, cryptoEnv);
       if (!view) return json(404, { ok: false, error: "not_found" });
       return json(200, view);
+    }
+
+    // Staff: crypto payment verification (fields for the CRM UI) and review actions.
+    if (path.startsWith("/api/psp/crypto/")) {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      if (path === "/api/psp/crypto/orders" && req.method === "GET") {
+        const st = url.searchParams.get("paymentStatus");
+        let orders = db.listOrders().filter((o) => o.paymentMethod === "crypto" && o.cryptoPayment);
+        if (st) orders = orders.filter((o) => o.cryptoPayment.status === st);
+        const cs = db.getCryptoState();
+        return json(200, { ok: true, count: orders.length, orders: orders.map((o) => staffCryptoView(o, cryptoEnv)), verifier: { ...cryptoHealth(), scan: cs.scan }, unmatched: cs.unmatched.length, alerts: cs.alerts.length });
+      }
+      if (path === "/api/psp/crypto/alerts" && req.method === "GET") return json(200, { ok: true, alerts: db.getCryptoState().alerts.slice(-200).reverse() });
+      if (path === "/api/psp/crypto/unmatched" && req.method === "GET") return json(200, { ok: true, unmatched: db.getCryptoState().unmatched.slice(-200).reverse() });
+      if (path === "/api/psp/crypto/verify-now" && req.method === "POST") return json(200, { ok: true, result: await cryptoVerifier.tick() });
+      const one = path.match(/^\/api\/psp\/crypto\/orders\/([^/]+)(\/action)?$/);
+      if (one) {
+        const key = decodeURIComponent(one[1]);
+        const order = db.getOrder(key) || db.getOrderByRef(key);
+        if (!order || order.paymentMethod !== "crypto" || !order.cryptoPayment) return json(404, { ok: false, error: "not_found" });
+        if (!one[2] && req.method === "GET") return json(200, { ok: true, order: staffCryptoView(order, cryptoEnv) });
+        if (one[2] && req.method === "POST") {
+          const body = await readBody(req);
+          const r = await cryptoVerifier.staffAction(order.id, body, op.actor || "operator");
+          const fresh = db.getOrder(order.id);
+          if (r.ok && isCryptoVerified(fresh)) onCryptoPaid(order.id);
+          return json(r.ok ? 200 : r.status || 400, { ok: r.ok, error: r.error, order: staffCryptoView(fresh, cryptoEnv) });
+        }
+      }
+      return json(404, { error: "not_found" });
     }
 
     // Staff: consent proof records for an order (BLR-id, CR-ref or idempotency key) or an email. Read-only.
@@ -948,6 +1035,7 @@ export function createHandler(deps = {}) {
   }
   };
   handlerFn.rapidScheduler = rapidScheduler;
+  handlerFn.cryptoVerifier = cryptoVerifier;
   handlerFn.onCleffoPaid = onCleffoPaid;
   handlerFn.orderEmailer = orderEmailer;
   return handlerFn;
@@ -981,6 +1069,9 @@ if (isMain) {
     process.stdout.write(`[emails] sweeper on enabled=${c.enabled} canSend=${canSend(c)} since=${c.since ? new Date(c.since).toISOString() : "none"}\n`);
   }
 
+  // On-chain crypto verification + 60-min timeout (read-only chain APIs; CRYPTO_VERIFY_ENABLED=false turns it off,
+  // shipping of crypto orders stays blocked either way).
+  handler.cryptoVerifier.start();
   // Settles open Cleffo payment links from the status API (no-op while there are none).
   startCleffoSweeper(store, { intervalMs: Number(process.env.CLEFFO_SWEEP_MS || 60000), onPaid: handler.onCleffoPaid });
   if (isAbandonDigestEnabled()) {
