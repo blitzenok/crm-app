@@ -11,3 +11,7 @@ server/data/*.json
 # Logs / OS
 *.log
 .DS_Store
+
+# Crypto verifier runtime files (confirm-token key, OFAC list)
+server/data/*.key
+server/data/ofac-crypto-addresses.txt
