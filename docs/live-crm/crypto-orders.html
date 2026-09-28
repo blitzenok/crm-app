@@ -78,17 +78,30 @@ function detailHtml(o) {
   const paid = o.crypto || {};
   const ful = (o.fulfillment && o.fulfillment.status) || 'blocked';
   let actions = '';
+  const trk = (o.fulfillment && o.fulfillment.trackingNumber)
+    ? ' Tracking: ' + esc(o.fulfillment.carrier || '') + ' ' + esc(o.fulfillment.trackingNumber) : ' No tracking number yet.';
+  const shipInputs = '<select class="tx" data-carrier="' + esc(o.id) + '"><option>USPS</option><option>UPS</option><option>FedEx</option><option>DHL</option><option>Other</option></select>' +
+    '<input class="tx" data-trk="' + esc(o.id) + '" placeholder="Tracking number" />';
   if (o.status === 'awaiting_crypto') {
-    actions = '<div class="btns"><input class="tx" data-tx="' + esc(o.id) + '" placeholder="Tx hash (optional)" />' +
-      '<button class="btn btn-primary" type="button" data-pay="' + esc(o.id) + '">Mark paid</button>' +
+    const net = (paid.network || '');
+    actions = '<div class="muted">Confirm on-chain first (Etherscan for ERC20 / Tronscan for TRC20). TXID and amount received are required.</div>' +
+      '<div class="btns"><select class="tx" data-net="' + esc(o.id) + '">' +
+      '<option value="trc20"' + (net === 'trc20' ? ' selected' : '') + '>USDT TRC20</option>' +
+      '<option value="erc20"' + (net === 'erc20' ? ' selected' : '') + '>USDT ERC20</option></select>' +
+      '<input class="tx" data-tx="' + esc(o.id) + '" placeholder="TXID (required)" />' +
+      '<input class="tx" data-amt="' + esc(o.id) + '" placeholder="USDT received (due ' + esc(o.amountDue || o.amount) + ')" />' +
+      '<button class="btn btn-primary" type="button" data-pay="' + esc(o.id) + '">Mark paid (confirmed)</button>' +
       '<button class="btn btn-secondary" type="button" disabled>Shipping blocked until paid</button></div>';
   } else if (o.status === 'crypto_paid' && ful !== 'shipped') {
     actions = '<div class="btns"><span class="ok">Paid ' + esc(when(paid.markedPaidAt)) + ' by ' + esc(paid.markedPaidBy || 'staff') +
-      '. Tx ' + esc(paid.txHash || '—') + '.</span>' +
+      '. ' + esc(paid.amountReceived || '?') + ' USDT ' + esc(paid.network || '') + ' · TX ' + esc(paid.txHash || '—') + '.</span>' + shipInputs +
       '<button class="btn btn-secondary" type="button" data-ship="' + esc(o.id) + '">Mark shipped</button></div>';
   } else if (ful === 'shipped') {
-    actions = '<div class="muted">Shipped ' + esc(when(o.fulfillment.shippedAt)) + ' by ' + esc(o.fulfillment.shippedBy || 'staff') + '.</div>';
+    actions = '<div class="muted">Paid ' + esc(paid.amountReceived || '?') + ' USDT ' + esc(paid.network || '') + ' · TX ' + esc(paid.txHash || '—') +
+      '. Shipped ' + esc(when(o.fulfillment.shippedAt)) + ' by ' + esc(o.fulfillment.shippedBy || 'staff') + '.' + trk + '</div>' +
+      '<div class="btns">' + shipInputs + '<button class="btn btn-secondary" type="button" data-trkset="' + esc(o.id) + '">Save tracking</button></div>';
   }
+  if (o.test) actions = '<div class="warn">TEST ORDER</div>' + actions;
   return '<tr class="detail-row"><td colspan="6" class="detail">' +
     '<div><strong>' + esc(o.id) + '</strong> · memo <strong>' + esc(o.orderRef) + '</strong></div>' +
     '<div>' + esc(nameOf(c)) + ' · ' + esc(c.email || '') + ' · ' + esc(c.phone || 'no phone') + '</div>' +
@@ -123,17 +136,26 @@ document.getElementById('searchForm').onsubmit = function (e) {
 document.getElementById('rows').onclick = async function (e) {
   const pay = e.target.closest('[data-pay]');
   const shipBtn = e.target.closest('[data-ship]');
+  const trkSet = e.target.closest('[data-trkset]');
+  function val(attr, id) {
+    const el = document.querySelector('[' + attr + '="' + id + '"]');
+    return el ? el.value.trim() : '';
+  }
   if (pay) {
     const id = pay.getAttribute('data-pay');
-    const input = document.querySelector('[data-tx="' + id + '"]');
-    const txHash = input ? input.value.trim() : '';
-    await api('/api/store-orders/' + encodeURIComponent(id) + '/mark-paid', { method: 'POST', body: { txHash: txHash } });
+    const body = { txHash: val('data-tx', id), amountReceived: val('data-amt', id), network: val('data-net', id) };
+    if (!body.txHash || !body.amountReceived) { alert('TXID and USDT amount received are required (confirm on-chain first).'); return; }
+    if (!confirm('Confirm ' + body.amountReceived + ' USDT (' + body.network + ') was received on-chain, TX ' + body.txHash + '?')) return;
+    await api('/api/store-orders/' + encodeURIComponent(id) + '/mark-paid', { method: 'POST', body: body });
     await reload();
     return;
   }
-  if (shipBtn) {
-    const id = shipBtn.getAttribute('data-ship');
-    await api('/api/store-orders/' + encodeURIComponent(id) + '/ship', { method: 'POST' });
+  if (shipBtn || trkSet) {
+    const id = (shipBtn || trkSet).getAttribute(shipBtn ? 'data-ship' : 'data-trkset');
+    const body = { carrier: val('data-carrier', id), trackingNumber: val('data-trk', id) };
+    if (trkSet && !body.trackingNumber) { alert('Enter a tracking number.'); return; }
+    if (shipBtn && !body.trackingNumber && !confirm('Ship without a tracking number?')) return;
+    await api('/api/store-orders/' + encodeURIComponent(id) + (shipBtn ? '/ship' : '/tracking'), { method: 'POST', body: body });
     await reload();
     return;
   }

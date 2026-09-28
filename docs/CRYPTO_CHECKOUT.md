@@ -53,8 +53,11 @@ Detail includes amount, order ref, customer, line items, created time, and who/w
 
 | Action | Effect |
 |---|---|
-| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "optional" }` | `status` → `crypto_paid`, records `crypto.markedPaidBy` and `crypto.markedPaidAt`. Fulfillment becomes `ready`. **Does not ship.** |
-| `POST /api/store-orders/:id/ship` | **409 `ship_blocked`** until `crypto_paid`. After that, sets fulfillment `shipped` with who/when. |
+| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "required", "amountReceived": "158.00", "network": "trc20\|erc20" }` | 2026-09-28: TXID and amount received are **required** (legal: confirm on-chain, record amount + TXID). `400 tx_hash_required` / `amount_received_required` / `network_required` / `tx_hash_network_mismatch` (0x hash on TRC20); `409 amount_short` if received < due. On success `status` → `crypto_paid`, records `crypto.{network,txHash,amountReceived,markedPaidBy,markedPaidAt}`. Fulfillment becomes `ready`. **Does not ship.** |
+| `POST /api/store-orders/:id/ship` `{ "carrier": "USPS", "trackingNumber": "…", "trackingUrl": "https://…" }` | **409 `ship_blocked`** until `crypto_paid` (card: until `approved`). After that, sets fulfillment `shipped` with who/when plus optional carrier / tracking number / https tracking URL. |
+| `POST /api/store-orders/:id/tracking` `{ "carrier", "trackingNumber", "trackingUrl" }` | Set or correct tracking on an already shipped order (`409 not_shipped` otherwise). No customer email is sent (not built). |
+
+Checkout body may carry `"test": true`; the order is stored with `test: true` so smoke orders can be found and removed.
 
 `:id` may be the internal `BLR-…` id or the public `CR-…` order ref. Mark-paid on a card order returns **409 `not_crypto_order`**.
 
@@ -96,3 +99,18 @@ Expect `paymentConfirmed: true`, `analyticsEvent: "purchase"`, `fulfillment: "re
 4. **Ship after paid** returns `fulfillment: "shipped"`. A second ship is `409 already_shipped`.
 
 5. **Card path:** `POST /api/checkout/charge` with `PAYMENTS_ENABLED` unset still returns `503 payments_disabled` and does not write an order.
+
+---
+
+## Card orders -> CRM Store Orders (2026-09-28)
+
+`server/lib/store-forward.js`. After an **approved** card charge the sidecar answers the shop first, then POSTs the order to
+`http://127.0.0.1:4000/msolpeptides-api/notify-order` (products-api) with `paymentMethod: "card-umg"`, `ref` = sidecar id
+(`BLR-…`), customer, shipping address, items (`slug`/`mg` split from the storefront sku) and totals. notify-order recomputes
+`subtotal_server` / `price_mismatch` from the catalog and sends the existing Customer.io transactional manager + customer emails.
+
+- Host env: `STORE_FORWARD_ENABLED=true`, `STORE_FORWARD_SINCE=<ISO>` (sweep ignores older orders). Off by default, so tests never post to the live service.
+- Once per order: `order.storeForward.sentAt`; notify-order is also idempotent by `ref`.
+- Failures never touch the charge response; they are logged (`[store-forward]`) and retried by a 60 s sweep with backoff (max 20 tries). The sweep also catches approvals that arrive via webhook/poll.
+- Dry-run / test orders (`dryRun`, `test`, `DRY-` keys, `*-STUB` descriptors) are never auto-forwarded. Staff override: `POST /api/store-orders/:id/forward` (operator).
+- Backfill of pre-existing approved orders: `server/scripts/backfill-store-forward-20260928.mjs` writes straight into `orders.json` (no notify-order, so no emails / no CIO events) and flags `backfill: true`.

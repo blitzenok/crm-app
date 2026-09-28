@@ -1,0 +1,198 @@
+/**
+ * Approved card orders -> legacy shop order service (products-api notify-order).
+ *
+ * Why: the CRM "Store Orders" tab and the Customer.io transactional order emails (manager + customer)
+ * live behind POST /msolpeptides-api/notify-order on 127.0.0.1:4000. The storefront calls it for
+ * crypto/quote orders but not after a card charge, so card orders never reached the CRM or the customer.
+ *
+ * Rules:
+ *  - Only real approved orders (status "approved"), never dry-run / test orders unless forced by staff.
+ *  - Once per order: order.storeForward.sentAt is the guard; notify-order is also idempotent by ref.
+ *  - Never blocks or fails the charge response: callers fire-and-forget; failures are logged and retried
+ *    by the sweep with backoff.
+ *  - Totals are recomputed by notify-order from the catalog (subtotal_server / price_mismatch).
+ *  - No card data leaves here (the order never holds any; stripSecrets already ran at charge time).
+ */
+
+export const DEFAULT_FORWARD_URL = "http://127.0.0.1:4000/msolpeptides-api/notify-order";
+export const CARD_PAYMENT_METHOD = "card-umg";
+export const CARD_STATEMENT_DESCRIPTOR = "PEPTIDESS SHOP";
+const MAX_ATTEMPTS = 20;
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function money(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v.toFixed(2) : "0.00";
+}
+
+/** "bpc-157-10mg" -> { slug: "bpc-157", mg: "10mg" } (storefront builds sku = slug + "-" + mg). */
+export function splitSku(sku) {
+  const s = String(sku || "").trim();
+  const m = s.match(/^(.+?)-(\d+(?:\.\d+)?(?:mg|mcg|g|iu|ml))$/i);
+  if (m) return { slug: m[1].toLowerCase(), mg: m[2].toLowerCase() };
+  return { slug: /^[a-z0-9-]{1,64}$/i.test(s) ? s.toLowerCase() : "", mg: "" };
+}
+
+export function isDryRunOrder(order) {
+  if (!order) return true;
+  if (order.dryRun === true || order.test === true) return true;
+  const key = String(order.idempotencyKey || "");
+  if (/^DRY-/i.test(key)) return true;
+  if (String(order.descriptor || "").toUpperCase().includes("STUB")) return true;
+  return false;
+}
+
+export function isForwardable(order) {
+  return Boolean(order) && String(order.status || "").toLowerCase() === "approved";
+}
+
+export function buildNotifyPayload(order, opts = {}) {
+  const c = order.customer || {};
+  const items = (Array.isArray(order.items) ? order.items : []).slice(0, 50).map((it) => {
+    const { slug, mg } = splitSku(it.sku);
+    const qty = Math.min(999, Math.max(1, parseInt(it.qty ?? it.quantity, 10) || 1));
+    const price = Number(it.amount ?? it.price);
+    return {
+      slug,
+      name: String(it.name || it.sku || "item").slice(0, 120),
+      mg: mg || String(it.mg || "").slice(0, 20),
+      qty,
+      price: Number.isFinite(price) && price >= 0 ? Number(price.toFixed(2)) : 0,
+    };
+  });
+  const subtotal = items.reduce((a, i) => a + i.price * i.qty, 0);
+  const total = Number(order.amount) || 0;
+  const shippingCost = Math.max(0, Math.round((total - subtotal) * 100) / 100);
+  const ref = String(order.id || "").slice(0, 64);
+  const name = [c.first_name, c.last_name].filter(Boolean).join(" ");
+  const addr = [c.address, c.city, c.state, c.zip, c.country].filter(Boolean).join(", ");
+  const tag = opts.test ? "[TEST] " : opts.backfill ? "[BACKFILL] " : "";
+  const noteParts = [
+    `${tag}Card payment APPROVED via ${order.winningProcessor || "umg"}`,
+    order.winningTxnId ? `processor txn ${order.winningTxnId}` : "",
+    `card statement shows: ${order.descriptor || CARD_STATEMENT_DESCRIPTOR}`,
+    order.notes ? `customer notes: ${String(order.notes).slice(0, 800)}` : "",
+  ].filter(Boolean);
+  const lines = items.map((i) => `${i.qty}x ${i.name}${i.mg ? ` ${i.mg}` : ""} @ $${money(i.price)}`);
+  const body = [
+    `Order ${ref} — card (approved)`,
+    `Customer: ${name} <${c.email || ""}> ${c.phone || ""}`,
+    `Ship to: ${addr}`,
+    ...lines,
+    `Total charged: $${money(total)} ${order.currency || "USD"}`,
+    `Your card statement will show: ${order.descriptor || CARD_STATEMENT_DESCRIPTOR}`,
+  ].join("\n");
+  return {
+    subject: `${tag}Order ${ref} [${CARD_PAYMENT_METHOD}] — $${money(total)}`,
+    body,
+    paymentMethod: CARD_PAYMENT_METHOD,
+    orderData: {
+      ref,
+      type: "order",
+      customer: {
+        firstName: c.first_name || "",
+        lastName: c.last_name || "",
+        email: c.email || "",
+        phone: c.phone || "",
+      },
+      shipping: {
+        address1: c.address || "",
+        city: c.city || "",
+        state: c.state || "",
+        zip: c.zip || "",
+        country: c.country || "",
+        cost: money(shippingCost),
+      },
+      items,
+      subtotal: money(subtotal),
+      shippingCost: money(shippingCost),
+      total: money(total),
+      paymentMethod: CARD_PAYMENT_METHOD,
+      notes: noteParts.join(" · "),
+      timestamp: order.createdAt || nowIso(),
+      tc_accepted: true,
+    },
+  };
+}
+
+function backoffMs(attempts) {
+  return Math.min(60 * 60 * 1000, 60 * 1000 * 2 ** Math.max(0, attempts - 1));
+}
+
+/**
+ * Forward one order. Returns { ok, skipped?, reason? }. Never throws.
+ * opts.force: staff override (allows test / dry-run orders; still once per order).
+ */
+export async function forwardOrder(store, orderId, opts = {}) {
+  const order = store.getOrder(orderId);
+  if (!order) return { ok: false, reason: "not_found" };
+  if (!isForwardable(order)) return { ok: false, skipped: true, reason: "not_approved" };
+  if (order.storeForward?.sentAt) return { ok: true, skipped: true, reason: "already_sent", ref: order.storeForward.ref };
+  if (!opts.force && isDryRunOrder(order)) return { ok: false, skipped: true, reason: "dry_run_or_test" };
+  const fetchImpl = opts.fetchImpl || globalThis.fetch;
+  const url = opts.url || process.env.STORE_FORWARD_URL || DEFAULT_FORWARD_URL;
+  const payload = buildNotifyPayload(order, { test: order.test === true || order.dryRun === true });
+  const prev = order.storeForward || {};
+  const attempts = (prev.attempts || 0) + 1;
+  let result;
+  try {
+    const res = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch { data = null; }
+    if (res.ok && data && data.ok) {
+      result = { ok: true, ref: data.ref || payload.orderData.ref, duplicate: Boolean(data.duplicate) };
+    } else {
+      result = { ok: false, reason: `http_${res.status}` };
+    }
+  } catch (err) {
+    result = { ok: false, reason: err?.name === "TimeoutError" ? "timeout" : "network_error" };
+  }
+  const fresh = store.getOrder(orderId) || order;
+  const at = nowIso();
+  fresh.storeForward = result.ok
+    ? { sentAt: at, ref: result.ref, duplicate: result.duplicate, attempts, via: opts.via || "auto" }
+    : {
+        sentAt: null,
+        attempts,
+        lastError: result.reason,
+        lastTriedAt: at,
+        nextAttemptAt: attempts >= MAX_ATTEMPTS ? null : new Date(Date.now() + backoffMs(attempts)).toISOString(),
+        gaveUp: attempts >= MAX_ATTEMPTS,
+      };
+  store.upsertOrder(fresh);
+  const log = opts.logger || console;
+  if (result.ok) log.log?.(`[store-forward] ${fresh.id} -> notify-order ok${result.duplicate ? " (duplicate)" : ""}`);
+  else log.error?.(`[store-forward] ${fresh.id} failed (${result.reason}), attempt ${attempts}`);
+  return result;
+}
+
+/** Retry sweep: approved, real, not yet sent, created on/after `since`, backoff respected. */
+export async function sweepForward(store, opts = {}) {
+  const since = opts.since || process.env.STORE_FORWARD_SINCE || "";
+  const now = Date.now();
+  const out = [];
+  for (const o of store.listOrders()) {
+    if (!isForwardable(o) || isDryRunOrder(o) || o.storeForward?.sentAt || o.storeForward?.gaveUp) continue;
+    if (!since || String(o.createdAt || "") < since) continue;
+    const next = o.storeForward?.nextAttemptAt ? Date.parse(o.storeForward.nextAttemptAt) : 0;
+    if (next && next > now) continue;
+    out.push({ id: o.id, ...(await forwardOrder(store, o.id, { ...opts, via: "sweep" })) });
+  }
+  return out;
+}
+
+export function startForwardSweeper(store, { intervalMs = 60000, ...opts } = {}) {
+  const timer = setInterval(() => {
+    sweepForward(store, opts).catch(() => {});
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return () => clearInterval(timer);
+}
