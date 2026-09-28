@@ -77,14 +77,14 @@ test("crypto route stores + returns the server amount, flags mismatch; staff del
     }).then((r) => r.json());
     const t = await mk("K-TEST", true);
     assert.equal(t.amount, "88.00");
-    assert.equal(t.amountDue, "88.00");
+    { const d = Math.round((Number(t.amountDue) - 88.00) * 100); assert.ok(d >= 1 && d <= 99, "unique 0.01-0.99 offset on the pay amount"); assert.equal(t.payAmount, t.amountDue); }
     assert.equal(t.priceAdjusted, true);
     const saved = store.getOrderByRef(t.orderRef);
     assert.equal(saved.priceCheck.clientAmount, "5.00");
     assert.equal(saved.priceMismatch, true);
     const again = await mk("K-TEST", true);
     assert.equal(again.orderRef, t.orderRef);
-    assert.equal(again.amountDue, "88.00");
+    assert.equal(again.amountDue, t.amountDue);
 
     const real = await mk("K-REAL", false);
     assert.equal((await fetch(`${base}/api/store-orders/${t.orderRef}`, { method: "DELETE" })).status, 401);

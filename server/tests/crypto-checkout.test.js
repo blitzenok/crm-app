@@ -4,6 +4,7 @@ import { createStore } from "../lib/store.js";
 import { depositWallets, isShippable } from "../lib/crypto-checkout.js";
 import { chargeCart } from "../lib/cascade.js";
 import { startCrmServer } from "../index.js";
+import { createMockChain, createMockScreener } from "./crypto-mock.js";
 
 const ERC = `0x${"ab".repeat(20)}`;
 const TRC = `T${"9".repeat(33)}`;
@@ -72,7 +73,7 @@ test("deposit wallets come from env and reject key-shaped values", () => {
   assert.equal(depositWallets({ CRYPTO_USDT_ERC: priv, CRYPTO_USDT_TRC: `0x${priv}` }).usdtTrc20, null);
 });
 
-test("crypto checkout: pending order, no purchase signal, ship blocked until mark-paid", async () => {
+test("crypto checkout: pending order, no purchase signal, ship blocked until the staff tx is verified on-chain", async () => {
   await withEnv({
     PAYMENTS_ENABLED: undefined,
     MARKETING_DIGEST_KEY: KEY,
@@ -82,8 +83,13 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
   }, async () => {
     const store = createStore({ memoryOnly: true });
     let umgCalled = 0;
+    const trc = createMockChain("trc20", { latest: 5000 });
+    const erc = createMockChain("erc20", { latest: 9000 });
     await withServer({
       store,
+      cryptoChains: { trc20: trc, erc20: erc },
+      cryptoScreener: createMockScreener(),
+      cryptoConfirmSecret: "x".repeat(40),
       adapters: {
         umg: {
           async createPayment() {
@@ -131,7 +137,17 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       assert.equal(created.paymentConfirmed, false);
       assert.equal(created.analyticsEvent, null);
       assert.equal(created.amount, "158.00");
-      assert.equal(created.amountDue, "158.00");
+      // unique exact amount: 158.00 + 0.01..0.99, returned as amountDue / payAmount (+ integer micro-units)
+      assert.match(created.payAmount, /^158\.\d{2}$/);
+      assert.notEqual(created.payAmount, "158.00");
+      assert.equal(created.amountDue, created.payAmount);
+      assert.equal(created.payAmountUnits, String(Math.round(Number(created.payAmount) * 1e6)));
+      assert.equal(created.paymentStatus, "awaiting_payment");
+      assert.equal(created.network, "trc20");
+      assert.equal(created.token, "USDT");
+      assert.equal(created.wallet, TRC);
+      assert.ok(created.confirmToken && created.confirmToken.length >= 40);
+      assert.ok(Date.parse(created.expiresAt) - Date.parse(created.createdAt) === 60 * 60 * 1000);
       assert.equal(created.currency, "USD");
       assert.equal(created.payAsset, "USDT");
       assert.match(created.orderRef, /^CR-[A-Z2-9]{8}$/);
@@ -151,6 +167,7 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       }).then((r) => r.json());
       assert.equal(again.reused, true);
       assert.equal(again.orderRef, created.orderRef);
+      assert.equal(again.payAmount, created.payAmount);
       assert.equal(store.listOrders().filter((o) => o.paymentMethod === "crypto").length, 1);
 
       const lead = store.getAbandonedCheckout(SAMPLE.session_id);
@@ -159,6 +176,7 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
 
       const poll = await fetch(`${base}/api/checkout/crypto/${created.orderRef}`).then((r) => r.json());
       assert.equal(poll.paymentConfirmed, false);
+      assert.equal(poll.confirmToken, undefined);
       assert.equal(poll.analyticsEvent, null);
       assert.equal(poll.customer, undefined);
       assert.equal(JSON.stringify(poll).toLowerCase().includes("payment successful"), false);
@@ -198,22 +216,6 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       assert.equal(noTx.status, 400);
       assert.equal((await noTx.json()).error, "tx_hash_required");
 
-      const noAmt = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
-        method: "POST",
-        headers: staff,
-        body: JSON.stringify({ txHash: TX_TRON }),
-      });
-      assert.equal(noAmt.status, 400);
-      assert.equal((await noAmt.json()).error, "amount_received_required");
-
-      const short = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
-        method: "POST",
-        headers: staff,
-        body: JSON.stringify({ txHash: TX_TRON, amountReceived: "150" }),
-      });
-      assert.equal(short.status, 409);
-      assert.equal((await short.json()).error, "amount_short");
-
       const mismatch = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
         method: "POST",
         headers: staff,
@@ -222,30 +224,47 @@ test("crypto checkout: pending order, no purchase signal, ship blocked until mar
       assert.equal(mismatch.status, 400);
       assert.equal((await mismatch.json()).error, "tx_hash_network_mismatch");
 
-      const paidRes = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+      // A staff-entered hash that the chain does not know is NOT a payment
+      const unknown = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
         method: "POST",
         headers: staff,
         body: JSON.stringify({ txHash: TX_TRON, amountReceived: "158.00" }),
       });
+      assert.equal(unknown.status, 409);
+      const unknownBody = await unknown.json();
+      assert.equal(unknownBody.error, "not_verified_on_chain");
+      assert.equal(unknownBody.paymentConfirmed, false);
+      assert.equal(unknownBody.fulfillment, "blocked");
+      const stillBlocked = await fetch(`${base}/api/store-orders/${created.orderRef}/ship`, { method: "POST", headers: staff });
+      assert.equal(stillBlocked.status, 409);
+
+      // Now the chain has it: right wallet, USDT contract, exact amount, 25 confirmations (>= 20)
+      trc.addTx({ hash: TX_TRON, to: TRC, units: created.payAmountUnits, blockNumber: 5000 - 25 });
+      const paidRes = await fetch(`${base}/api/store-orders/${created.orderId}/mark-paid`, {
+        method: "POST",
+        headers: staff,
+        body: JSON.stringify({ txHash: TX_TRON }),
+      });
       assert.equal(paidRes.status, 200);
       const paid = await paidRes.json();
       assert.equal(paid.paymentConfirmed, true);
-      assert.equal(paid.analyticsEvent, "purchase");
-      assert.equal(paid.fulfillment, "ready");
-      assert.equal(paid.order.fulfillment.status, "ready");
+      assert.equal(paid.analyticsEvent, null);
+      assert.equal(paid.fulfillment, "ready_to_ship");
+      assert.equal(paid.order.fulfillment.status, "ready_to_ship");
       assert.equal(paid.order.fulfillment.shippedAt, null);
-      assert.equal(paid.order.crypto.markedPaidBy, "staff@biolabsresearch.co");
+      assert.equal(paid.order.cryptoPayment.verifiedOnChain, true);
+      assert.equal(paid.order.cryptoPayment.transfers[0].matchedBy, "staff_tx_hint");
+      assert.equal(paid.order.cryptoPayment.staffActions.at(-1).actor, "staff@biolabsresearch.co");
       assert.equal(paid.order.crypto.txHash, TX_TRON);
-      assert.equal(paid.order.crypto.amountReceived, "158.00");
+      assert.equal(paid.order.crypto.amountReceived, created.payAmount);
       assert.equal(paid.order.crypto.network, "trc20");
-      assert.ok(paid.order.crypto.markedPaidAt);
 
       const pollPaid = await fetch(`${base}/api/checkout/crypto/${created.orderRef}`).then((r) => r.json());
       assert.equal(pollPaid.status, "crypto_paid");
+      assert.equal(pollPaid.paymentStatus, "paid");
       assert.equal(pollPaid.paymentConfirmed, true);
-      assert.equal(pollPaid.analyticsEvent, "purchase");
       assert.equal(pollPaid.shippable, true);
-      assert.equal(pollPaid.fulfillment, "ready");
+      assert.equal(pollPaid.fulfillment, "ready_to_ship");
       assert.equal(JSON.stringify(pollPaid).toLowerCase().includes("payment successful"), false);
 
       const early = await fetch(`${base}/api/store-orders/${created.orderRef}/tracking`, {

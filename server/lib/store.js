@@ -24,6 +24,22 @@ function emptyData() {
     seq: 1000,
     quoteSeq: 5000,
     abandonedDigestAt: null,
+    crypto: emptyCrypto(),
+  };
+}
+
+// On-chain verifier state: tx ledger (one tx -> one order, ever), scan cursors, unmatched deposits, alerts.
+function emptyCrypto() {
+  return { ledger: {}, scan: {}, unmatched: [], alerts: [] };
+}
+
+function asCrypto(value) {
+  const v = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    ledger: v.ledger && typeof v.ledger === "object" && !Array.isArray(v.ledger) ? v.ledger : {},
+    scan: v.scan && typeof v.scan === "object" && !Array.isArray(v.scan) ? v.scan : {},
+    unmatched: Array.isArray(v.unmatched) ? v.unmatched : [],
+    alerts: Array.isArray(v.alerts) ? v.alerts : [],
   };
 }
 
@@ -69,6 +85,7 @@ export function createStore(opts = {}) {
         seq: Number(parsed.seq) || 1000,
         quoteSeq: Number(parsed.quoteSeq) || 5000,
         abandonedDigestAt: parsed.abandonedDigestAt || null,
+        crypto: asCrypto(parsed.crypto),
       };
       if (!Array.isArray(data.settings.processors) || data.settings.processors.length === 0) {
         data.settings.processors = defaultSettings().processors;
@@ -268,6 +285,36 @@ export function createStore(opts = {}) {
       row.converted_id = meta.id || meta.converted_id || null;
       persist();
       return clone(row);
+    },
+    getCryptoState() {
+      data.crypto = asCrypto(data.crypto);
+      return clone(data.crypto);
+    },
+    /** Shallow-merge scan / unmatched / alerts (the ledger is only written through claimCryptoTx). */
+    saveCryptoState(patch = {}) {
+      data.crypto = asCrypto(data.crypto);
+      if (patch.scan) data.crypto.scan = clone(patch.scan);
+      if (patch.unmatched) data.crypto.unmatched = clone(patch.unmatched).slice(-500);
+      if (patch.alerts) data.crypto.alerts = clone(patch.alerts).slice(-500);
+      persist();
+      return clone(data.crypto);
+    },
+    /** Claim a chain tx for one order. Returns { ok:true } or { ok:false, orderId } if another order already owns it. */
+    claimCryptoTx(key, orderId, meta = {}) {
+      data.crypto = asCrypto(data.crypto);
+      const k = String(key || "").toLowerCase();
+      if (!k) return { ok: false, orderId: null };
+      const prev = data.crypto.ledger[k];
+      if (prev && prev.orderId !== orderId) return { ok: false, orderId: prev.orderId };
+      if (!prev) {
+        data.crypto.ledger[k] = { orderId, at: new Date().toISOString(), ...clone(meta) };
+        persist();
+      }
+      return { ok: true, orderId };
+    },
+    cryptoTxOwner(key) {
+      data.crypto = asCrypto(data.crypto);
+      return data.crypto.ledger[String(key || "").toLowerCase()]?.orderId || null;
     },
     touchAbandonedDigest(at = new Date().toISOString()) {
       data.abandonedDigestAt = at;

@@ -110,7 +110,7 @@ test("routes: card + crypto orders get a consent record + order summary; missing
     const k = await fetch(`${base}/api/checkout/crypto`, { method: "POST", headers: hdr, body: JSON.stringify({ idempotencyKey: "K-X1", network: "trc20", customer: CUSTOMER, amount: "158.00", items: [{ sku: "bpc-157-10mg", name: "BPC", qty: 2, amount: "158.00" }], test: true }) });
     const kb = await k.json();
     assert.equal(k.status, 200);
-    assert.equal(kb.amountDue, "150.10");
+    { const d = Math.round((Number(kb.amountDue) - 150.10) * 100); assert.ok(d >= 1 && d <= 99, "unique 0.01-0.99 offset on the pay amount"); assert.equal(kb.payAmount, kb.amountDue); }
     const ko = store.getOrderByRef(kb.orderRef);
     assert.equal(ko.consent.missing, true);
     assert.equal(ko.consent.allChecked, false);
@@ -172,7 +172,7 @@ test("a broken log never blocks the order", async () => {
     const k = await fetch(`${base}/api/checkout/crypto`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idempotencyKey: "K-B", network: "trc20", customer: CUSTOMER, amount: "88.00", items: [{ sku: "bpc-157-10mg", name: "BPC", qty: 1, amount: "88.00" }], consent: CONSENT }) });
     const kb = await k.json();
     assert.equal(k.status, 200);
-    assert.equal(kb.amountDue, "88.00");
+    { const d = Math.round((Number(kb.amountDue) - 88.00) * 100); assert.ok(d >= 1 && d <= 99, "unique 0.01-0.99 offset on the pay amount"); assert.equal(kb.payAmount, kb.amountDue); }
     assert.deepEqual(store.getOrderByRef(kb.orderRef).consent, { recorded: false, error: "disk full" });
   } finally {
     await new Promise((r) => server.close(r));

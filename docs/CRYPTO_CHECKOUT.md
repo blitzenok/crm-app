@@ -1,6 +1,8 @@
 # Crypto checkout (manual confirm)
 
-Pending USDT orders on the CRM sidecar. v1 is **staff mark-paid** after an on-chain check. There is no chain watcher.
+Pending USDT orders on the CRM sidecar.
+
+> **2026-09-28: payments are now verified on-chain automatically.** See [CRYPTO_VERIFY.md](CRYPTO_VERIFY.md) and the storefront contract in [CRYPTO_STOREFRONT_CONTRACT.md](CRYPTO_STOREFRONT_CONTRACT.md). Staff can no longer flip an order to paid by hand: `mark-paid` now takes a tx hash that the sidecar checks on-chain. Each order gets a unique exact amount (`payAmount` = total + 0.01–0.99 USDT) and is cancelled if unpaid after 60 minutes. The sections below describe v1; where they conflict, CRYPTO_VERIFY.md wins.
 
 Card `/api/checkout/charge` is unchanged. Crypto works while `PAYMENTS_ENABLED` is off.
 
@@ -53,8 +55,8 @@ Detail includes amount, order ref, customer, line items, created time, and who/w
 
 | Action | Effect |
 |---|---|
-| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "required", "amountReceived": "158.00", "network": "trc20\|erc20" }` | 2026-09-28: TXID and amount received are **required** (legal: confirm on-chain, record amount + TXID). `400 tx_hash_required` / `amount_received_required` / `network_required` / `tx_hash_network_mismatch` (0x hash on TRC20); `409 amount_short` if received < due. On success `status` → `crypto_paid`, records `crypto.{network,txHash,amountReceived,markedPaidBy,markedPaidAt}`. Fulfillment becomes `ready`. **Does not ship.** |
-| `POST /api/store-orders/:id/ship` `{ "carrier": "USPS", "trackingNumber": "…", "trackingUrl": "https://…" }` | **409 `ship_blocked`** until `crypto_paid` (card: until `approved`). After that, sets fulfillment `shipped` with who/when plus optional carrier / tracking number / https tracking URL. |
+| `POST /api/store-orders/:id/mark-paid` `{ "txHash": "required", "network": "trc20\|erc20", "note": "optional" }` | **Changed 2026-09-28.** The tx hash is attached as a staff hint and **checked on-chain** (right wallet, token, amount, confirmations, sanctions). `200 paymentConfirmed: true` only when verified; `409 not_verified_on_chain` (with `paymentStatus` and the tx it found, e.g. still confirming, short, wrong token) otherwise; `503 verification_disabled` / `chain_unavailable`. `amountReceived` is ignored (read from the chain). `analyticsEvent` is always `null` (GA4 purchase is sent server-side). Fulfillment becomes `ready_to_ship`. **Does not ship.** |
+| `POST /api/store-orders/:id/ship` `{ "carrier": "USPS", "trackingNumber": "…", "trackingUrl": "https://…" }` | **409 `ship_blocked`** until the payment is verified on-chain (`crypto_paid` + `paymentStatus: paid` + sanctions clear) (card: until `approved`). After that, sets fulfillment `shipped` with who/when plus optional carrier / tracking number / https tracking URL. |
 | `POST /api/store-orders/:id/tracking` `{ "carrier", "trackingNumber", "trackingUrl" }` | Set or correct tracking on an already shipped order (`409 not_shipped` otherwise). No customer email is sent (not built). |
 
 Checkout body may carry `"test": true`; the order is stored with `test: true` so smoke orders can be found and removed.
@@ -94,7 +96,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/store-orders/CR-XXXXXXXX/mark-paid \
   -d '{"txHash":""}'
 ```
 
-Expect `paymentConfirmed: true`, `analyticsEvent: "purchase"`, `fulfillment: "ready"`, and `shippedAt: null`. `GET /api/checkout/crypto/CR-XXXXXXXX` is the storefront poll. Fire GA only when `paymentConfirmed` is true.
+(v1 text, superseded: mark-paid now only succeeds for a real confirmed on-chain transfer.) Expect `paymentConfirmed: true`, `analyticsEvent: null`, `fulfillment: "ready_to_ship"`, and `shippedAt: null`. `GET /api/checkout/crypto/CR-XXXXXXXX` is the storefront poll. Do not fire a client-side GA purchase for crypto; the sidecar sends it via Measurement Protocol after on-chain verification (flag `GA4_SERVER_PURCHASE_ENABLED`).
 
 4. **Ship after paid** returns `fulfillment: "shipped"`. A second ship is `409 already_shipped`.
 

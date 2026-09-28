@@ -151,7 +151,16 @@ test("eligibility: only paid, never test/dry-run, real orders gated by RAPID_ALL
   assert.equal(pushEligibility(paidCard(), on).ok, true);
   assert.equal(pushEligibility(paidCard({ status: "declined" }), on).error, "not_paid");
   assert.equal(pushEligibility(paidCard({ paymentMethod: "crypto", status: "awaiting_crypto" }), on).error, "not_paid");
-  assert.equal(isPaidOrder(paidCard({ paymentMethod: "crypto", status: "crypto_paid", paymentConfirmed: true })), true);
+  // 2026-09-28: a crypto order "marked paid" without on-chain verification is NOT paid for Rapid
+  assert.equal(isPaidOrder(paidCard({ paymentMethod: "crypto", status: "crypto_paid", paymentConfirmed: true })), false);
+  const verified = paidCard({
+    paymentMethod: "crypto", status: "crypto_paid", paymentConfirmed: true, fulfillment: { status: "ready_to_ship" },
+    cryptoPayment: { status: "paid", verifiedOnChain: true, sanctions: { status: "clear" } },
+  });
+  assert.equal(isPaidOrder(verified), true);
+  assert.equal(pushEligibility(verified, on).ok, true);
+  assert.equal(pushEligibility({ ...verified, cryptoPayment: { ...verified.cryptoPayment, verifiedOnChain: false } }, on).error, "not_paid");
+  assert.equal(pushEligibility({ ...verified, cryptoPayment: { ...verified.cryptoPayment, status: "payment_review" } }, on).error, "not_paid");
   assert.equal(pushEligibility(paidCard({ test: true }), on).error, "test_order");
   assert.equal(pushEligibility(paidCard({ dryRun: true }), on).error, "test_order");
   assert.equal(pushEligibility(paidCard({ fulfillment: { status: "shipped" } }), on).error, "already_shipped");

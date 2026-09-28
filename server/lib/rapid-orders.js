@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { RapidError } from "./rapid.js";
+import { isCryptoVerified } from "./crypto-payment.js";
 
 export const DEFAULT_SHIP_MAP = { express: "usps_rrd_priority", ground: "usps_evs_parcelgrnd", default: "usps_evs_parcelgrnd" };
 export const ALERT_STATUSES = new Set(["rejected", "returned", "addrcorrect"]);
@@ -49,7 +50,9 @@ export function loadSkuMap(path) {
 
 export function isPaidOrder(order) {
   if (!order) return false;
-  if (order.paymentMethod === "crypto") return order.status === "crypto_paid" && order.paymentConfirmed === true;
+  // 2026-09-28: crypto counts as paid only when verified on-chain (+ sanctions clear) and released to ready_to_ship.
+  // A staff "marked paid" flag, a customer tx hash or a screenshot never qualifies.
+  if (order.paymentMethod === "crypto") return isCryptoVerified(order) && (order.fulfillment?.status === "ready_to_ship" || order.fulfillment?.status === "shipped");
   return String(order.status || "").toLowerCase() === "approved";
 }
 
