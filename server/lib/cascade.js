@@ -119,6 +119,7 @@ export async function chargeCart(input, deps) {
           shipMethod: pricing.shipMethod,
           mismatch: Boolean(pricing.mismatch),
           lines: pricing.lines,
+          volumeDiscount: pricing.volumeDiscount || null,
         },
       }
     : {};

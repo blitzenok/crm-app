@@ -148,3 +148,18 @@ A client line equal to the pack-tier total or to the single-bottle total (older 
 honoured exactly; anything else is repriced to the pack-tier total and flagged. The free research solvent
 (`research-solvent`, BAC gift) is $0 and is not sent to the catalog (it used to come back `unknown_item`).
 The card forward to notify-order uses the stored server line prices, subtotal, shipping and the charged amount.
+
+---
+
+## Storefront volume tier (2026-09-28) — built, OFF by default
+
+`server/lib/pricing.js` `volumePct` / `volumeDiscountedCents`, mirrored from storefront `cart-vial.js` "Footer v4" `updateTotals`:
+merch = Σ price×qty over non-gift lines (BAC / research-solvent excluded), before shipping; 5% at ≥ $100, 10% at ≥ $250,
+15% at ≥ $500 (inclusive, on the undiscounted merch); discounted merch = `Math.round(merch × (1 − pct/100) × 100) / 100`;
+shipping ($18.99 express / $0 ground) added after, never discounted; no coupon.
+
+Switch: `VOLUME_DISCOUNT_ENABLED=true` (drop-in `volume-discount.conf`). Left **off** because, as of storefront v3.00k8m4d,
+only the cart drawer shows the tiered total; the checkout page total, the crypto modal step 1 and the amount sent to
+`/api/checkout/charge` and `/api/checkout/crypto` are undiscounted. Turn it on in the same release that makes checkout
+show the tiered total. With it on, a client that sends either the undiscounted or the discounted total is not flagged;
+tampered lines are still repriced to the catalog pack tier and flagged. Order `priceCheck.volumeDiscount` records pct/discount.
