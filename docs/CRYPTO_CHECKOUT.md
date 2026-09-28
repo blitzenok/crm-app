@@ -99,3 +99,18 @@ Expect `paymentConfirmed: true`, `analyticsEvent: "purchase"`, `fulfillment: "re
 4. **Ship after paid** returns `fulfillment: "shipped"`. A second ship is `409 already_shipped`.
 
 5. **Card path:** `POST /api/checkout/charge` with `PAYMENTS_ENABLED` unset still returns `503 payments_disabled` and does not write an order.
+
+---
+
+## Card orders -> CRM Store Orders (2026-09-28)
+
+`server/lib/store-forward.js`. After an **approved** card charge the sidecar answers the shop first, then POSTs the order to
+`http://127.0.0.1:4000/msolpeptides-api/notify-order` (products-api) with `paymentMethod: "card-umg"`, `ref` = sidecar id
+(`BLR-…`), customer, shipping address, items (`slug`/`mg` split from the storefront sku) and totals. notify-order recomputes
+`subtotal_server` / `price_mismatch` from the catalog and sends the existing Customer.io transactional manager + customer emails.
+
+- Host env: `STORE_FORWARD_ENABLED=true`, `STORE_FORWARD_SINCE=<ISO>` (sweep ignores older orders). Off by default, so tests never post to the live service.
+- Once per order: `order.storeForward.sentAt`; notify-order is also idempotent by `ref`.
+- Failures never touch the charge response; they are logged (`[store-forward]`) and retried by a 60 s sweep with backoff (max 20 tries). The sweep also catches approvals that arrive via webhook/poll.
+- Dry-run / test orders (`dryRun`, `test`, `DRY-` keys, `*-STUB` descriptors) are never auto-forwarded. Staff override: `POST /api/store-orders/:id/forward` (operator).
+- Backfill of pre-existing approved orders: `server/scripts/backfill-store-forward-20260928.mjs` writes straight into `orders.json` (no notify-order, so no emails / no CIO events) and flags `backfill: true`.

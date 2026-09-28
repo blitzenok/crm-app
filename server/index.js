@@ -6,6 +6,7 @@ import { secretHealth } from "./lib/secrets.js";
 import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
 import { pollPending, startPoller } from "./lib/poller.js";
+import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
 import { createMockUmg } from "./lib/processors/umg.js";
 import * as tagada from "./lib/processors/tagada.js";
 import * as centrobill from "./lib/processors/centrobill.js";
@@ -107,6 +108,14 @@ export function createHandler(deps = {}) {
   const abandonLimiter = deps.abandonLimiter || createRateLimiter();
   const cryptoLimiter = deps.cryptoLimiter || createRateLimiter();
   const sendAbandonDigest = deps.sendAbandonDigest || sendAbandonedDigest;
+  // Card orders -> legacy shop orders (CRM Store Orders + Customer.io order emails). Off unless enabled on the host
+  // or injected by a test, so `npm test` on the server can never post into the live order service.
+  const forwardFetch = deps.forwardFetch || (process.env.STORE_FORWARD_ENABLED === "true" ? globalThis.fetch : null);
+  const forwardUrl = deps.forwardUrl || process.env.STORE_FORWARD_URL || undefined;
+  function forwardInBackground(orderId, via) {
+    if (!forwardFetch || !orderId) return;
+    forwardOrder(db, orderId, { fetchImpl: forwardFetch, url: forwardUrl, via }).catch(() => {});
+  }
 
   return async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -223,6 +232,17 @@ export function createHandler(deps = {}) {
       return json(200, { orders });
     }
 
+    const fwdAction = path.match(/^\/api\/store-orders\/([^/]+)\/forward$/);
+    if (fwdAction && req.method === "POST") {
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      if (!forwardFetch) return json(503, { ok: false, error: "store_forward_disabled" });
+      const id = decodeURIComponent(fwdAction[1]);
+      const result = await forwardOrder(db, id, { fetchImpl: forwardFetch, url: forwardUrl, force: true, via: `staff:${op.actor || "operator"}` });
+      const order = db.getOrder(id);
+      return json(result.ok ? 200 : result.reason === "not_found" ? 404 : 409, { ...result, storeForward: order?.storeForward || null });
+    }
+
     const cryptoAction = path.match(/^\/api\/store-orders\/([^/]+)\/(mark-paid|ship|tracking)$/);
     if (cryptoAction && req.method === "POST") {
       const op = await operatorContext();
@@ -299,7 +319,12 @@ export function createHandler(deps = {}) {
           id: result.order?.id || null,
         });
       }
-      return json(result.ok ? 200 : 402, result);
+      const out = json(result.ok ? 200 : 402, result);
+      // After the answer: a slow or broken order service must never cost the customer the charge response.
+      if (result.ok && !result.reused && String(result.order?.status || "").toLowerCase() === "approved") {
+        forwardInBackground(result.order.id, "charge");
+      }
+      return out;
     }
 
     if (path === "/api/checkout/crypto" && req.method === "POST") {
@@ -452,6 +477,16 @@ export function createHandler(deps = {}) {
           ],
         },
       });
+      // Mark mock orders so the store forwarder never treats them as real sales.
+      if (result?.order?.id) {
+        const dry = db.getOrder(result.order.id);
+        if (dry) {
+          dry.dryRun = true;
+          if (body.test === true) dry.test = true;
+          db.upsertOrder(dry);
+          result.order = db.getOrder(dry.id);
+        }
+      }
       return json(200, result);
     }
 
@@ -505,6 +540,10 @@ const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.arg
 if (isMain) {
   sharedInventoryStore();
   startPoller(store, { intervalMs: Number(process.env.UMG_POLL_MS || 30000), adapters: liveAdapters() });
+  if (process.env.STORE_FORWARD_ENABLED === "true") {
+    // Picks up approvals that arrive via webhook/poll and retries failed forwards (backoff inside).
+    startForwardSweeper(store, { intervalMs: Number(process.env.STORE_FORWARD_SWEEP_MS || 60000) });
+  }
   if (isAbandonDigestEnabled()) {
     const digestMs = Number(process.env.ABANDON_DIGEST_MS || 6 * 60 * 60 * 1000);
     setInterval(() => {
