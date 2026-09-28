@@ -466,7 +466,7 @@ test("legal: street/slang blend name 'Wolverine' is blocked (any case, any print
 test("Legal 2026-09-29: INN short forms blocked as standalone words only (r3ta, reta, sema, tirz, glp, trutide)", async () => {
   const { STANDALONE_TERMS } = await import("../lib/rapid-orders.js");
   const hits = (s) => findCompoundLeaks({ products: [{ product_id: "X-1", name: s }] });
-  for (const s of ["R3TA", "r3ta 10mg", "Reta 10mg", "RETA", "tirz", "Tirz 20mg", "R3TA10", "GLP-1", "Reta-trutide", "sema 10mg"]) {
+  for (const s of ["R3TA", "r3ta 10mg", "Reta 10mg", "RETA", "tirz", "Tirz 20mg", "R3TA10", "GLP-1", "GLP2", "GLP2-TPT", "Reta-trutide", "sema 10mg"]) {
     assert.ok(hits(s).some((t) => STANDALONE_TERMS.has(t)), `${s} must be blocked`);
   }
   for (const s of ["retail", "Semax", "semantic", "Tirzah", "G3-R-10", "RC02-500", "G3-R 10mg vial", "RC-02 500mg vial"]) {

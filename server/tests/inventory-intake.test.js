@@ -434,7 +434,7 @@ test("PVC: an approved sku_id applied to a stored line survives re-seed; unmappe
 
 test("Legal 2026-09-29: SKU names reject INN short forms as whole words, accept the stealth codes", () => {
   const store = createInventoryStore({ memoryOnly: true });
-  for (const name of ["R3TA 10mg", "Reta 10mg", "tirz", "GLP-1 20mg", "Sema 10mg", "Retatrutide 10mg", "Tirzepatide", "Semaglutide 10mg"]) {
+  for (const name of ["R3TA 10mg", "Reta 10mg", "tirz", "GLP-1 20mg", "GLP2", "GLP2-TPT", "Sema 10mg", "Retatrutide 10mg", "Tirzepatide", "Semaglutide 10mg"]) {
     assert.equal(store.upsertSku({ code: "X-1", name }).error, "public_name_banned", name);
   }
   for (const [code, name] of [["G3-R-10", "G3-R 10mg"], ["G3-R-30", "G3-R 30mg"], ["G3-R-60", "G3-R 60mg"], ["G2-T-20", "G2-T 20mg"],
