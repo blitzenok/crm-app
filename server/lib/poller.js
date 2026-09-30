@@ -1,5 +1,6 @@
 import { applyProcessorUpdate, applyProcessorUpdateByOrder } from "./cascade.js";
 import { ADAPTERS } from "./cascade.js";
+import { logSafe } from "./sanitize.js";
 
 // infra 2026-09-29 honest-charge: how long UMG gets to show a transaction before "not found" is believed.
 export const UNKNOWN_GRACE_MS = 30 * 60 * 1000;
@@ -35,12 +36,12 @@ async function pollUnknown(store, processor, adapter, deps, results) {
           status: "NOT_CHARGED", body: {}, reason: "not_charged_verified",
         });
         // the customer was told "do not pay again": staff must know the order was verified as never charged
-        log(`[pay-alert] NOT_CHARGED_VERIFIED ${orderId} ${idempotencyKey}`);
+        log(`[pay-alert] NOT_CHARGED_VERIFIED ${logSafe(orderId, 40)} ${logSafe(idempotencyKey, 80)}`);
         results.push({ processor, orderId, found: false, status: order?.lastStatus || null });
       } else {
         if (ageMs >= UNKNOWN_GRACE_MS && !alerted.has(orderId)) {
           alerted.add(orderId);
-          log(`[pay-alert] UNKNOWN_OUTCOME ${orderId} ${idempotencyKey} since ${attempt.startedAt}`);
+          log(`[pay-alert] UNKNOWN_OUTCOME ${logSafe(orderId, 40)} ${logSafe(idempotencyKey, 80)} since ${logSafe(attempt.startedAt, 40)}`);
         }
         results.push({ processor, orderId, waiting: true });
       }

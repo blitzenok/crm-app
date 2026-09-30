@@ -28,8 +28,17 @@ export function routingConfig(env = process.env) {
   if (!Number.isFinite(max) || max < 1) max = 3;
   let windowMin = Number(env.CLEFFO_RETRY_WINDOW_MIN);
   if (!Number.isFinite(windowMin) || windowMin <= 0) windowMin = 120;
+  // infra 2026-09-29 cleffo part 4: link lifetime for reuse (one live link per order) and how far back the sweep looks.
+  let ttl = Number(env.CLEFFO_LINK_TTL_MIN);
+  if (!Number.isFinite(ttl) || ttl <= 0) ttl = 60;
+  let sweepHours = Number(env.CLEFFO_SWEEP_HOURS);
+  if (!Number.isFinite(sweepHours) || sweepHours <= 0) sweepHours = 72;
   return {
     cleffoEnabled: flag(env.CLEFFO_ENABLED),
+    // Cleffo only: every attempt goes to Cleffo, the card never reaches UMG (default off = split / fallback as before).
+    cleffoOnly: flag(env.CLEFFO_ONLY),
+    linkTtlMin: ttl,
+    sweepHours,
     cleffoEnv: String(env.CLEFFO_ENV || "sandbox").trim().toLowerCase() === "live" ? "live" : "sandbox",
     splitPct: pct,
     maxAttempts: Math.min(max, 10),
@@ -58,7 +67,7 @@ const SUCCESS = new Set(["approved", "paid"]);
  * Routing attempts by this customer in the current episode, oldest first.
  * Each order may carry order.routing.attempts[] = { n, processor, outcome, at, ... }.
  */
-export function customerAttempts(store, { email, sessionId, idempotencyKey, now = Date.now(), windowMin = 120 } = {}) {
+function customerRows(store, { email, sessionId, idempotencyKey, now = Date.now(), windowMin = 120 } = {}, { uncounted = false } = {}) {
   const em = normalizeEmail(email);
   const sid = String(sessionId || "").trim();
   const key = String(idempotencyKey || "").trim();
@@ -72,24 +81,39 @@ export function customerAttempts(store, { email, sessionId, idempotencyKey, now 
     for (const a of o.routing?.attempts || []) {
       const t = Date.parse(a.at || "") || 0;
       if (!sameKey && !sameSession && t < since) continue;
-      if (a.countsAsAttempt === false) continue;
+      if (a.countsAsAttempt === false && !uncounted) continue;
       rows.push({ ...a, orderId: o.id, t });
     }
   }
   rows.sort((a, b) => a.t - b.t || (a.n || 0) - (b.n || 0));
+  return rows;
+}
+
+export function customerAttempts(store, q = {}) {
+  const rows = customerRows(store, q);
   let lastWin = -1;
   rows.forEach((r, i) => { if (SUCCESS.has(String(r.outcome || ""))) lastWin = i; });
   return rows.slice(lastWin + 1);
 }
 
 /**
+ * The customer's latest routing attempt (counted or not) is a Cleffo link that could not be created: nothing was charged
+ * and Cleffo is down for them right now. Lets the next /route send the buyer to the UMG card form (Cleffo primary, UMG spare).
+ */
+export function cleffoLinkFailedLast(store, q = {}) {
+  const rows = customerRows(store, q, { uncounted: true });
+  const last = rows[rows.length - 1];
+  return Boolean(last && last.processor === "cleffo" && last.outcome === "link_error");
+}
+
+/**
  * -> { processor, attempt, bucket, reason, blocked?, previous? }
  *    reason: cleffo_disabled | bucket | retry_switch_soft | retry_same_hard | retry_same_switch_used |
- *            retry_same_pending | attempts_exhausted | hard_decline_same_card
+ *            retry_same_pending | retry_switch_link_error | cleffo_only | attempts_exhausted | hard_decline_same_card
  * Rules: switch to the other processor ONLY after a soft decline and only once per episode; after a hard / unknown
  * decline stay on the same processor (and refuse the same card again on UMG); cap at maxAttempts.
  */
-export function chooseProcessor({ email, history = [], config = routingConfig(), cardKey = "" }) {
+export function chooseProcessor({ email, history = [], config = routingConfig(), cardKey = "", linkFailed = false }) {
   const bucket = bucketFor(email, config.splitPct);
   if (!config.cleffoEnabled) {
     return { processor: "umg", attempt: history.length + 1, bucket, reason: "cleffo_disabled" };
@@ -97,6 +121,16 @@ export function chooseProcessor({ email, history = [], config = routingConfig(),
   const n = history.length;
   if (n >= config.maxAttempts) {
     return { processor: null, attempt: n + 1, bucket, reason: "attempts_exhausted", blocked: true };
+  }
+  if (config.cleffoOnly) {
+    // No email, UMG history or split share moves anyone to UMG; the cap above still applies.
+    const prev = history[n - 1];
+    return { processor: "cleffo", attempt: n + 1, bucket, reason: "cleffo_only", ...(prev ? { previous: { processor: prev.processor, outcome: prev.outcome || null, retryClass: prev.retryClass || null } } : {}) };
+  }
+  // Cleffo could not make a link for this buyer a moment ago and no payment of theirs was ever refused as "hard": the spare
+  // processor takes the next attempt. (A hard Cleffo decline / abandoned link never moves the card to UMG.)
+  if (linkFailed && !history.some((h) => h.retryClass === "hard")) {
+    return { processor: "umg", attempt: n + 1, bucket, reason: "retry_switch_link_error" };
   }
   if (n === 0) return { processor: bucket, attempt: 1, bucket, reason: "bucket" };
   const last = history[n - 1];

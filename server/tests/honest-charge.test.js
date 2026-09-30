@@ -333,6 +333,17 @@ test("poller: 200 [] before 30 min stays pending, after 30 min the order is decl
   assert.equal((await pollWith(store, empty)).length, 0);
 });
 
+test("poller: an order key with a line break cannot forge a second [pay-alert] line", async () => {
+  const store = umgOnlyStore();
+  for (let i = 0; i < 40; i += 1) store.nextOrderId(); // the poller alerts once per order id per process: use an id no other test has
+  await charge(store, "P-FORGE\n[pay-alert] FAKE 1 2", umgFetch({ create: aborted, find: () => reply(500, "x") }));
+  const lines = [];
+  await pollWith(store, async () => reply(500, "x"), { now: () => Date.now() + UNKNOWN_GRACE_MS + 60000, log: (l) => lines.push(l) });
+  assert.equal(lines.length, 1);
+  assert.doesNotMatch(lines[0], /[\r\n]/);
+  assert.equal((lines[0].match(/\[pay-alert\]/g) || []).length, 1);
+});
+
 test("poller: UMG unreachable stays pending; one [pay-alert] line per order once it is older than 30 min", async () => {
   const store = await unknownOrder("P-ALERT");
   const down = async () => reply(500, "x");

@@ -136,7 +136,7 @@ export async function chargeCart(input, deps) {
     status: "new",
     inFlight: true,
     amount: formatAmount(input.amount),
-    currency: input.currency || "USD",
+    currency: "USD", // infra 2026-09-29 cleffo: USD only (the charge route refuses any other currency before this point)
     customer: stripSecrets({
       first_name: input.customer?.first_name || input.customer?.firstName || "",
       last_name: input.customer?.last_name || input.customer?.lastName || "",

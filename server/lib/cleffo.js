@@ -167,7 +167,7 @@ export function buildPaymentLinkBody({ order, merchantOrderId, redirectUrl, clie
       merchant_order_id: String(merchantOrderId).replace(/[^A-Za-z0-9]/g, "").slice(0, 64),
       customer_detail: customer,
       products: [line],
-      price: { sub_total: total, tax: 0, total, currency: String(order.currency || "USD").toUpperCase() },
+      price: { sub_total: total, tax: 0, total, currency: "USD" /* infra 2026-09-29 cleffo: USD only, never from the order / browser */ },
     },
     metadata: { source: "api", cleffo_client_key: clientKey, redirect_url: redirectUrl },
   };
@@ -184,7 +184,7 @@ async function requestJson(url, { method = "GET", headers = {}, body, timeoutMs,
     try { json = text ? JSON.parse(text) : null; } catch { json = { rawText: String(text).slice(0, 300) }; }
     return { httpStatus: res.status, body: json };
   } catch (err) {
-    return { httpStatus: null, body: null, errorMessage: err?.name === "AbortError" ? "timeout" : (err?.message || "network_error") };
+    return { httpStatus: null, body: null, errorMessage: err?.name === "AbortError" ? "timeout" : (err?.message || "network_error"), networkCode: String(err?.cause?.code || err?.code || "") };
   } finally {
     clearTimeout(timer);
   }
@@ -196,7 +196,14 @@ function errorSummary(body) {
   return `${body.message || ""}${errs ? ` (${errs})` : ""}`.slice(0, 500);
 }
 
-/** -> { ok, paymentLink, ref, merchantOrderId, httpStatus, error } */
+// The request never left this host / never found a server: Cleffo cannot have made a link.
+const NOT_SENT_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+/**
+ * -> { ok, paymentLink, ref, merchantOrderId, httpStatus, error, unknown? }
+ * unknown: true = no usable answer (timeout, dropped connection, a 2xx we cannot read): the link MAY exist at Cleffo, so the
+ * caller must not treat it as "no link" (no spare processor). A refused connection or an error answer with a body is explicit.
+ */
 export async function createPaymentLink(input, deps = {}) {
   const cfg = deps.config || loadCleffoConfig();
   const health = cleffoKeyHealth(cfg);
@@ -210,12 +217,12 @@ export async function createPaymentLink(input, deps = {}) {
     timeoutMs: deps.timeoutMs || Number(process.env.CLEFFO_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
     fetchImpl: deps.fetchImpl,
   });
-  if (r.errorMessage) return { ok: false, error: r.errorMessage, httpStatus: null };
+  if (r.errorMessage) return { ok: false, error: r.errorMessage, httpStatus: null, unknown: !NOT_SENT_CODES.has(r.networkCode) };
   const d = r.body?.data || {};
   if (r.httpStatus >= 200 && r.httpStatus < 300 && r.body?.status === true && d.payment_link && d.transaction_reference_number) {
     return { ok: true, paymentLink: String(d.payment_link), ref: String(d.transaction_reference_number), merchantOrderId: String(d.merchant_order_id || body.data.merchant_order_id), httpStatus: r.httpStatus };
   }
-  return { ok: false, error: errorSummary(r.body) || `http_${r.httpStatus}`, httpStatus: r.httpStatus };
+  return { ok: false, error: errorSummary(r.body) || `http_${r.httpStatus}`, httpStatus: r.httpStatus, unknown: r.httpStatus >= 200 && r.httpStatus < 300 };
 }
 
 export function mapPaymentStatus(s) {
@@ -223,10 +230,11 @@ export function mapPaymentStatus(s) {
   if (v === "completed") return "PAID";
   if (v === "failed") return "DECLINED";
   if (v === "pending") return "PENDING";
+  if (v === "expired" || v === "cancelled" || v === "canceled") return "EXPIRED"; // the link is dead, no payment happened
   return "UNKNOWN";
 }
 
-/** -> { ok, paymentStatus, status (PAID|DECLINED|PENDING|UNKNOWN), totalAmount, currency, merchantOrderId, gatewayIntentId, dateTime } */
+/** -> { ok, paymentStatus, status (PAID|DECLINED|PENDING|EXPIRED|UNKNOWN), totalAmount, currency, merchantOrderId, gatewayIntentId, dateTime } */
 export async function getPaymentStatus(ref, deps = {}) {
   const cfg = deps.config || loadCleffoConfig();
   if (!cfg.apiKey || cfg.baseUrlMismatch) return { ok: false, error: "cleffo_keys_missing" };
