@@ -243,7 +243,7 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
       amount: formatAmount(pricing.amount),
       clientAmount: pricing.clientAmount,
       priceMismatch: Boolean(pricing.mismatch),
-      priceCheck: { source: pricing.source, clientAmount: pricing.clientAmount, serverAmount: pricing.amount, subtotal: pricing.subtotal, shipping: pricing.shipping, shipMethod: pricing.shipMethod, mismatch: Boolean(pricing.mismatch), lines: pricing.lines, volumeDiscount: pricing.volumeDiscount || null },
+      priceCheck: { source: pricing.source, clientAmount: pricing.clientAmount, serverAmount: pricing.amount, subtotal: pricing.subtotal, shipping: pricing.shipping, shipMethod: pricing.shipMethod, mismatch: Boolean(pricing.mismatch), lines: pricing.lines, volumeDiscount: pricing.volumeDiscount || null, coupon: pricing.coupon || "", /* infra 2026-09-29 honest-charge: same fields as cascade.js */ discount: pricing.discount || null },
     });
   }
   order.inFlight = false;
@@ -327,7 +327,8 @@ export function recordUmgRouting(db, orderId, { route, config, cardKey, result }
   let cls = { retryClass: "none", basis: "approved", code: null };
   const st = String(order.status || "").toLowerCase();
   if (st === "approved") outcome = "approved";
-  else if (st === "pending") { outcome = "pending"; cls = { retryClass: "none", basis: "pending", code: null }; }
+  // infra 2026-09-29 honest-charge: an unknown UMG outcome keeps its own basis (still retryClass none)
+  else if (st === "pending") { outcome = "pending"; cls = { retryClass: "none", basis: last.reason === "unknown_outcome" ? "unknown_outcome" : "pending", code: null }; }
   else cls = classifyForRetry(last);
   recordRoutingAttempt(order, {
     n: route.attempt, processor: "umg", reason: route.reason, bucket: route.bucket, splitPct: config.splitPct,

@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 
 export const PROCESSOR_IDS = ["umg", "tagada", "centrobill"];
 export const ABANDONED_MAX = 500;
+const DECIDED_STATUSES = new Set(["APPROVED", "CAPTURED", "PAID", "DECLINED", "CANCELED", "CANCELLED"]);
 
 export function defaultSettings() {
   return {
@@ -67,6 +68,14 @@ function trimAbandonedMap(map, max, keepId) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+/** infra 2026-09-29 honest-charge: "sku:qty" pairs, lower-cased and sorted: the same cart in any line order gives the same key. */
+export function itemsKey(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((it) => `${String(it?.sku || it?.slug || "").trim().toLowerCase()}:${Math.max(1, parseInt(it?.qty ?? it?.quantity, 10) || 1)}`)
+    .sort()
+    .join("|");
 }
 
 export function createStore(opts = {}) {
@@ -150,6 +159,26 @@ export function createStore(opts = {}) {
       const order = data.orders.find((o) => o.idempotencyKey === key);
       return order ? clone(order) : null;
     },
+    /**
+     * infra 2026-09-29 honest-charge: a card order by the same buyer (email, any case) with the same server amount and the
+     * same set of lines, created within `windowMs`, still approved / pending / in flight, under a DIFFERENT key.
+     * Guards the "browser lost the answer, next click has a new key" double charge. Crypto orders do not count.
+     */
+    findRecentCardDuplicate({ email, amount, items, excludeKey, windowMs = 15 * 60 * 1000, now = Date.now() }) {
+      const em = String(email || "").trim().toLowerCase();
+      if (!em) return null;
+      const want = itemsKey(items);
+      let best = null;
+      for (const o of data.orders) {
+        if (o.paymentMethod === "crypto" || o.idempotencyKey === excludeKey) continue;
+        if (String(o.customer?.email || "").trim().toLowerCase() !== em) continue;
+        if (!(o.inFlight || ["approved", "pending"].includes(String(o.status || "").toLowerCase()))) continue;
+        if (now - (Date.parse(o.createdAt) || 0) > windowMs) continue;
+        if (Number(o.amount).toFixed(2) !== Number(amount).toFixed(2) || itemsKey(o.items) !== want) continue;
+        if (!best || String(o.createdAt) > String(best.createdAt)) best = o;
+      }
+      return best ? clone(best) : null;
+    },
     deleteOrder(id) {
       const i = data.orders.findIndex((o) => o.id === id);
       if (i === -1) return null;
@@ -221,8 +250,25 @@ export function createStore(opts = {}) {
       for (const order of data.orders) {
         for (const attempt of order.attempts || []) {
           const st = String(attempt.processorStatus || "").toUpperCase();
-          if (attempt.processor === processor && (st === "PENDING" || st.includes("3DS"))) {
+          if (attempt.processor !== processor) continue;
+          // infra 2026-09-29 honest-charge: besides PENDING / 3DS, any not-yet-decided attempt with a txn id on an order that is still
+          // waiting (e.g. "PROCESSING - PENDING VERIFICATION"), otherwise it would hang there forever.
+          const undecided = attempt.processorTxnId && order.status === "pending" && !DECIDED_STATUSES.has(st);
+          if (st === "PENDING" || st.includes("3DS") || undecided) {
             out.push({ orderId: order.id, attempt: clone(attempt) });
+          }
+        }
+      }
+      return out;
+    },
+    // infra 2026-09-29 honest-charge: attempts whose create call gave no answer (no txn id) on orders still waiting.
+    unknownAttempts(processor) { // entries also carry the txn ids already on the order
+      const out = [];
+      for (const order of data.orders) {
+        if (order.status !== "pending") continue;
+        for (const attempt of order.attempts || []) {
+          if (attempt.processor === processor && attempt.reason === "unknown_outcome" && !attempt.processorTxnId && String(attempt.processorStatus || "").toUpperCase() === "UNKNOWN") {
+            out.push({ orderId: order.id, idempotencyKey: order.idempotencyKey, attempt: clone(attempt), knownTxnIds: (order.attempts || []).map((a) => a.processorTxnId).filter(Boolean).map(String) });
           }
         }
       }

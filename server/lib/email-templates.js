@@ -87,7 +87,9 @@ export function orderTotals(order, map = loadNameMap()) {
   const totalC = cents(order.amount) ?? 0;
   const subtotalC = lines.every((l) => l.lineCents !== null) ? lines.reduce((s, l) => s + l.lineCents, 0) : null;
   const vd = pc.volumeDiscount;
-  const discountC = vd ? cents(vd.discount) || 0 : 0;
+  // infra 2026-09-29 honest-charge: coupon discount (priceCheck.discount, source "coupon:CODE") reconciles like the ladder one
+  const cd = !vd && pc.discount && String(pc.discount.source || "").startsWith("coupon:") ? pc.discount : null;
+  const discountC = vd ? cents(vd.discount) || 0 : cd ? cents(cd.amount) || 0 : 0;
   let shippingC = pc.shipping != null ? cents(pc.shipping) : null;
   if (shippingC === null && subtotalC !== null) shippingC = Math.max(0, totalC - (subtotalC - discountC));
   const reconciled = subtotalC !== null && shippingC !== null && subtotalC - discountC + shippingC === totalC;
@@ -95,7 +97,7 @@ export function orderTotals(order, map = loadNameMap()) {
     lines,
     reconciled,
     subtotalCents: reconciled ? subtotalC : null,
-    discount: reconciled && discountC ? { pct: vd.pct, cents: discountC } : null,
+    discount: reconciled && discountC ? { pct: vd ? vd.pct : cd.pct, cents: discountC, label: cd ? `Coupon ${String(cd.source).slice(7)} (${cd.pct}%)` : `Volume discount (${vd.pct}%)` } : null,
     shippingCents: shippingC,
     shipMethod: String(pc.shipMethod || order.shipMethod || "").toLowerCase() || null,
     totalCents: totalC,
@@ -177,7 +179,7 @@ export const h = {
     const rows = totals.lines.map((l) => `<tr><td style="padding:10px 0;border-bottom:1px solid ${C.rule};font-family:${BODY};font-size:14px;color:${C.text};vertical-align:top;"><strong style="font-family:${HEAD};">${esc(l.name)}</strong>${l.strength ? `<br><span style="color:${C.muted};font-size:13px;">Strength: ${esc(l.strength)}</span>` : ""}</td><td style="padding:10px 8px;border-bottom:1px solid ${C.rule};font-family:${BODY};font-size:14px;color:${C.text};text-align:center;vertical-align:top;white-space:nowrap;">× ${l.qty}</td><td style="padding:10px 0;border-bottom:1px solid ${C.rule};font-family:${BODY};font-size:14px;color:${C.text};text-align:right;vertical-align:top;white-space:nowrap;">${priced ? money(l.lineCents) : ""}</td></tr>`).join("");
     const sum = [];
     if (priced) sum.push(["Subtotal", money(totals.subtotalCents)]);
-    if (totals.discount) sum.push([`Volume discount (${totals.discount.pct}%)`, `−${money(totals.discount.cents)}`]);
+    if (totals.discount) sum.push([totals.discount.label, `−${money(totals.discount.cents)}`]);
     if (totals.shippingCents !== null) sum.push([`Shipping${totals.shipMethod ? ` (${totals.shipMethod === "express" ? "Express" : "Ground"})` : ""}`, totals.shippingCents === 0 ? "$0.00" : money(totals.shippingCents)]);
     const sumRows = sum.map(([k, v]) => `<tr><td colspan="2" style="padding:6px 0 0;font-family:${BODY};font-size:14px;color:${C.muted};">${esc(k)}</td><td style="padding:6px 0 0;font-family:${BODY};font-size:14px;color:${C.text};text-align:right;white-space:nowrap;">${esc(v)}</td></tr>`).join("");
     const totalRow = `<tr><td colspan="2" style="padding:12px 0 0;border-top:2px solid ${C.gold};font-family:${HEAD};font-size:16px;font-weight:700;color:${C.black};">Total (incl. shipping)</td><td style="padding:12px 0 0;border-top:2px solid ${C.gold};font-family:${HEAD};font-size:16px;font-weight:700;color:${C.black};text-align:right;white-space:nowrap;">${money(totals.totalCents)}</td></tr>`;

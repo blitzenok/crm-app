@@ -5,7 +5,7 @@ import { createStore } from "./lib/store.js";
 import { secretHealth } from "./lib/secrets.js";
 import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
-import { pollPending, startPoller } from "./lib/poller.js";
+import { pollPending, startPoller, recoverInFlight } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
 import { priceCryptoCart, priceCardCart } from "./lib/pricing.js";
 import { createMockUmg } from "./lib/processors/umg.js";
@@ -80,6 +80,11 @@ function sharedInventoryStore() {
     seedInventory(defaultInventoryStore);
   }
   return defaultInventoryStore;
+}
+
+function isUnknownOutcome(order) {
+  const last = [...(order.attempts || [])].reverse()[0];
+  return order.status === "pending" && last?.reason === "unknown_outcome" && !last.processorTxnId;
 }
 
 function liveAdapters() {
@@ -499,6 +504,28 @@ export function createHandler(deps = {}) {
           : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
         return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
       }
+      // infra 2026-09-29 honest-charge: same buyer, same server amount, same lines within 15 min under a NEW key = the browser
+      // lost our answer and retried. Do not charge again; point at the existing order. Same key is handled by chargeCart (reused).
+      const dupKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+      if (dupKey && !db.getOrderByIdempotency(dupKey)) {
+        const dup = db.findRecentCardDuplicate({
+          email: body?.customer?.email,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          items: body?.items,
+          excludeKey: dupKey,
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        });
+        if (dup) {
+          process.stdout.write(`[charge] duplicate_recent_order ${dup.id} for a new key: not charged again\n`);
+          return json(409, {
+            ok: false,
+            error: "duplicate_recent_order",
+            charged: false,
+            existingOrder: dup.id,
+            message: `This order was already placed a few minutes ago (order ${dup.id}). You were not charged again. If you want to buy again, please wait 15 minutes or contact support.`,
+          });
+        }
+      }
       let umgRoute = route;
       if (route.processor === "cleffo") {
         const cl = await startCleffoAttempt(db, {
@@ -521,6 +548,15 @@ export function createHandler(deps = {}) {
       if (result.order) {
         result.chargedAmount = result.order.amount;
         result.priceAdjusted = Boolean(result.order.priceMismatch);
+      }
+      // infra 2026-09-29 honest-charge: UMG never answered and find-by-ext-id could not say whether the card was charged.
+      // Same shape as "pending" plus charged:"unknown", so the page keeps its retry key and does not offer a new attempt.
+      // A replay of an unfinished order (pending / 3DS / in flight) is pending too, never "authorized"; in flight = we do not know yet.
+      if (result.reused && result.order && String(result.order.status).toLowerCase() !== "approved") result.pending = true;
+      if (result.order && (isUnknownOutcome(result.order) || (result.reused && result.order.inFlight))) {
+        result.pending = true;
+        result.charged = "unknown";
+        result.message = "We are confirming your payment with the bank. Please do not pay again. If you do not receive an order confirmation within an hour, contact support.";
       }
       result.processor = "umg";
       result.attempt = result.order?.attemptNumber ?? umgRoute.attempt;
@@ -1053,6 +1089,7 @@ export function startCrmServer(port = PORT, deps = {}) {
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   sharedInventoryStore();
+  recoverInFlight(store);
   startPoller(store, { intervalMs: Number(process.env.UMG_POLL_MS || 30000), adapters: liveAdapters() });
   if (process.env.STORE_FORWARD_ENABLED === "true") {
     // Picks up approvals that arrive via webhook/poll and retries failed forwards (backoff inside).
