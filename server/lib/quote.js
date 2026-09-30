@@ -1,4 +1,5 @@
 import { formatAmount } from "./card.js";
+import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import { stripSecrets } from "./sanitize.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -137,6 +138,7 @@ export async function createQuote(input, deps) {
     items: parsed.value.items,
     notes: parsed.value.notes,
     session_id: String(input.session_id || input.sessionId || "").trim(),
+    ...orderAttribution(input), // infra 2026-09-30 order-attribution: price requests become CRM orders through card-import
     emailSent: false,
     emailError: null,
   };

@@ -1,5 +1,6 @@
 import { cardFingerprint, stripSecrets } from "./sanitize.js";
 import { formatAmount } from "./card.js";
+import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import * as umg from "./processors/umg.js";
 import * as tagada from "./processors/tagada.js";
 import * as centrobill from "./processors/centrobill.js";
@@ -151,6 +152,7 @@ export async function chargeCart(input, deps) {
     items: Array.isArray(input.items) ? input.items : [],
     notes: input.notes || "",
     session_id: String(input.session_id || input.sessionId || "").trim(),
+    ...orderAttribution(input), // infra 2026-09-30 order-attribution: the trail the page sent with the charge
     winningProcessor: null,
     winningTxnId: null,
     descriptor: null,

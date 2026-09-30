@@ -346,6 +346,10 @@ function attributionOf(raw) {
     source: attributionSource(raw),
     medium: attrSlug(raw.utm_medium),
     campaign: cleanStr(attrStr(raw.utm_campaign), 80),
+    content: stripControls(attrStr(raw.utm_content), false).trim().slice(0, 80),               // the ad / creative, one line
+    term: stripControls(attrStr(raw.utm_term), false).trim().slice(0, 80),                     // the ad set, one line
+    click_id: attrStr(raw.click_id).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 200),            // fbclid / gclid value, nothing else
+    click: attrSlug(raw.click),                                                                // which parameter: fbclid, gclid, ...
     referrer: attrStr(raw.referrer).toLowerCase().replace(/[^a-z0-9.-]/g, '').slice(0, 120),   // a hostname, nothing else
     landing: ATTR_LANDING.test(landing) ? landing : ''                                           // a site path, nothing else
   };

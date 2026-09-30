@@ -36,6 +36,7 @@ const EXAMPLE_DOMAINS = new Set(["example.com", "example.org", "example.net"]);
 const CLICK_ID_KEYS = new Set([
   "gclid",
   "fbclid",
+  "click_id", // infra 2026-09-30 order-attribution
   "ttclid",
   "msclkid",
   "wbraid",

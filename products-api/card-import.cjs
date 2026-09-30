@@ -152,7 +152,9 @@ function buildOrder(rec, kind, ctx) {
     coupon: couponFromNotes(rec.notes),
     timestamp: rec.createdAt
   };
-  if (kind === 'quote' && rec.attribution !== undefined) od.attribution = rec.attribution;
+  // The record's own attribution (price requests always carry it; card and crypto records once the module keeps it). Folding,
+  // validation and size limits are sanitizeOrder's (attributionOf): a non-object is dropped, every field is cut down.
+  if (rec.attribution !== undefined) od.attribution = rec.attribution;
   const order = ctx.sanitizeOrder(od, kind === 'card' ? 'card' : 'quote-request');
   const check = ctx.priceCheck(order);
   if (!check || check.price_check === 'skipped') return null;
@@ -379,6 +381,7 @@ function buildCryptoOrder(rec, ctx) {
     coupon: typeof pc.coupon === 'string' ? pc.coupon : '',
     timestamp: rec.createdAt
   };
+  if (rec.attribution !== undefined) od.attribution = rec.attribution;   // same as buildOrder
   const order = ctx.sanitizeOrder(od, cryptoMethodOf(cp));
   const check = ctx.priceCheck(order);
   if (!check || check.price_check === 'skipped') return null;

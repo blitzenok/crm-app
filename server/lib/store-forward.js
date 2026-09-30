@@ -14,6 +14,7 @@
  *  - No card data leaves here (the order never holds any; stripSecrets already ran at charge time).
  */
 
+import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 export const DEFAULT_FORWARD_URL = "http://127.0.0.1:4000/msolpeptides-api/notify-order";
 export const CARD_PAYMENT_METHOD = "card-umg";
 export const CARD_STATEMENT_DESCRIPTOR = "PEPTIDESS SHOP";
@@ -146,6 +147,7 @@ export function buildNotifyPayload(order, opts = {}) {
       paymentMethod: payMethod,
       notes: noteParts.join(" · "),
       timestamp: order.createdAt || nowIso(),
+      ...orderAttribution(order), // infra 2026-09-30 order-attribution: the stored trail goes to the CRM order
       tc_accepted: true,
     },
   };

@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { formatAmount } from "./card.js";
+import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import { stripSecrets } from "./sanitize.js";
 import { findForbiddenCardField } from "./abandon.js";
 import {
@@ -360,6 +361,7 @@ export function createCryptoCheckout(input, deps) {
     items: parsed.value.items,
     notes: parsed.value.notes,
     session_id: parsed.value.session_id,
+    ...orderAttribution(input), // infra 2026-09-30 order-attribution: only when the page sends it in the create request
     ...(parsed.value.test ? { test: true } : {}),
     depositWallets: wallets,
     crypto: {

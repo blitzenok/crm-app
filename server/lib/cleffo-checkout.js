@@ -3,6 +3,7 @@
  * staff settings view. See docs/CLEFFO.md. Off unless CLEFFO_ENABLED=true.
  */
 import { formatAmount } from "./card.js";
+import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import { logSafe, stripSecrets } from "./sanitize.js";
 import * as cleffo from "./cleffo.js";
 import { classifyForRetry } from "./retry-class.js";
@@ -374,6 +375,7 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
     items: Array.isArray(body.items) ? stripSecrets(body.items) : [],
     notes: body.notes || "",
     session_id: String(body.session_id || body.sessionId || "").trim(),
+    ...orderAttribution(body), // infra 2026-09-30 order-attribution: same as cascade.js
     winningProcessor: null, winningTxnId: null, descriptor: null, lastProcessor: null, lastStatus: null,
     attempts: [],
   };
