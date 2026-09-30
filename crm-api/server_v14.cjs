@@ -1641,6 +1641,16 @@ try {
   console.error('⚠️ marketing-emails.cjs not mounted:', e.message);
 }
 
+// Ad spend (2026-10-01): entries for the Ad spend & ROAS section of Finance Reports (GET/POST /api/marketing/spend, DELETE /:id).
+// requireAuth on the mount (every signed-in user may write, STAFF_WRITES = all); written through lockedUpdate; a broken module
+// must not take the CRM's login down with it.
+try {
+  app.use('/api/marketing/spend', requireAuth, require('./marketing-spend.cjs')({ lockedUpdate, DATA_DIR }));
+  console.log('✅ marketing-spend.cjs mounted (/api/marketing/spend)');
+} catch (e) {
+  console.error('⚠️ marketing-spend.cjs not mounted:', e.message);
+}
+
 // Journeys (2026-09-30): the map of shop events against Customer.io journeys, read only (GET /api/marketing/journeys).
 // Same shape as the mounts above: requireAuth on the mount, and a broken module must not take the CRM's login down with it.
 try {
