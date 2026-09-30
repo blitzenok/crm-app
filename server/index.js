@@ -58,7 +58,7 @@ import {
   startCleffoSweeper,
   storefrontReturnUrl,
 } from "./lib/cleffo-checkout.js";
-import { routingConfig } from "./lib/routing.js";
+import { routingConfig, capDecision } from "./lib/routing.js";
 import { logSafe } from "./lib/sanitize.js";
 import { getPaymentStatus, loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
 
@@ -544,7 +544,22 @@ export function createHandler(deps = {}) {
           });
         }
       }
+      // Daily Cleffo cap (CLEFFO_DAILY_CAP_USD): today's PAID Cleffo total + open links of the last 30 min + this order's
+      // server total over the cap -> this new Cleffo payment goes to UMG instead (reason "cap"). docs/CLEFFO_DAILY_CAP.md.
+      if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || body?.extOrderId || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
       umgRoute = route;
+      // Capped to UMG but the page showed the Cleffo step (no card fields): ask for the card, nothing charged.
+      if (route.reason === "cap" && !hasCard(body)) {
+        return json(400, { ok: false, error: "card_required", processor: "umg", reason: "cap", charged: false, message: "Please enter your card details to pay. You were not charged." });
+      }
       // Cleffo could not make a link and the storefront (Cleffo step, no card fields) sent no card: nothing to charge on UMG yet.
       if (route.reason === "retry_switch_link_error" && !hasCard(body)) {
         return json(400, { ok: false, error: "card_required", processor: "umg", charged: false, message: "Please enter your card details to pay. You were not charged." });
@@ -617,8 +632,18 @@ export function createHandler(deps = {}) {
       if (!config.cleffoEnabled) {
         return json(200, { ok: true, processor: "umg", cleffoEnabled: false, attempt: 1, ...pickDesc(descriptorFor("umg")) });
       }
-      const { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
+      let { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
       if (route.blocked) return json(200, { ok: true, processor: null, blocked: true, reason: route.reason, cleffoEnabled: true, attempt: route.attempt });
+      // Daily Cleffo cap: /route has no cart total (amount only if the page sends one), so it answers umg once the day's
+      // Cleffo total is used up or this buyer was already capped (then /charge agrees).
+      if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config, amount: body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
       return json(200, { ok: true, processor: route.processor, cleffoEnabled: true, attempt: route.attempt, reason: route.reason, ...pickDesc(descriptorFor(route.processor)) });
     }
 

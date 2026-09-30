@@ -18,6 +18,8 @@ import {
   logRouting,
   recordRoutingAttempt,
   routingConfig,
+  capDecision,
+  cleffoDailyUsage,
   setLastOutcome,
 } from "./routing.js";
 
@@ -499,7 +501,9 @@ export function recordUmgRouting(db, orderId, { route, config, cardKey, result }
 export function nextStepFor(db, order, config = routingConfig()) {
   if (!config.cleffoEnabled || !order) return null;
   const history = customerAttempts(db, { email: order.customer?.email, sessionId: order.session_id, idempotencyKey: order.idempotencyKey, windowMin: config.retryWindowMin });
-  const next = chooseProcessor({ email: order.customer?.email, history, config });
+  let next = chooseProcessor({ email: order.customer?.email, history, config });
+  // Daily Cleffo cap: a soft-decline switch to Cleffo stays on UMG once the day's Cleffo total is used up.
+  next = capDecision(next, { store: db, config, amount: order.amount, email: order.customer?.email, sessionId: order.session_id, idempotencyKey: order.idempotencyKey, remember: false, write: () => {} }).route;
   return { attemptsUsed: history.length, attemptsLeft: Math.max(0, config.maxAttempts - history.length), nextProcessor: next.blocked ? null : next.processor, nextReason: next.reason, ...(next.processor ? pick(descriptorFor(next.processor)) : {}) };
 }
 
@@ -595,6 +599,9 @@ export function cleffoSettingsView(db, env = process.env) {
     splitPct: config.splitPct,
     maxAttempts: config.maxAttempts,
     retryWindowMin: config.retryWindowMin,
+    dailyCap: config.dailyCapUsd > 0
+      ? { capUsd: config.dailyCapUsd, tz: config.capTz, pendingMin: config.capPendingMin, today: cleffoDailyUsage(db, { tz: config.capTz, pendingMin: config.capPendingMin }) }
+      : { capUsd: 0 },
     rules: "first attempt: sticky sha256(email) bucket; soft decline -> other processor once; hard/unknown -> same processor (never switched)",
     keys: cleffo.cleffoKeyHealth(cfg),
     descriptors: { umg: descriptorFor("umg", env), cleffo: descriptorFor("cleffo", env) },
