@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* activity-log-only styling; everything shared lives in crm.css */
+.search-box input{padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;width:200px;}
+.filter-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.filter-bar select,.filter-bar input{padding:8px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:12px;background:#F8FAFF;}
+.timeline{position:relative;padding-left:28px;}
+.timeline::before{content:'';position:absolute;left:10px;top:0;bottom:0;width:2px;background:#E8ECF4;}
+.timeline-item{position:relative;margin-bottom:12px;padding:12px 16px;background:#fff;border:1px solid #E8ECF4;border-radius:12px;}
+.timeline-item::before{content:'';position:absolute;left:-22px;top:16px;width:12px;height:12px;border-radius:50%;background:#1F7A3D;border:2px solid #fff;box-shadow:0 0 0 2px #E6F4EA;}
+.timeline-item .ti-icon{font-size:18px;position:absolute;left:-26px;top:12px;background:#fff;border-radius:50%;padding:2px;}
+.timeline-item .ti-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.timeline-item .ti-title{font-weight:700;font-size:13px;}
+.timeline-item .ti-time{font-size:11px;color:#5A6685;}
+.timeline-item .ti-desc{font-size:12px;color:#5A6685;margin-top:2px;}
+.timeline-item .ti-user{display:inline-block;background:#E8ECF4;color:#5A6685;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:8px;}
+.empty-state{text-align:center;color:#5A6685;padding:40px;}
+.btn{ padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-export{background:#E8ECF4;color:#1B2A4A;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.filter-bar{flex-direction:column!important;}
+.filter-bar select,.filter-bar input{width:100%!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Activity Log</div>
+      <div class="search-box"><input type="text" id="searchInput" placeholder="Search..." oninput="renderLog()"></div>
+      <button class="btn btn-export" onclick="exportCSV()">Export CSV</button>
+    </div>
+    <div class="content">
+      <div class="filter-bar">
+        <input type="date" id="fromDate" onchange="loadLog()">
+        <input type="date" id="toDate" onchange="loadLog()">
+        <select id="typeFilter" onchange="renderLog()"><option value="">All Types</option><option value="sale_created">Sale</option><option value="quotation_created">Quotation</option><option value="quotation_converted">Quote Converted</option><option value="po_created">Purchase Order</option><option value="po_received">PO Received</option><option value="expense_added">Expense</option><option value="income_added">Income</option><option value="supplier_added">Supplier</option><option value="rep_added">Representative</option><option value="stock_adjusted">Stock</option></select>
+      </div>
+      <div class="timeline" id="logTimeline"><div class="empty-state">Loading...</div></div>
+    </div>
+  </div>
+</div>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('activity-log');
+const API='/msolpeptides-api';let LOG=[];
+const today=new Date();const weekAgo=new Date(today.getTime()-7*86400000);
+document.getElementById('fromDate').value=weekAgo.toISOString().slice(0,10);
+document.getElementById('toDate').value=today.toISOString().slice(0,10);
+const ICONS={'sale_created':'🧾','quotation_created':'📋','quotation_converted':'✅','po_created':'🚚','po_received':'📦','expense_added':'💸','income_added':'💰','supplier_added':'🏭','rep_added':'👔','stock_adjusted':'📦','customer_added':'🧑‍🤝‍🧑'};
+function timeAgo(iso){const diff=Date.now()-new Date(iso).getTime();const h=Math.floor(diff/3600000);if(h<1)return Math.floor(diff/60000)+'m ago';if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
+async function loadLog(){const from=document.getElementById('fromDate').value;const to=document.getElementById('toDate').value;try{LOG=await api(`${API}/activity-log?from=${from}&to=${to}`);renderLog();}catch(e){console.error(e);}}
+function renderLog(){const q=(document.getElementById('searchInput').value||'').toLowerCase();const typeF=document.getElementById('typeFilter').value;let filtered=LOG.filter(l=>(!typeF||l.type===typeF)&&(!q||l.description.toLowerCase().includes(q)));const container=document.getElementById('logTimeline');if(!filtered.length){container.innerHTML='<div class="empty-state">No activity found.</div>';return;}container.innerHTML=filtered.map(l=>`<div class="timeline-item"><div class="ti-header"><div class="ti-title">${esc(ICONS[l.type]||'•')} ${esc(l.type.replace(/_/g,' '))}</div><div class="ti-time">${timeAgo(l.created_at)}</div></div><div class="ti-desc">${esc(l.description)}<span class="ti-user">${esc(l.user)}</span></div></div>`).join('');}
+function exportCSV(){const q=(document.getElementById('searchInput').value||'').toLowerCase();const typeF=document.getElementById('typeFilter').value;let filtered=LOG.filter(l=>(!typeF||l.type===typeF)&&(!q||l.description.toLowerCase().includes(q)));const csv='Date,Type,User,Description\n'+filtered.map(l=>`"${new Date(l.created_at).toISOString()}","${l.type}","${l.user}","${l.description.replace(/"/g,'""')}"`).join('\n');const blob=new Blob([csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='activity-log.csv';a.click();}
+loadLog();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

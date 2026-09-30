@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* journeys-only styling; everything shared lives in crm.css. No tables here on purpose: crm.css hides the header and
+   the first column of every table on a phone, and a card list reads the same on both. */
+.section{margin-bottom:20px;}
+.notice{background:#FFF8EC;border:1px solid #F5DFAE;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#7A5B18;margin-bottom:20px;}
+.notice a{color:#1B2A4A;font-weight:700;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#991B1B;margin-bottom:20px;}
+.banner-error b{display:block;margin-bottom:3px;font-size:13px;}
+.summary-ok{background:#EDFBF4;border:1px solid #A7E3C6;border-radius:12px;padding:12px 18px;font-size:12.5px;color:#0B6B4A;margin-bottom:20px;}
+.summary-warn{background:#FEF3C7;border:1px solid #FCD34D;border-radius:12px;padding:12px 18px;font-size:12.5px;color:#7A4B06;margin-bottom:20px;}
+.summary-warn div+div,.summary-ok div+div{margin-top:4px;}
+.muted{color:#7A869A;}
+.hint{font-size:11.5px;color:#7A869A;margin-top:6px;}
+.jmap{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:18px;align-items:start;}
+.jcol-title{font-size:13px;font-weight:700;color:#1B2A4A;margin:0 0 4px;}
+.jcol-sub{font-size:11.5px;color:#7A869A;margin:0 0 12px;}
+.jcard{background:#fff;border:1px solid #E8ECF4;border-left-width:4px;border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+.jcard.hl{border-color:#1B2A4A;box-shadow:0 0 0 2px rgba(27,42,74,.18);}
+.jhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.jhead .jname{font-size:13.5px;font-weight:700;color:#1B2A4A;flex:1;min-width:0;overflow-wrap:anywhere;}
+.jrow{display:flex;gap:8px;font-size:12.5px;color:#2D3654;margin-top:6px;overflow-wrap:anywhere;}
+.jrow .k{flex:0 0 88px;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#7A869A;font-weight:600;padding-top:2px;}
+.jrow .v{flex:1;min-width:0;}
+.evchip{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:2px 8px;border-radius:6px;background:#F3F5FB;color:#1B2A4A;border:1px solid #D5DCF0;border-left-width:4px;cursor:pointer;margin:0 4px 4px 0;overflow-wrap:anywhere;}
+.evchip.hl{background:#1B2A4A;color:#fff;}
+.evchip.plain{cursor:default;border-left-width:1px;}
+.code{display:inline-block;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;padding:1px 6px;border-radius:5px;background:#F3F5FB;color:#2D3654;margin:0 4px 4px 0;}
+.c0{border-left-color:#0E9F6E;}.c1{border-left-color:#2563EB;}.c2{border-left-color:#D97706;}.c3{border-left-color:#7C3AED;}.c4{border-left-color:#DB2777;}
+.cx{border-left-color:#DC2626;border-style:dashed;}
+.warn{background:#FEF2F2;color:#991B1B;border:1px solid #FCA5A5;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:8px;}
+.quiet{background:#FFF8EC;color:#7A5B18;border:1px solid #F5DFAE;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:8px;}
+.letter{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid #F0F3FA;font-size:12.5px;}
+.letter:first-child{border-top:0;}
+.letter .lt{flex:1;min-width:0;overflow-wrap:anywhere;}
+.letter .ls{display:block;color:#7A869A;font-size:11.5px;}
+.metrics{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#2D3654;margin-top:8px;}
+.metrics b{color:#1B2A4A;}
+.link-btn{font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #E8ECF4;color:#1B2A4A;text-decoration:none;white-space:nowrap;display:inline-block;background:#fff;}
+.link-btn:hover{background:#E8ECF4;}
+.tx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:16px 20px;}
+.tx-grid .jcard{margin:0;}
+@media(max-width:900px){.jmap{grid-template-columns:1fr;}}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Journeys <span>&mdash; what the shop sends and who is waiting for it</span></div>
+      <span class="muted" id="fetchedAt" style="font-size:12px"></span>
+      <button class="refresh-btn" onclick="loadAll(true)">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+
+      <div id="banner"></div>
+
+      <div class="notice">
+        View only. This page shows the events the shop sends to Customer.io, the journeys that wait for them and the letters
+        inside. Starting, pausing, delays and conditions are set in Customer.io &mdash; the API cannot show or change them.
+        Click an event or a journey to see what it is connected to. Numbers cover the last 30 days.
+      </div>
+
+      <div id="summary"></div>
+
+      <div class="jmap">
+        <div>
+          <h3 class="jcol-title">Shop events</h3>
+          <p class="jcol-sub">What the CRM&rsquo;s own server (products-api) sends. This list is kept in the CRM, not read from Customer.io.</p>
+          <div id="events"><div class="muted">Loading&hellip;</div></div>
+        </div>
+        <div>
+          <h3 class="jcol-title">Journeys in Customer.io</h3>
+          <p class="jcol-sub">Read from Customer.io. A journey starts on an event or when a person joins a segment.</p>
+          <div id="journeys"><div class="muted">Loading&hellip;</div></div>
+        </div>
+      </div>
+
+      <div class="table-card section" style="margin-top:8px">
+        <div class="table-head"><div class="table-head-title">Service letters (transactional)</div><div class="table-head-count" id="txCount">&mdash;</div></div>
+        <div class="tx-grid" id="tx"><div class="muted">Loading&hellip;</div></div>
+        <div class="hint" style="padding:0 20px 16px">These are sent by the shop directly, not by a journey. Their texts are on the Emails page.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+renderNav('marketing-journeys');
+
+/* Same rule as the other marketing pages: a metric the server could not read prints as a dash, never as 0. */
+function num(v) { return (v === null || v === undefined) ? '—' : String(v); }
+function link(url, label) {
+  var safe = safeUrl(url);
+  if (!safe || safe === '#') return '';
+  return '<a class="link-btn" href="' + escAttr(safe) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + '</a>';
+}
+
+/* Every event gets a colour by its place in the shop's list; a chain's trigger chip wears the colour of the event it
+   waits for, and an event the shop does not send wears a dashed red one. Colours and the highlight are the only "lines". */
+function chip(name, idx) {
+  var cls = idx === null ? 'cx' : 'c' + idx;
+  return '<span class="evchip ' + cls + '" data-ev="' + escAttr(name) + '" tabindex="0">' + esc(name) + '</span>';
+}
+function stateBadge(state) {
+  return '<span class="badge ' + (state === 'running' ? 'badge-sent' : 'badge-none') + '">' + esc(state || 'unknown') + '</span>';
+}
+function eventBadge(status, n) {
+  if (status === 'listened') return '<span class="badge badge-sent">listened by ' + esc(String(n)) + '</span>';
+  if (status === 'no_listener') return '<span class="badge badge-high">nobody listens</span>';
+  if (status === 'listeners_not_running') return '<span class="badge badge-high">only stopped journeys listen</span>';
+  return '<span class="badge badge-none">not checked</span>';
+}
+/* One labelled line: a fixed-width label and a value that wraps under itself, not under the label. */
+function jrow(k, valueHtml) {
+  return '<div class="jrow"><span class="k">' + esc(k) + '</span><span class="v">' + valueHtml + '</span></div>';
+}
+function codes(list) {
+  return (list || []).map(function (s) { return '<span class="code">' + esc(s) + '</span>'; }).join('');
+}
+
+function renderSummary(data) {
+  if (!data.summary) return '';
+  var dead = data.summary.dead_journeys || [], silent = data.summary.silent_events || [];
+  if (!dead.length && !silent.length) {
+    return '<div class="summary-ok">Every journey waits for an event the shop sends, and every event has a journey listening.</div>';
+  }
+  var out = '<div class="summary-warn">';
+  if (dead.length) {
+    out += '<div><b>' + esc(String(dead.length)) + (dead.length === 1 ? ' journey waits' : ' journeys wait') + ' for an event the shop never sends and will not start:</b> ' +
+      dead.map(function (j) { return esc(j.name) + ' (' + esc(j.event_name) + ')'; }).join(', ') + '.</div>';
+  }
+  if (silent.length) {
+    out += '<div><b>' + esc(String(silent.length)) + (silent.length === 1 ? ' event has' : ' events have') + ' no journey listening:</b> ' +
+      silent.map(function (n) { return esc(n); }).join(', ') + '.</div>';
+  }
+  return out + '</div>';
+}
+
+function renderEvents(events) {
+  return (events || []).map(function (e, i) {
+    var listeners = (e.listeners || []).map(function (l) {
+      return '<span class="evchip plain" data-jid="' + escAttr(l.id) + '" tabindex="0" style="cursor:pointer">' + esc(l.name) +
+        (l.running ? '' : ' (' + esc(l.state || 'not running') + ')') + '</span>';
+    }).join('');
+    return '<div class="jcard c' + i + '" data-ev="' + escAttr(e.name) + '">' +
+      '<div class="jhead">' + chip(e.name, i) + eventBadge(e.status, (e.listeners || []).length) + '</div>' +
+      jrow('When', esc(e.when)) +
+      jrow('Sent by', esc((e.senders || []).join('; '))) +
+      jrow('Data', codes(e.data)) +
+      (e.statuses ? jrow('Statuses', codes(e.statuses)) : '') +
+      (e.note ? '<div class="hint">' + esc(e.note) + '</div>' : '') +
+      jrow('Listened by', listeners || '<span class="muted">nobody</span>') +
+    '</div>';
+  }).join('');
+}
+
+function triggerHtml(t, idxOf) {
+  if (t.kind === 'event') {
+    var idx = Object.prototype.hasOwnProperty.call(idxOf, t.event_name) ? idxOf[t.event_name] : null;
+    return jrow('Starts when', chip(t.event_name, idx)) +
+      (t.shop_sends === false ? '<div class="warn">Waits for an event the shop never sends: will not start.</div>' : '');
+  }
+  var segs = function (list) {
+    return list.map(function (s) { return esc(s.name || 'segment') + ' <span class="muted">#' + esc(s.id) + '</span>'; }).join(', ');
+  };
+  if (t.kind === 'segment') {
+    return jrow('Starts when', 'a person joins ' + segs(t.segments));
+  }
+  return jrow('Starts when', '<span class="muted">' + esc(t.type || 'unknown trigger') + '</span>');
+}
+
+function lettersHtml(j) {
+  if (j.letters === null) return jrow('Letters', '<span class="muted">Customer.io did not answer for this journey.</span>');
+  if (!j.letters.length) return jrow('Letters', '<span class="muted">' + (j.letters_more ? 'Not all letters shown: Customer.io has more steps than were read.' : 'No letters in this journey.') + '</span>');
+  return jrow('Letters', j.letters_more ? '<span class="muted">Not all letters shown: Customer.io has more steps than were read.</span>' : '') + j.letters.map(function (l) {
+    return '<div class="letter"><div class="lt"><b>' + esc(l.name || 'Letter') + '</b><span class="ls">' + esc(l.subject || '—') + '</span></div>' +
+      '<span class="badge ' + (l.sending_state === 'draft' ? 'badge-none' : 'badge-sent') + '">' + esc(l.sending_state || 'unknown') + '</span>' +
+      '<a class="link-btn" href="marketing-emails.html">Edit text</a></div>';
+  }).join('');
+}
+
+function stepsText(steps) {
+  var keys = Object.keys(steps || {});
+  if (!keys.length) return '';
+  var n = 0;
+  keys.forEach(function (k) { n += steps[k]; });
+  return String(n) + ' (' + keys.map(function (k) { return k + ' ×' + steps[k]; }).join(', ') + ')';
+}
+
+function renderJourneys(journeys, events) {
+  var idxOf = {};
+  (events || []).forEach(function (e, i) { idxOf[e.name] = i; });
+  return (journeys || []).map(function (j) {
+    var m = j.metrics30d;
+    var filt = (j.trigger.filter_segments || []).length
+      ? jrow('Only if in', j.trigger.filter_segments.map(function (s) { return esc(s.name || 'segment') + ' <span class="muted">#' + esc(s.id) + '</span>'; }).join(', ')) : '';
+    var st = stepsText(j.steps);
+    return '<div class="jcard" data-jid="' + escAttr(j.id) + '">' +
+      '<div class="jhead"><span class="jname">' + esc(j.name) + '</span>' + stateBadge(j.state) + link(j.edit_url, 'Open in Customer.io') + '</div>' +
+      triggerHtml(j.trigger, idxOf) + filt +
+      (st ? jrow('Steps', esc(st)) : '') +
+      lettersHtml(j) +
+      (m ? '<div class="metrics"><span>Sent <b>' + esc(num(m.sent)) + '</b></span><span>Delivered <b>' + esc(num(m.delivered)) + '</b></span>' +
+           '<span>Opened <b>' + esc(num(m.opened)) + '</b></span><span>Bounced <b>' + esc(num(m.bounced)) + '</b></span></div>'
+         : '<div class="metrics"><span class="muted">30-day numbers: no data</span></div>') +
+      '<div class="hint">Delays and conditions are visible only in Customer.io.</div>' +
+    '</div>';
+  }).join('') || '<div class="muted">No journeys in this workspace yet.</div>';
+}
+
+function renderTx(list) {
+  if (list === null || list === undefined) return '<div class="muted">Customer.io did not answer for this section.</div>';
+  if (!list.length) return '<div class="muted">No transactional messages in this workspace.</div>';
+  return list.map(function (t) {
+    return '<div class="jcard"><div class="jhead"><span class="jname">' + esc(t.name || '—') + '</span><span class="muted">#' + esc(t.id) + '</span></div>' +
+      (t.sent_by_shop
+        ? jrow('What', esc(t.role)) + jrow('Sent by', esc((t.senders || []).join('; ')))
+        : '<div class="jrow muted">Not sent by the shop code the CRM knows about.</div>') +
+    '</div>';
+  }).join('');
+}
+
+function bannerHtml(data) {
+  var extra = '';
+  if (data.throttled) {
+    extra += '<div class="notice">These numbers were read from Customer.io less than 30 seconds ago. Refresh again in ' +
+      esc(String(data.refresh_in_s || 30)) + ' s to read them anew.</div>';
+  }
+  if (data.journeys && data.journeys_total > data.journeys_shown) {
+    extra += '<div class="notice">Showing ' + esc(String(data.journeys_shown)) + ' of ' + esc(String(data.journeys_total)) +
+      ' journeys: the rest are not read. The check above covers only the journeys shown.</div>';
+  }
+  return extra + bannerMain(data);
+}
+function bannerMain(data) {
+  if (data.cio && data.cio.ok === false) {
+    return '<div class="banner-error"><b>Customer.io</b>' + esc(data.cio.error || 'Customer.io could not be read') +
+      ' The shop events on the left are the CRM’s own list and are shown anyway.</div>';
+  }
+  if (data.cio && data.cio.partial) {
+    return '<div class="notice">Some parts could not be read from Customer.io just now and show as “no data”. Refresh in a minute.</div>';
+  }
+  return '';
+}
+
+function el(id) { return document.getElementById(id); }
+
+async function loadAll(fresh) {
+  try {
+    var d = await api('/api/marketing/journeys' + (fresh ? '?fresh=1' : ''), { toast: false });
+    el('banner').innerHTML = bannerHtml(d);
+    el('summary').innerHTML = renderSummary(d);
+    el('events').innerHTML = renderEvents(d.events);
+    el('journeys').innerHTML = d.journeys === null
+      ? '<div class="muted">Customer.io could not be read, so the journeys are not shown.</div>'
+      : renderJourneys(d.journeys, d.events);
+    el('tx').innerHTML = renderTx(d.transactional);
+    el('txCount').textContent = d.transactional ? String(d.transactional.length) : '—';
+    el('fetchedAt').textContent = d.fetched_at ? 'Read ' + fmtDate(d.fetched_at) : '';
+  } catch (e) {
+    el('banner').innerHTML = '<div class="banner-error"><b>Journeys</b>' + esc(e.message || 'Something went wrong') + '</div>';
+  }
+}
+
+/* Highlight: a click on an event chip lights every card and chip with the same event name; a click on a journey chip
+   lights that journey's card. Names are compared as strings, never put into a selector. */
+function highlight(attr, key) {
+  ['data-ev', 'data-jid'].forEach(function (a) {
+    var nodes = document.querySelectorAll('[' + a + ']');
+    for (var i = 0; i < nodes.length; i++) {
+      var on = a === attr && nodes[i].getAttribute(a) === key;
+      if (on) nodes[i].classList.add('hl'); else nodes[i].classList.remove('hl');
+    }
+  });
+}
+function onPick(ev) {
+  var t = ev.target && ev.target.closest ? ev.target.closest('[data-ev],[data-jid]') : null;
+  if (!t) return;
+  if (t.hasAttribute('data-ev')) highlight('data-ev', t.getAttribute('data-ev'));
+  else highlight('data-jid', t.getAttribute('data-jid'));
+}
+document.addEventListener('click', onPick);
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') onPick(ev); });
+
+loadAll();
+</script>
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

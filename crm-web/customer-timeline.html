@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* customer-timeline-only styling (2026-09-30); everything shared lives in crm.css */
+.ct-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+.ct-stat{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:14px 16px; min-width:0; }
+.ct-stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.ct-stat-value{ font-size:22px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.ct-stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.ct-tools{ display:flex; gap:12px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+.ct-tools input[type=search]{ flex:1; min-width:180px; max-width:420px; padding:9px 14px; border:1px solid #E8ECF4; border-radius:8px; font-size:13px; background:#F8FAFF; }
+.ct-toggle{ display:flex; align-items:center; gap:6px; font-size:12px; color:#5A6685; cursor:pointer; user-select:none; }
+.ct-layout{ display:grid; grid-template-columns:minmax(300px,420px) 1fr; gap:16px; align-items:start; }
+.ct-list{ display:flex; flex-direction:column; gap:8px; }
+.ct-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:12px 14px; cursor:pointer; display:flex; gap:12px; align-items:center; text-align:left; width:100%; font:inherit; color:inherit; }
+.ct-card:hover{ border-color:#1F7A3D; }
+.ct-card.is-active{ border-color:#1F7A3D; background:#FAFFFC; box-shadow:inset 3px 0 0 #1F7A3D; }
+.ct-card.is-qa{ opacity:.75; }
+.ct-av{ width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0; }
+.ct-main{ flex:1; min-width:0; }
+.ct-name{ font-weight:700; font-size:13px; color:#1a1a2e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-email{ font-size:11px; color:#5A6685; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-meta{ font-size:11px; color:#5A6685; margin-top:3px; }
+.ct-right{ text-align:right; flex-shrink:0; }
+.ct-rev{ font-weight:700; font-size:13px; color:#145C2C; }
+.ct-chip{ display:inline-block; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-left:4px; vertical-align:middle; }
+.ct-chip-qa{ background:#FFF3E0; color:#E65100; }
+.ct-chip-both{ background:#E3F2FD; color:#1565C0; }
+.ct-chip-book{ background:#E8ECF4; color:#1B2A4A; }
+.ct-detail{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:18px 20px; min-width:0; position:sticky; top:12px; }
+.ct-detail h2{ font-size:18px; margin:0 0 2px; color:#1a1a2e; word-break:break-word; }
+.ct-detail .ct-sub{ font-size:12px; color:#5A6685; word-break:break-all; }
+.ct-kpis{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:14px 0 16px; }
+.ct-kpi{ background:#F8FAFF; border:1px solid #E8ECF4; border-radius:10px; padding:10px 12px; min-width:0; }
+.ct-kpi b{ display:block; font-size:16px; color:#1a1a2e; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ct-kpi span{ font-size:10px; color:#5A6685; text-transform:uppercase; font-weight:600; letter-spacing:.4px; }
+.ct-tl{ list-style:none; margin:0; padding:0 0 0 18px; border-left:2px solid #E8ECF4; }
+.ct-ev{ position:relative; padding:0 0 14px 12px; }
+.ct-ev::before{ content:''; position:absolute; left:-25px; top:4px; width:12px; height:12px; border-radius:50%; background:#fff; border:3px solid #94A3B8; }
+.ct-ev.t-shop_order::before,.ct-ev.t-card_order::before{ border-color:#1F7A3D; }
+.ct-ev.t-card_order.is-declined::before{ border-color:#E53935; }
+.ct-ev.t-lead::before,.ct-ev.t-signup::before{ border-color:#1565C0; }
+.ct-ev.t-abandoned_checkout::before{ border-color:#E65100; }
+.ct-ev.is-qa{ opacity:.7; }
+.ct-ev-head{ display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+.ct-ev-type{ font-weight:700; font-size:13px; color:#1B2A4A; }
+.ct-ev-date{ font-size:11px; color:#5A6685; white-space:nowrap; }
+.ct-ev-line{ font-size:12px; color:#334155; margin-top:3px; word-break:break-word; }
+.ct-ev-items{ font-size:12px; color:#334155; margin-top:3px; }
+.ct-ev-items code{ background:#F1F5F9; border-radius:4px; padding:0 4px; font-size:11px; }
+.ct-ev-src{ font-size:10px; color:#94A3B8; margin-top:3px; word-break:break-all; }
+.ct-back{ display:none; }
+.ct-empty{ text-align:center; color:#5A6685; padding:40px 20px; background:#fff; border-radius:14px; border:1px solid #E8ECF4; }
+@media(max-width:1024px){ .ct-layout{ grid-template-columns:1fr 1fr; } .ct-kpis{ grid-template-columns:1fr 1fr; } }
+@media(max-width:768px){
+  .ct-stats{ grid-template-columns:1fr 1fr!important; gap:8px!important; }
+  .ct-stat{ padding:10px 12px; } .ct-stat-value{ font-size:18px; }
+  .ct-layout{ grid-template-columns:1fr; }
+  .ct-detail{ position:static; padding:14px; }
+  .ct-layout.show-detail .ct-list, .ct-layout.show-detail ~ .ct-hide-on-detail{ display:none; }
+  .ct-layout:not(.show-detail) .ct-detail{ display:none; }
+  .ct-back{ display:inline-flex; margin-bottom:10px; }
+  .ct-tools input[type=search]{ max-width:none; }
+}
+</style>
+</head>
+<body>
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=ct20260930"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Customer Timeline <span>— one record per e-mail, both order books</span></div>
+      <button class="btn btn-secondary" id="ct-refresh" type="button">🔄 Refresh</button>
+    </div>
+    <div class="content">
+      <div class="ct-stats" id="ct-stats">
+        <div class="ct-stat"><div class="ct-stat-label">Customers</div><div class="ct-stat-value" id="st-cust">—</div><div class="ct-stat-sub" id="st-cust-sub">&nbsp;</div></div>
+        <div class="ct-stat"><div class="ct-stat-label">In both books</div><div class="ct-stat-value" id="st-both">—</div><div class="ct-stat-sub">Shop orders + UMG store</div></div>
+        <div class="ct-stat"><div class="ct-stat-label">Orders</div><div class="ct-stat-value" id="st-orders">—</div><div class="ct-stat-sub" id="st-events">&nbsp;</div></div>
+        <div class="ct-stat"><div class="ct-stat-label">Paid revenue</div><div class="ct-stat-value" id="st-rev">—</div><div class="ct-stat-sub">Paid / approved only</div></div>
+      </div>
+      <div class="ct-tools">
+        <input type="search" id="ct-q" placeholder="Search e-mail, name or company…" autocomplete="off" aria-label="Search customers">
+        <label class="ct-toggle"><input type="checkbox" id="ct-qa"> Show QA / test</label>
+      </div>
+      <div class="ct-layout" id="ct-layout">
+        <div class="ct-list" id="ct-list"><div class="ct-empty">Loading…</div></div>
+        <div class="ct-detail" id="ct-detail"><div class="ct-empty" style="border:0">Select a customer to see the timeline</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('customer-timeline');
+(function(){
+  const API = '/api/customers';
+  const TYPE_LABELS = {
+    lead: 'Lead', signup: 'Insider signup', shop_order: 'Shop order', shop_quote: 'Shop quote request',
+    umg_quote: 'Quote (UMG store)', card_order: 'Card order (UMG store)', abandoned_checkout: 'Abandoned checkout',
+    contact_message: 'Contact message', consent: 'Checkout consent'
+  };
+  const BOOK_LABELS = { shop: 'Shop', umg: 'UMG', leads: 'Leads' };
+  let customers = [], meta = null, selected = '', reqGen = 0;
+  const $ = id => document.getElementById(id);
+  const money = n => n === null || n === undefined ? '' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const when = v => { if (!v) return '—'; const d = new Date(v); return isNaN(d) ? '—' : d.toLocaleString([], { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); };
+  const day = v => { if (!v) return '—'; const d = new Date(v); return isNaN(d) ? '—' : d.toLocaleDateString([], { year:'numeric', month:'short', day:'numeric' }); };
+  const initials = c => { const b = (c.name || c.email || '').trim(); const p = b.split(/[\s@.]+/).filter(Boolean); return ((p[0]||'')[0]||'' ) .toUpperCase() + ((p.length > 1 ? p[1][0] : (p[0]||'')[1]) || '').toUpperCase(); };
+  const showQa = () => $('ct-qa').checked;
+
+  async function loadList(){
+    const gen = ++reqGen;
+    try {
+      const data = await api(API + (showQa() ? '?qa=1' : ''), { toast: false });
+      if (gen !== reqGen) return;
+      customers = data.customers || []; meta = data.meta || {};
+      renderStats(); renderList();
+      if (selected) loadDetail(selected, false);
+    } catch (e) {
+      $('ct-list').innerHTML = '<div class="ct-empty" style="color:#E53935">Failed to load customers: ' + esc(e.message) + '</div>';
+    }
+  }
+  function renderStats(){
+    $('st-cust').textContent = showQa() ? meta.total : meta.real;
+    $('st-cust-sub').textContent = showQa() ? (meta.real + ' real · ' + meta.qa + ' QA/test') : (meta.qa + ' QA/test hidden');
+    $('st-both').textContent = meta.inBothBooks;
+    $('st-orders').textContent = meta.orders;
+    $('st-events').textContent = meta.events + ' timeline events';
+    $('st-rev').textContent = money(meta.paidRevenue);
+  }
+  function renderList(){
+    const q = $('ct-q').value.trim().toLowerCase();
+    const list = q ? customers.filter(c => [c.email, c.name, c.company].some(v => v && v.toLowerCase().includes(q))) : customers;
+    if (!list.length) { $('ct-list').innerHTML = '<div class="ct-empty">' + (customers.length ? 'No customer matches the search' : 'No customers yet') + '</div>'; return; }
+    $('ct-list').innerHTML = list.map(c => {
+      const chips = (c.qa ? '<span class="ct-chip ct-chip-qa">QA</span>' : '') + (c.inBothBooks ? '<span class="ct-chip ct-chip-both">Both books</span>' : '');
+      return '<button type="button" class="ct-card' + (c.email === selected ? ' is-active' : '') + (c.qa ? ' is-qa' : '') + '" data-email="' + escAttr(c.email) + '">'
+        + '<div class="ct-av">' + esc(initials(c)) + '</div>'
+        + '<div class="ct-main"><div class="ct-name">' + esc(c.name || c.company || c.email) + chips + '</div>'
+        + '<div class="ct-email">' + esc(c.email) + '</div>'
+        + '<div class="ct-meta">' + c.orders + ' order' + (c.orders === 1 ? '' : 's') + ' · ' + c.eventCount + ' events · last ' + esc(day(c.lastSeen)) + '</div></div>'
+        + '<div class="ct-right"><div class="ct-rev">' + (c.paidRevenue ? money(c.paidRevenue) : '') + '</div></div>'
+        + '</button>';
+    }).join('');
+  }
+  function evLine(e){
+    const parts = [];
+    if (e.ref) parts.push(esc(e.ref));
+    if (e.amount !== null && e.amount !== undefined) parts.push('<b>' + esc(money(e.amount)) + '</b>');
+    if (e.status) parts.push(esc(e.status) + (e.crmStatus ? ' (' + esc(e.crmStatus) + ')' : ''));
+    if (e.paid) parts.push('<span class="ct-chip ct-chip-both" style="margin:0">Paid</span>');
+    if (e.processor) parts.push(esc(e.processor));
+    if (e.attempts) parts.push(e.attempts + ' attempt' + (e.attempts === 1 ? '' : 's'));
+    if (e.linkedRef && e.linkedRef !== e.ref) parts.push('from ' + esc(e.linkedRef));
+    if (e.subject) parts.push(esc(e.subject));
+    if (e.coupon) parts.push('coupon ' + esc(e.coupon));
+    return parts.join(' · ');
+  }
+  function renderDetail(d){
+    const c = d.customer, ev = d.events.slice().reverse();
+    const books = (c.books || []).map(b => '<span class="ct-chip ct-chip-book">' + esc(BOOK_LABELS[b] || b) + '</span>').join('');
+    $('ct-detail').innerHTML = '<button type="button" class="btn btn-secondary ct-back" id="ct-back">← All customers</button>'
+      + '<h2>' + esc(c.name || c.company || c.email) + (c.qa ? '<span class="ct-chip ct-chip-qa">QA</span>' : '') + (c.inBothBooks ? '<span class="ct-chip ct-chip-both">Both books</span>' : '') + '</h2>'
+      + '<div class="ct-sub">' + esc(c.email) + (c.company && c.name ? ' · ' + esc(c.company) : '') + (c.country ? ' · ' + esc(c.country) : '') + ' ' + books + '</div>'
+      + '<div class="ct-kpis">'
+      + '<div class="ct-kpi"><b>' + c.orders + '</b><span>Orders (' + c.paidOrders + ' paid)</span></div>'
+      + '<div class="ct-kpi"><b>' + esc(money(c.paidRevenue)) + '</b><span>Paid revenue</span></div>'
+      + '<div class="ct-kpi"><b>' + esc(day(c.firstSeen)) + '</b><span>First seen</span></div>'
+      + '<div class="ct-kpi"><b>' + esc(day(c.lastSeen)) + '</b><span>Last seen</span></div>'
+      + '</div>'
+      + (c.hiddenQaEvents ? '<div class="ct-ev-src" style="margin:-6px 0 10px">' + c.hiddenQaEvents + ' QA/test event(s) hidden — tick Show QA / test</div>' : '')
+      + (ev.length ? '<ol class="ct-tl">' + ev.map(e => '<li class="ct-ev t-' + escAttr(e.type) + (e.qa ? ' is-qa' : '') + (e.status === 'declined' ? ' is-declined' : '') + '">'
+          + '<div class="ct-ev-head"><span class="ct-ev-type">' + esc(TYPE_LABELS[e.type] || e.type) + (e.qa ? '<span class="ct-chip ct-chip-qa">QA</span>' : '') + '</span><span class="ct-ev-date">' + esc(when(e.date)) + '</span></div>'
+          + (evLine(e) ? '<div class="ct-ev-line">' + evLine(e) + '</div>' : '')
+          + (e.items && e.items.length ? '<div class="ct-ev-items">' + e.items.map(i => (i.sku ? '<code>' + esc(i.sku) + '</code> ' : '') + esc(i.name || '') + (i.qty > 1 ? ' ×' + esc(i.qty) : '')).join(', ') + '</div>' : '')
+          + '<div class="ct-ev-src">' + esc(e.source.file) + ' · ' + esc(e.source.id) + '</div>'
+          + '</li>').join('') + '</ol>' : '<div class="ct-empty" style="border:0">No events</div>');
+    $('ct-back').addEventListener('click', () => { selected = ''; history.replaceState(null, '', location.pathname); $('ct-layout').classList.remove('show-detail'); renderList(); window.scrollTo(0, 0); });
+  }
+  async function loadDetail(email, scroll){
+    selected = email;
+    $('ct-layout').classList.add('show-detail');
+    renderList();
+    history.replaceState(null, '', '#c=' + encodeURIComponent(email) + (showQa() ? '&qa=1' : ''));
+    try {
+      const d = await api(API + '/' + encodeURIComponent(email) + (showQa() ? '?qa=1' : ''), { toast: false });
+      if (selected !== email) return;
+      renderDetail(d);
+      if (scroll && window.matchMedia('(max-width:768px)').matches) window.scrollTo(0, 0);
+    } catch (e) {
+      $('ct-detail').innerHTML = '<button type="button" class="btn btn-secondary ct-back" onclick="location.hash=\'\';location.reload()">← All customers</button><div class="ct-empty" style="border:0;color:#E53935">' + esc(e.message) + '</div>';
+    }
+  }
+  $('ct-list').addEventListener('click', ev => { const b = ev.target.closest('.ct-card'); if (b) loadDetail(b.getAttribute('data-email'), true); });
+  $('ct-q').addEventListener('input', renderList);
+  $('ct-qa').addEventListener('change', loadList);
+  $('ct-refresh').addEventListener('click', loadList);
+  const m = /[#&]c=([^&]+)/.exec(location.hash);
+  if (m) { try { selected = decodeURIComponent(m[1]); } catch (e) { selected = ''; } if (/[#&]qa=1/.test(location.hash)) $('ct-qa').checked = true; }
+  if (selected) $('ct-layout').classList.add('show-detail');
+  loadList();
+})();
+</script>
+</body>
+</html>

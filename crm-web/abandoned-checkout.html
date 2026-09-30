@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Abandoned checkout — BioLabs CRM</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+.table-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;font-size:11px;color:#5A6685;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #E8ECF4}
+td{padding:10px 12px;border-bottom:1px solid #F0F2FA;vertical-align:top}
+.muted{color:#5A6685;font-size:12px;margin:8px 0 16px}
+.ok{color:#145C2C;font-weight:700}
+.warn{color:#B45309;font-weight:700}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.stat{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:14px 16px}
+.stat .k{font-size:11px;color:#5A6685;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+.stat .v{font-size:22px;font-weight:700;margin-top:4px}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=05fa5a1bda-umg"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar"><div id="crm-nav" class="crm-nav"></div></div>
+  <div class="main">
+    <div class="topbar"><div class="topbar-title">Abandoned checkout <span>— first-party RUO / Quote leads</span></div></div>
+    <div class="content">
+      <p class="muted">Storefront beacons POST /api/checkout/abandon (sidecar :8787). Inquiry capture only — never card / PAN / CVV / last4. A matching session_id on quote (or charge when payments are on) marks the lead converted.</p>
+      <div class="stats">
+        <div class="stat"><div class="k">Open leads</div><div class="v warn" id="openCount">—</div></div>
+        <div class="stat"><div class="k">Open value</div><div class="v" id="openValue">—</div></div>
+      </div>
+      <div class="table-card"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Items</th><th>Value</th><th>Stage</th><th>Last seen</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('abandoned-checkout');
+
+function money(a) {
+  return (Number(a) || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+}
+function itemsSummary(items) {
+  if (!items || !items.length) return '—';
+  return items.map(function (it) {
+    return (it.qty || 1) + '× ' + (it.name || it.sku || 'item');
+  }).join(', ');
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+  });
+}
+
+async function reload() {
+  const data = await api('/api/checkout/abandon', { toast: false });
+  const rows = data.abandoned_checkouts || [];
+  const open = rows.filter(function (r) { return r.status !== 'converted'; });
+  const openVal = open.reduce(function (s, r) { return s + (Number(r.subtotal) || 0); }, 0);
+  document.getElementById('openCount').textContent = String(open.length);
+  document.getElementById('openValue').textContent = money(openVal);
+  document.getElementById('rows').innerHTML = rows.map(function (r) {
+    const c = r.customer || {};
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || '—';
+    const stClass = r.status === 'converted' ? 'ok' : 'warn';
+    return '<tr><td>' + esc(name) + '</td><td>' + esc(c.email || '—') + '</td><td>' + esc(c.phone || '—') +
+      '</td><td>' + esc(itemsSummary(r.items)) + '</td><td>' + money(r.subtotal) +
+      '</td><td>' + esc(r.stage || '—') + '</td><td>' + esc(r.last_seen ? new Date(r.last_seen).toLocaleString() : '—') +
+      '</td><td class="' + stClass + '">' + esc(r.status || 'open') + '</td></tr>';
+  }).join('') || '<tr><td colspan="8">No first-party abandoned-checkout leads yet</td></tr>';
+}
+
+reload().catch(function () {
+  document.getElementById('rows').innerHTML = '<tr><td colspan="8">Cannot reach /api/checkout/abandon — check crm-umg + nginx /api/checkout/</td></tr>';
+});
+</script>
+</body>
+</html>

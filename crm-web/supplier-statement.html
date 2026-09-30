@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* supplier-statement-only styling; everything shared lives in crm.css */
+.supplier-bar{ display:flex; gap:12px; align-items:center; margin-bottom:20px; flex-wrap:wrap; }
+.supplier-bar select{ padding:10px 14px; border:1px solid #E8ECF4; border-radius:10px; font-size:13px; background:#fff; min-width:240px; }
+.stats-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:22px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-value.positive{ color:#2E7D32; }
+.stat-value.negative{ color:#C62828; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; }
+.btn-pay{ background:#E8F5E9; color:#2E7D32; border:1px solid #C8E6C9; }
+.btn-pay:hover{ background:#C8E6C9; }
+.btn-delete{ background:#FFEBEE; color:#C62828; padding:6px 10px; }
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; margin-bottom:20px; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; }
+.table-header h3{ font-size:14px; font-weight:700; }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; }
+.text-right{ text-align:right; }
+.text-center{ text-align:center; }
+.txn-type{ display:inline-block; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.txn-purchase{ background:#FFF3E0; color:#E65100; }
+.txn-payment{ background:#E8F5E9; color:#2E7D32; }
+.empty-state{text-align:center;color:#5A6685;padding:40px;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;align-items:center;justify-content:center;}
+.modal-card{background:#fff;border-radius:16px;padding:22px;width:420px;max-height:85vh;overflow-y:auto;}
+.modal-card h3{margin-bottom:16px;}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.form-group input, .form-group select{width:100%;padding:10px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.modal-actions{display:flex;gap:10px;margin-top:16px;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+.modal-overlay,.overlay{padding:10px!important}
+.stats-grid{grid-template-columns:1fr 1fr!important;}
+.supplier-bar select{min-width:100%!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Supplier Account Statement</div>
+      <button class="btn btn-primary" onclick="openPaymentModal()">+ Record Payment</button>
+    </div>
+    <div class="content">
+      <div class="supplier-bar">
+        <select id="supplierSelect" onchange="loadStatement()">
+          <option value="">Select Supplier...</option>
+        </select>
+      </div>
+      <div id="statementArea" style="display:none;">
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-label">Total Purchased</div><div class="stat-value" id="statPurchased">$0.00</div></div>
+          <div class="stat-card"><div class="stat-label">Total Paid</div><div class="stat-value positive" id="statPaid">$0.00</div></div>
+          <div class="stat-card"><div class="stat-label">Balance Owed</div><div class="stat-value" id="statBalance">$0.00</div></div>
+          <div class="stat-card"><div class="stat-label">POs / Payments</div><div class="stat-value" id="statCounts">0 / 0</div></div>
+        </div>
+        <div class="table-card">
+          <div class="table-header"><h3>Transaction History</h3></div>
+          <table>
+            <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Description</th><th class="text-right">Debit (PO)</th><th class="text-right">Credit (Paid)</th><th class="text-right">Balance</th></tr></thead>
+            <tbody id="txnTable"><tr><td colspan="7" class="empty-state">Select a supplier to view statement.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="paymentModal">
+  <div class="modal-card">
+    <h3>Record Supplier Payment</h3>
+    <div class="form-group"><label>Supplier</label><select id="paySupplier"></select></div>
+    <div class="form-group"><label>Amount ($)</label><input type="number" id="payAmount" step="0.01" min="0" placeholder="0.00"></div>
+    <div class="form-group"><label>Date</label><input type="date" id="payDate"></div>
+    <div class="form-group"><label>Payment Method</label><select id="payMethod"><option>Bank Transfer</option><option>Wire</option><option>Cash</option><option>Check</option><option>Crypto</option><option>Other</option></select></div>
+    <div class="form-group"><label>Description</label><input type="text" id="payDesc" placeholder="Payment for PO-..."></div>
+    <div class="modal-actions">
+      <button class="btn" style="flex:1;background:#E8ECF4;" onclick="closePaymentModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="savePayment()">Record Payment</button>
+    </div>
+  </div>
+</div>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('supplier-statement');
+const API='/msolpeptides-api';let SUPPLIERS=[];
+// Phase 4 (2026-09-05): calls go through api() from crm.js (Bearer, JSON, 401 -> login, errors -> toast); the two
+// validation alert boxes in savePayment are toasts now, and a failed save is what api already reports itself.
+async function loadSuppliers(){try{SUPPLIERS=await api(API+'/suppliers')||[];const opts=SUPPLIERS.map(s=>`<option value="${escAttr(s.id)}">${esc(s.name)}</option>`).join('');document.getElementById('supplierSelect').innerHTML='<option value="">Select Supplier...</option>'+opts;document.getElementById('paySupplier').innerHTML=opts;}catch(e){console.error(e);}}
+async function loadStatement(){const sid=document.getElementById('supplierSelect').value;if(!sid){document.getElementById('statementArea').style.display='none';return;}
+try{const data=await api(`${API}/suppliers/${sid}/statement`);document.getElementById('statementArea').style.display='block';
+document.getElementById('statPurchased').textContent='$'+data.total_purchased.toFixed(2);
+document.getElementById('statPaid').textContent='$'+data.total_paid.toFixed(2);
+const balEl=document.getElementById('statBalance');balEl.textContent='$'+Math.abs(data.balance).toFixed(2)+(data.balance>0?' owed':' surplus');balEl.className='stat-value '+(data.balance>0?'negative':'positive');
+document.getElementById('statCounts').textContent=`${data.po_count} / ${data.payment_count}`;
+const tbody=document.getElementById('txnTable');
+if(!data.transactions.length){tbody.innerHTML='<tr><td colspan="7" class="empty-state">No transactions yet for this supplier.</td></tr>';return;}
+tbody.innerHTML=data.transactions.map(t=>`<tr><td>${new Date(t.date).toLocaleDateString()}</td><td><span class="txn-type txn-${escAttr(t.type)}">${esc(t.type)}</span></td><td>${esc(t.ref)}</td><td>${esc(t.description)}</td><td class="text-right">${t.debit?'$'+t.debit.toFixed(2):'-'}</td><td class="text-right">${t.credit?'$'+t.credit.toFixed(2):'-'}</td><td class="text-right"><b>$${t.balance.toFixed(2)}</b></td></tr>`).join('');
+}catch(e){console.error(e);}}
+function openPaymentModal(){const sid=document.getElementById('supplierSelect').value;if(sid)document.getElementById('paySupplier').value=sid;document.getElementById('payDate').value=new Date().toISOString().slice(0,10);document.getElementById('paymentModal').classList.add('open');}
+function closePaymentModal(){document.getElementById('paymentModal').classList.remove('open');}
+async function savePayment(){const sid=document.getElementById('paySupplier').value;if(!sid){toast('Select a supplier.','error');return;}const amount=Number(document.getElementById('payAmount').value);if(!amount||amount<=0){toast('Enter a valid amount.','error');return;}const user=(window.CRM_CURRENT_USER&&window.CRM_CURRENT_USER.name)||'unknown';try{await api(API+'/supplier-payments',{method:'POST',body:{supplier_id:sid,amount,date:document.getElementById('payDate').value,method:document.getElementById('payMethod').value,description:document.getElementById('payDesc').value,user}});closePaymentModal();document.getElementById('payAmount').value='';document.getElementById('payDesc').value='';if(document.getElementById('supplierSelect').value===sid)loadStatement();else{document.getElementById('supplierSelect').value=sid;loadStatement();}}catch(e){/* api() already showed the error toast */}}
+loadSuppliers();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Inventory Intake — BioLabs CRM</title>
+<link rel="stylesheet" href="crm.css"/>
+<style>
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat-card{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px}
+.stat-label{font-size:11px;color:#5A6685;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+.stat-value{margin-top:6px;font-size:22px;font-weight:700;color:#1B2A4A;font-family:ui-monospace,monospace}
+.pill{display:inline-block;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:700}
+.pill-ok{background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7}
+.pill-wait{background:#FFF8E1;color:#E65100;border:1px solid #FFCC80}
+.muted{color:#5A6685;font-size:13px;margin:0 0 14px}
+.note{margin:12px 0;padding:10px 12px;border-radius:10px;font-size:13px}
+.note-ok{background:#E8F5E9;color:#1B5E20;border:1px solid #A5D6A7}
+.note-err{background:#FFEBEE;color:#B71C1C;border:1px solid #EF9A9A}
+.lines-box{background:#F7F9FC;border:1px solid #E8ECF4;border-radius:10px;padding:12px;margin:8px 0}
+table.nested td,table.nested th{font-size:12px}
+@media(max-width:768px){.stat-grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=inv-intake1"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar"><div id="crm-nav" class="crm-nav"></div></div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Inventory Intake <span>— on-hand from movements</span></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="reload()">🔄 Refresh</button>
+        <button class="btn btn-secondary" id="btnIntake" onclick="rerunIntake()">Re-run intake</button>
+      </div>
+    </div>
+    <div class="content">
+      <p class="muted">On-hand = sum of inventory movements only. Legacy Products stock overwrite is locked. Storefront catalog quantities are not updated from this screen. PO #071326 is received; #081226 and #PVC-092326 stay in transit until Mark Received (mapped lines only).</p>
+      <div id="msg"></div>
+      <div class="stat-grid" id="stats"></div>
+      <div class="table-card" style="margin-bottom:18px">
+        <div class="table-header"><h3>SKUs on hand</h3></div>
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>On hand</th><th>Avg unit cost</th><th>Value at cost</th><th>Linked POs</th></tr></thead>
+          <tbody id="skuBody"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="table-card">
+        <div class="table-header"><h3>Purchase orders</h3></div>
+        <table>
+          <thead><tr><th>PO</th><th>Supplier</th><th>Dated</th><th>Status</th><th>Ship to</th><th>Goods</th><th>Total</th><th>Movements</th><th></th></tr></thead>
+          <tbody id="poBody"><tr><td colspan="9" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('inventory-intake');
+function money(v){if(v==null||v==='')return '—';const n=Number(v);if(!Number.isFinite(n))return v;return n.toLocaleString('en-US',{style:'currency',currency:'USD'});}
+function pill(status){const ok=status==='RECEIVED';return '<span class="pill '+(ok?'pill-ok':'pill-wait')+'">'+status+'</span>';}
+function setMsg(text, ok){const el=document.getElementById('msg'); if(!text){el.innerHTML='';return;} el.innerHTML='<div class="note '+(ok?'note-ok':'note-err')+'">'+text+'</div>';}
+let openPo='071326';
+let DATA=null;
+async function reload(){
+  setMsg('');
+  try{
+    const body=await api('/api/inventory',{toast:false});
+    DATA=body;
+    render(body);
+  }catch(e){
+    document.getElementById('skuBody').innerHTML='<tr><td colspan="6" class="empty-state">Could not load inventory (auth or API).</td></tr>';
+    document.getElementById('poBody').innerHTML='<tr><td colspan="9" class="empty-state">—</td></tr>';
+    setMsg((e&&e.message)||'Inventory API failed', false);
+  }
+}
+function render(data){
+  const skus=data.skus||[];
+  const pos=data.purchase_orders||[];
+  document.getElementById('stats').innerHTML=[
+    ['On-hand units', String(data.on_hand_units??0)],
+    ['Value at cost', money(data.value_at_cost)],
+    ['Purchase orders', String(pos.length)],
+    ['Quantity source', 'Movement sum']
+  ].map(([l,v])=>'<div class="stat-card"><div class="stat-label">'+l+'</div><div class="stat-value">'+v+'</div></div>').join('');
+  document.getElementById('skuBody').innerHTML=skus.length?skus.map(s=>'<tr><td><code>'+s.code+'</code></td><td>'+s.name+'</td><td><b>'+s.on_hand+'</b></td><td>'+money(s.weighted_avg_unit_cost)+'</td><td>'+money(s.value_at_cost)+'</td><td>'+((s.linked_pos||[]).join(', ')||'—')+'</td></tr>').join(''):'<tr><td colspan="6" class="empty-state">No SKUs</td></tr>';
+  document.getElementById('poBody').innerHTML=pos.map(po=>{
+    const open=openPo===po.po_id;
+    let rows='<tr><td><code>#'+po.po_number+'</code></td><td>'+po.supplier+'</td><td>'+po.dated+'</td><td>'+pill(po.status)+'</td><td>'+(po.ship_to||'—')+'</td><td>'+money(po.goods_total)+'</td><td>'+money(po.total)+'</td><td>'+po.movement_count+'</td><td style="white-space:nowrap"><button class="btn btn-secondary" onclick="togglePo(\''+po.po_id+'\')">'+(open?'Hide':'Lines')+'</button> '+(po.can_mark_received?('<button class="btn btn-primary" onclick="markReceived(\''+po.po_id+'\',\''+po.po_number+'\')">Mark Received</button>'):'')+'</td></tr>';
+    if(open){
+      const alias=po.alias_map?('<div class="muted">Alias notes on this PO only: '+Object.entries(po.alias_map).map(([a,b])=>a+' → '+b).join(' · ')+'</div>'):'';
+      const costs=(po.po_level_costs||[]).map(c=>c.label+' '+money(c.amount)+' ('+c.note+')').join(' · ');
+      const lines=(po.lines||[]).map(l=>'<tr><td>'+(l.line_no||'—')+'</td><td>'+(l.sku_code||'Unmapped')+'</td><td>'+(l.supplier_name||'—')+'</td><td>'+(l.suggested_internal_code_note||'—')+'</td><td>'+l.qty+'</td><td>'+money(l.unit_cost)+'</td><td>'+money(l.line_total)+'</td></tr>').join('');
+      rows+='<tr><td colspan="9"><div class="lines-box">'+alias+(costs?('<div class="muted">'+costs+'</div>'):'')+(lines?('<table class="nested" style="width:100%"><thead><tr><th>Line</th><th>SKU</th><th>Supplier name</th><th>Marketing note</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead><tbody>'+lines+'</tbody></table>'):'<div class="muted">No lines</div>')+'</div></td></tr>';
+    }
+    return rows;
+  }).join('')||'<tr><td colspan="9" class="empty-state">No purchase orders</td></tr>';
+}
+function togglePo(id){openPo=openPo===id?'':id; if(DATA) render(DATA);}
+async function rerunIntake(){
+  const btn=document.getElementById('btnIntake'); btn.disabled=true;
+  try{
+    const body=await api('/api/inventory/intake',{method:'POST'});
+    DATA=body.inventory||body;
+    render(DATA);
+    const r=body.report||{};
+    setMsg('Intake re-run: created '+(r.movements_created||0)+', already posted '+(r.movements_existing||0)+'. on_hand '+(r.on_hand_units??DATA.on_hand_units)+'. Mark Received was not called.', true);
+  }catch(e){ setMsg((e&&e.message)||'Intake failed', false); }
+  finally{ btn.disabled=false; }
+}
+async function markReceived(poId, poNumber){
+  if(!(await confirmDialog('Mark PO #'+poNumber+' received? Movements post only for lines that already have an internal SKU.',{ok:'Mark received'}))) return;
+  try{
+    const body=await api('/api/inventory/purchase-orders/'+encodeURIComponent(poId)+'/mark-received',{method:'POST'});
+    if(body.inventory){ DATA=body.inventory; render(DATA); }
+    if(!body.ok){ setMsg(body.message||body.error||'Mark Received did not post', false); return; }
+    setMsg(body.reused?('PO #'+poNumber+' already received — no duplicate movements.'):('PO #'+poNumber+' received. Movements posted: '+body.movements_created), true);
+  }catch(e){ setMsg((e&&e.message)||'Mark Received failed', false); }
+}
+reload();
+</script>
+</body>
+</html>

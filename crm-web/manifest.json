@@ -1,0 +1,31 @@
+{
+  "name": "BioLabs Research",
+  "short_name": "BioLabs",
+  "description": "BioLabs Research CRM - Leads, Orders, Inventory, Sales Management",
+  "start_url": "/crm/dashboard.html",
+  "scope": "/crm/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1B2A4A",
+  "icons": [
+    {
+      "src": "/crm/assets/biolabs-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/crm/assets/biolabs-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/crm/assets/biolabs-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

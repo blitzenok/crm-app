@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* store-orders-only styling; everything shared lives in crm.css */
+.logo-text-box{}
+.stats-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; }
+.table-header h3{ font-size:14px; font-weight:700; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+.btn-secondary:hover{ background:#E6F4EA; color:#1B2A4A; }
+.btn-danger{ background:#FFF0F0; color:#E53935; border:1px solid #FFCDD2; }
+.btn-danger:hover{ background:#FFE0E0; }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; vertical-align:top; }
+tbody tr:hover{ background:#F8FAFF; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-pending{ background:#FFF3E0; color:#E65100; }
+.badge-payment-confirmed{ background:#E3F2FD; color:#1565C0; }
+.badge-processing{ background:#F3E5F5; color:#6A1B9A; }
+.badge-shipped{ background:#E1F5FE; color:#0277BD; }
+.badge-delivered{ background:#E8F5E9; color:#2E7D32; }
+.badge-cancelled{ background:#FFEBEE; color:#C62828; }
+.status-select{ padding:5px 10px; border-radius:8px; font-size:11px; font-weight:600; border:1px solid #E8ECF4; background:#fff; cursor:pointer; }
+.items-list{ font-size:12px; color:#5A6685; }
+.order-ref{ font-weight:700; color:#1B2A4A; font-family:monospace; font-size:12px; }
+.empty-state{ text-align:center; color:#5A6685; padding:40px; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.stats-grid{grid-template-columns:1fr 1fr!important;gap:10px!important}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=umg1"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Store Orders <span>— BioLabs Shop</span></div>
+      <button class="btn btn-secondary" onclick="loadOrders()">🔄 Refresh</button>
+    </div>
+    <div class="content">
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value" id="statTotal">—</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="statPending" style="color:#E65100;">—</div><div class="stat-sub">Awaiting action</div></div>
+        <div class="stat-card"><div class="stat-label">Shipped</div><div class="stat-value" id="statShipped" style="color:#0277BD;">—</div><div class="stat-sub">In transit</div></div>
+        <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" id="statRevenue" style="color:#2E7D32;">—</div><div class="stat-sub">Gross USD</div></div>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Orders <span id="orderCount" style="color:#5A6685;font-weight:500;"></span></h3>
+        </div>
+        <table>
+          <thead><tr><th>Ref</th><th>Customer</th><th>Items</th><th>Total</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+          <tbody id="ordersBody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('store-orders');
+const API='/msolpeptides-api';
+// Phase 5 (2026-09-05): every call goes through api() from crm.js — Bearer header, JSON in/out, the 401 redirect and
+// the error toast are all in one place now; the native alert and confirm boxes are toast and confirmDialog.
+
+let orders=[];
+
+async function loadOrders(){
+  document.getElementById('ordersBody').innerHTML='<tr><td colspan="7" class="empty-state">Loading...</td></tr>';
+  try{
+    orders=await api(API+'/orders',{toast:false});
+    orders.sort((a,b)=>new Date(b.createdAt||b.savedAt||b.created_at||0)-new Date(a.createdAt||a.savedAt||a.created_at||0));
+    renderTable();
+    renderStats();
+  }catch(e){
+    document.getElementById('ordersBody').innerHTML='<tr><td colspan="7" class="empty-state" style="color:#E53935;">Failed to load orders: '+esc(e.message)+'</td></tr>';
+  }
+}
+
+function renderStats(){
+  document.getElementById('statTotal').textContent=orders.length;
+  document.getElementById('statPending').textContent=orders.filter(o=>!o.status||o.status==='pending').length;
+  document.getElementById('statShipped').textContent=orders.filter(o=>o.status==='shipped'||o.status==='in-transit').length;
+  const revenue=orders.reduce((sum,o)=>sum+(parseFloat(o.total)||0),0);
+  document.getElementById('statRevenue').textContent='$'+revenue.toLocaleString(undefined,{maximumFractionDigits:0});
+}
+
+function renderTable(){
+  const b=document.getElementById('ordersBody');
+  document.getElementById('orderCount').textContent=orders.length?`(${orders.length})`:'';
+  if(!orders.length){b.innerHTML='<tr><td colspan="7" class="empty-state">No orders yet</td></tr>';return;}
+  b.innerHTML=orders.map((o,i)=>{
+    const cust=o.customer||{};
+    const name=[cust.firstName,cust.lastName].filter(Boolean).join(' ')||'—';
+    // shop stage 0 (2026-09-05): shipping address, method and per-item mg from checkout were not shown anywhere in the CRM
+    const sh=(o.shipping&&typeof o.shipping==='object')?o.shipping:{};
+    const shipTo=[sh.address1,sh.address2,[sh.city,sh.state,sh.zip].filter(Boolean).join(' '),sh.country].filter(Boolean).join(', ');
+    const shipHow=[sh.label||sh.method||'',(sh.cost!==undefined&&sh.cost!==null&&sh.cost!=='')?'$'+sh.cost:''].filter(Boolean).join(' · ');
+    const items=(o.items||[]).map(it=>`${esc(it.qty)}× ${esc(it.name)}${it.mg?' '+esc(it.mg):''}`).join('<br>');
+    const status=(o.status||'pending').toLowerCase().replace(/ /g,'-');
+    const date=o.createdAt||o.savedAt||o.created_at?new Date(o.createdAt||o.savedAt||o.created_at).toLocaleDateString():'—';
+    return `<tr>
+      <td><span class="order-ref">${esc(o.ref||'—')}</span></td>
+      <td>${esc(name)}<br><span style="color:#5A6685;font-size:11px;">${esc(cust.email||'')}</span>${shipTo?`<br><span style="color:#5A6685;font-size:11px;">${esc(shipTo)}${shipHow?' — '+esc(shipHow):''}</span>`:''}</td>
+      <td><span class="items-list">${items||'—'}</span></td>
+      <td style="font-weight:700;">$${esc(o.total||'0.00')}</td>
+      <td><select class="status-select" onchange="updateStatus('${safeId(o.ref)}', this.value)">
+        ${['pending','payment-confirmed','processing','shipped','in-transit','delivered','cancelled'].map(s=>`<option value="${s}" ${status===s?'selected':''}>${esc(s.replace(/-/g,' '))}</option>`).join('')}
+      </select></td>
+      <td style="color:#5A6685;font-size:12px;">${date}</td>
+      <td><button class="btn btn-danger" style="padding:5px 10px;" onclick="deleteOrder('${safeId(o.ref)}')">Delete</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function updateStatus(ref, status){
+  try{
+    const res=await api(API+'/orders/'+encodeURIComponent(ref),{method:'PATCH',body:{status},toast:false});
+    if(res&&res.ok){loadOrders();}else{toast('Update failed: '+((res&&res.error)||'Unknown'),'error');}
+  }catch(e){
+    // Stage 1 RET: shipped / in-transit need a tracking number, which this page has no field for; the select goes back to the stored status.
+    const why=(e&&e.message)||'';
+    toast(/tracking number required/i.test(why)?'Set the tracking number in Orders first':(why||'Update failed'),'error');
+    renderTable();
+  }
+}
+
+async function deleteOrder(ref){
+  const user = JSON.parse(localStorage.getItem('crm_user') || '{}');
+  if (user.role !== 'admin') {
+    toast('Permission Denied: Only Admin users can delete store orders.','error');
+    return;
+  }
+  if(!(await confirmDialog('Delete order '+ref+'? This cannot be undone.',{ok:'Delete'})))return;
+  try{
+    const res=await api(API+'/orders/'+encodeURIComponent(ref),{method:'DELETE'});
+    if(res&&res.ok){loadOrders();}else{toast('Delete failed: '+((res&&res.error)||'Unknown'),'error');}
+  }catch(e){/* api() has already shown the toast */}
+}
+
+
+async function updateMsgBadge(){
+  try{
+    const msgs=await api(API+'/messages',{toast:false});
+    const unread=msgs.filter(m=>m.status==='unread').length;
+    const b=document.getElementById('msgBadgeNav');
+    if(unread>0){b.textContent=unread;b.style.display='inline-block';}else{b.style.display='none';}
+  }catch(e){}
+}
+
+loadOrders();
+updateMsgBadge();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

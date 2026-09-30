@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* communications-only styling; everything shared lives in crm.css */
+.logo-text-box{}
+.stats-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.comm-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; margin-bottom:10px; }
+.comm-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+.comm-type{ font-weight:700; font-size:13px; }
+.comm-party{ color:#5A6685; font-size:12px; margin-left:8px; }
+.comm-date{ color:#5A6685; font-size:11px; white-space:nowrap; }
+.comm-subject{ font-weight:600; font-size:12px; color:#1B2A4A; margin-bottom:4px; }
+.comm-preview{ color:#5A6685; font-size:12px; line-height:1.5; }
+.comm-direction{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-right:8px; }
+.dir-out{ background:#E3F2FD; color:#1565C0; }
+.dir-in{ background:#E8F5E9; color:#2E7D32; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-supplier{ background:#F3E5F5; color:#6A1B9A; }
+.badge-client{ background:#E3F2FD; color:#1565C0; }
+.badge-internal{ background:#E8ECF4; color:#5A6685; }
+.btn-secondary:hover{ background:#E6F4EA; color:#1B2A4A; }
+.empty-state{ text-align:center; color:#5A6685; padding:60px; background:#fff; border-radius:14px; border:1px solid #E8ECF4; }
+.coming-soon{ background:#FFF4E5; border:1px solid #F5C26B; color:#7A4B00; padding:10px 14px; border-radius:8px; margin:0 0 16px; font-size:13px; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.menu-toggle{display:block!important;}
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.stats-grid{grid-template-columns:1fr 1fr 1fr!important;gap:8px!important}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar"><button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display:none;background:none;border:none;font-size:24px;cursor:pointer;padding:0 10px;" aria-label="Toggle menu">☰</button>
+      <div class="topbar-title">Communications <span>— Supplier & Client Activity Log</span></div>
+    </div>
+    <div class="content">
+      <div class="coming-soon">Coming soon — this section is a preview and is not connected yet.</div>
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Emails Sent</div><div class="stat-value" id="statSent">721</div><div class="stat-sub">Outreach campaigns</div></div>
+        <div class="stat-card"><div class="stat-label">Supplier Conversations</div><div class="stat-value" id="statSuppliers">8</div><div class="stat-sub">Active threads</div></div>
+        <div class="stat-card"><div class="stat-label">Client Replies</div><div class="stat-value" id="statReplies">197</div><div class="stat-sub">Response rate 27%</div></div>
+      </div>
+      <div id="commList">
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-out">OUT</span><span class="comm-type">Email Campaign</span><span class="comm-party">to 186 prospects</span></div><div class="comm-date">Jul 2026</div></div><div class="comm-subject">Spain Outreach - B2B Peptide Distribution</div><div class="comm-preview">Sent 186 emails to Spanish clinics and supplement sellers. Subject: "Your clients are already asking for this - have you heard of peptides?"</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-out">OUT</span><span class="comm-type">Email Campaign</span><span class="comm-party">to 80 prospects</span></div><div class="comm-date">Jul 2026</div></div><div class="comm-subject">Germany Outreach - B2B Peptide Distribution</div><div class="comm-preview">Sent 80 emails to German clinics. Same template, localized.</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-in">IN</span><span class="comm-type">Supplier Reply</span><span class="comm-party">from SB-Peptide (Remy Beroud)</span><span class="badge badge-supplier">Supplier</span></div><div class="comm-date">Jul 28</div></div><div class="comm-subject">RE: Distribution Partnership Inquiry</div><div class="comm-preview">Remy Beroud confirmed Anissa on maternity leave till Jan 2027. Noemie Voutier is interim contact. Awaiting pricing catalog.</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-in">IN</span><span class="comm-type">Client Reply</span><span class="comm-party">from Felice Crupi (Felixus Fitness)</span><span class="badge badge-client">Client</span></div><div class="comm-date">Jul 21</div></div><div class="comm-subject">RE: Peptide Procurement & Pricing</div><div class="comm-preview">Felice replied with interest. Sent Italian-language price list: Retatrutide EUR50, BPC-157+TB-500 EUR35, GHK-Cu EUR50 (100 MOQ).</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-out">OUT</span><span class="comm-type">Supplier Outreach</span><span class="comm-party">to ShiLai Healthcare (Kenan King)</span><span class="badge badge-supplier">Supplier</span></div><div class="comm-date">Jul 2026</div></div><div class="comm-subject">Non-exclusive Distribution Agreement</div><div class="comm-preview">Negotiating DDP terms, 110 units/SKU MOQ. Agreement terms: non-exclusive, back-to-back liability.</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-in">IN</span><span class="comm-type">Supplier Contact</span><span class="comm-party">WhatsApp - Chinese Manufacturer</span><span class="badge badge-supplier">Supplier</span></div><div class="comm-date">Aug 3</div></div><div class="comm-subject">89 Products, 99%+ Purity, DAP/FOB</div><div class="comm-preview">New supplier via WhatsApp. 89 products, no MOQ per item. DAP/FOB only (no DDP). Payment: MoneyGram, WU, PayPal (5%), Bank, Crypto, Alipay/WeChat. Awaiting our shopping list.</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-out">OUT</span><span class="comm-type">Email Campaign</span><span class="comm-party">to 59 prospects</span></div><div class="comm-date">Jul 2026</div></div><div class="comm-subject">Slovenia Outreach</div><div class="comm-preview">Sent 59 emails to Slovenian clinics.</div></div>
+        <div class="comm-card"><div class="comm-top"><div><span class="comm-direction dir-out">OUT</span><span class="comm-type">Email Campaign</span><span class="comm-party">to 46 prospects</span></div><div class="comm-date">Jul 2026</div></div><div class="comm-subject">CEE Outreach - 52 Clinics</div><div class="comm-preview">Sent 46 emails to Central/Eastern European clinics.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('communications');
+const API_SHOP='/msolpeptides-api';
+
+async function updateMsgBadge(){
+  try{
+    const msgs=await api(API_SHOP+'/messages',{toast:false}); // background badge poll: no toast, like the other pages
+    const unread=msgs.filter(m=>m.status==='unread').length;
+    const b=document.getElementById('msgBadgeNav');
+    if(unread>0){b.textContent=unread;b.style.display='inline-block';}else{b.style.display='none';}
+  }catch(e){}
+}
+updateMsgBadge();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* store-settings-only styling; everything shared lives in crm.css */
+.logo-text-box{}
+.content{ flex:1; overflow-y:auto; padding:20px 24px; max-width:800px; }
+.settings-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:20px 22px; margin-bottom:16px; }
+.settings-card h3{ font-size:14px; font-weight:700; margin-bottom:14px; color:#1B2A4A; }
+.settings-row{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #F0F2FA; }
+.settings-row:last-child{ border-bottom:none; }
+.settings-label{ color:#5A6685; font-size:13px; }
+.settings-value{ font-weight:600; color:#1a1a2e; font-size:13px; font-family:monospace; }
+.pill{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; background:#E6F4EA; color:#145C2C; margin:2px 4px 2px 0; }
+.btn{ padding:9px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:all 0.15s; text-decoration:none; display:inline-block; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; }
+.btn-secondary{ background:#E8ECF4; color:#5A6685; }
+.btn-row{ display:flex; gap:10px; margin-top:10px; }
+.masked{ letter-spacing:2px; }
+.reveal-btn{ background:none; border:none; color:#1F7A3D; font-size:11px; font-weight:600; cursor:pointer; margin-left:8px; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Store Settings <span>— BioLabs Shop</span></div>
+    </div>
+    <div class="content">
+      <div class="settings-card">
+        <h3>Store Info</h3>
+        <!-- Phase 8 (2026-09-06): Store URL points at the live storefront; the MSOLPEPTIDES copy is frozen since 2026-08-05 and its admin.html is closed (404) since 2026-09-05, so the "Admin Panel" and "Admin login" rows were removed -->
+        <div class="settings-row"><span class="settings-label">Store URL</span><a class="settings-value" href="https://biolabsresearch.co/" target="_blank" rel="noopener noreferrer" style="color:#1B2A4A;text-decoration:none;">biolabsresearch.co ↗</a></div>
+        <div class="settings-row"><span class="settings-label">Products API</span><span class="settings-value">mastersol-ltd.com/msolpeptides-api</span></div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Order Notifications</h3>
+        <div class="settings-row"><span class="settings-label">Notify on new order</span><span class="settings-value">admin@mastersol-ltd.com, info@biofirst.co</span></div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Payment Methods Enabled</h3>
+        <div>
+          <span class="pill">Bank Transfer</span>
+          <span class="pill">Zelle</span>
+          <span class="pill">Crypto (ETH/TRON)</span>
+          <span class="pill">Credit Card (3.5% fee)</span>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>Quick Links</h3>
+        <div class="btn-row">
+          <a class="btn btn-primary" href="/crm/inventory.html">Manage Products</a>
+          <a class="btn btn-secondary" href="/crm/store-orders.html">View Store Orders</a>
+          <a class="btn btn-secondary" href="/crm/store-messages.html">View Messages</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('store-settings');
+// Phase 5 (2026-09-05): the badge refresh goes through api() from crm.js; {toast:false} keeps it as silent as the
+// old `if(!r.ok) return;` was.
+async function updateMsgBadge(){
+  try{
+    const msgs=await api('/msolpeptides-api/messages',{toast:false});
+    const unread=msgs.filter(m=>m.status==='unread').length;
+    const b=document.getElementById('msgBadgeNav');
+    if(unread>0){b.textContent=unread;b.style.display='inline-block';}else{b.style.display='none';}
+  }catch(e){}
+}
+updateMsgBadge();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research - Suppliers</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* suppliers-only styling; everything shared lives in crm.css */
+.topbar-title{ font-size:15px; font-weight:700; color:#1a1a2e; flex:1; display:flex; align-items:center; gap:8px; }
+.topbar-title span{ color:#5A6685; font-weight:400; font-size:13px; }
+.search-box{flex:1;max-width:320px;}
+.search-box input{width:100%;padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.btn{ padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; gap:6px; justify-content:center; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+.btn-secondary{ background:#E8ECF4; color:#1B2A4A; }
+.btn-secondary:hover{ background:#DCE2EE; }
+.btn-small{padding:5px 10px;font-size:11px;border-radius:6px;background:#E8ECF4;color:#1B2A4A;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;}
+.btn-small:hover{background:#E6F4EA;color:#1F7A3D;}
+.btn-danger{background:#FFF0F0;color:#E53935;border:none;}
+.btn-danger:hover{background:#FFE0E0;}
+.supplier-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px; }
+.supplier-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:18px 20px; display:flex; flex-direction:column; gap:12px; transition:all 0.15s; position:relative; box-shadow:0 1px 3px rgba(0,0,0,0.02); }
+.supplier-card:hover{ transform:translateY(-2px); box-shadow:0 6px 16px rgba(0,0,0,0.06); border-color:#CBD5E1; }
+.supplier-header{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.supplier-name-box{ flex:1; }
+.supplier-name{ font-size:15px; font-weight:700; color:#1a1a2e; }
+.supplier-contact{ font-size:12px; color:#5A6685; font-weight:500; margin-top:2px; }
+.rating-stars{ font-size:13px; color:#F59E0B; }
+.supplier-details{ display:flex; flex-direction:column; gap:6px; font-size:12px; color:#475569; background:#F8FAFF; padding:10px 12px; border-radius:10px; border:1px solid #E8ECF4; }
+.detail-item{ display:flex; align-items:center; gap:8px; }
+.detail-item span.icon{ width:16px; text-align:center; font-size:12px; }
+.detail-item a{ color:#1F7A3D; text-decoration:none; font-weight:500; }
+.detail-item a:hover{ text-decoration:underline; }
+.products-tag{ font-size:11px; background:#E6F4EA; color:#1F7A3D; padding:4px 8px; border-radius:6px; display:inline-block; font-weight:600; margin-top:4px; }
+.supplier-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:auto; padding-top:8px; border-top:1px solid #F0F2FA; }
+.fab{ position:fixed; bottom:30px; right:30px; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#1F7A3D,#145C2C); color:#fff; font-size:24px; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 6px 16px rgba(0,0,0,0.2); border:none; z-index:100; transition:transform 0.15s; }
+.fab:hover{ transform:scale(1.05); }
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;align-items:center;justify-content:center;padding:16px;}
+.modal-card{background:#fff;border-radius:16px;padding:22px;width:520px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 10px 25px rgba(0,0,0,0.15);}
+.modal-card h3{margin-bottom:16px;font-size:16px;font-weight:700;color:#1a1a2e;display:flex;align-items:center;justify-content:space-between;}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.form-group input, .form-group select, .form-group textarea{width:100%;padding:10px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.form-row{display:flex;gap:12px;}
+.form-row .form-group{flex:1;}
+.modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:space-between;align-items:center;}
+.empty-state{text-align:center;color:#5A6685;padding:60px;font-size:13px;grid-column:1/-1;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.supplier-grid{grid-template-columns:1fr!important;}
+.fab{bottom:75px!important;right:20px!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Suppliers <span id="supplierCount">(0)</span></div>
+      <div class="search-box"><input type="text" id="searchInput" placeholder="Search suppliers by name..." oninput="renderSuppliers()"></div>
+    </div>
+    <div class="content">
+      <div class="supplier-grid" id="supplierGrid">
+        <div class="empty-state">Loading suppliers...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<button class="fab" onclick="openSupplierModal()">+</button>
+
+<!-- Add/Edit Supplier Modal -->
+<div class="modal-overlay" id="supplierModal">
+  <div class="modal-card">
+    <h3 id="modalTitle"><span>Add Supplier</span> <button class="btn-small" onclick="closeSupplierModal()">✕</button></h3>
+    <form onsubmit="event.preventDefault(); saveSupplier();">
+      <input type="hidden" id="editId">
+      
+      <div class="form-group">
+        <label>Supplier / Company Name</label>
+        <input type="text" id="fName" required placeholder="e.g. BioChem Global Ltd">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Contact Person</label>
+          <input type="text" id="fContactPerson" placeholder="e.g. John Zhang">
+        </div>
+        <div class="form-group">
+          <label>Rating (1-5 Stars)</label>
+          <select id="fRating">
+            <option value="5">⭐⭐⭐⭐⭐ (5 Stars)</option>
+            <option value="4">⭐⭐⭐⭐ (4 Stars)</option>
+            <option value="3">⭐⭐⭐ (3 Stars)</option>
+            <option value="2">⭐⭐ (2 Stars)</option>
+            <option value="1">⭐ (1 Star)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" id="fEmail" placeholder="supplier@biochem.com">
+        </div>
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input type="tel" id="fPhone" placeholder="+86 138 0000 0000">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>WeChat ID</label>
+          <input type="text" id="fWechat" placeholder="e.g. biochem_sales">
+        </div>
+        <div class="form-group">
+          <label>Payment Terms</label>
+          <select id="fPaymentTerms">
+            <option value="Net 30">Net 30</option>
+            <option value="Net 15">Net 15</option>
+            <option value="Net 60">Net 60</option>
+            <option value="Prepayment">Prepayment</option>
+            <option value="COD">Cash on Delivery (COD)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Products Supplied</label>
+        <input type="text" id="fProductsSupplied" placeholder="e.g. Peptides, Raw Materials, Vials, Solvents">
+      </div>
+
+      <div class="form-group">
+        <label>Address</label>
+        <input type="text" id="fAddress" placeholder="Factory / Warehouse Address">
+      </div>
+
+      <div class="form-group">
+        <label>Notes / Quality Terms</label>
+        <textarea id="fNotes" rows="2" placeholder="Purity guarantees, MOQs, preferred shipping methods..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-danger" id="deleteBtn" style="display:none;" onclick="deleteSupplier()">Delete Supplier</button>
+        <div style="display:flex;gap:10px;margin-left:auto;">
+          <button type="button" class="btn btn-secondary" onclick="closeSupplierModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Supplier</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('suppliers');
+const API = '/msolpeptides-api';
+
+
+let SUPPLIERS = [];
+
+
+function renderStars(rating) {
+  const r = Math.max(1, Math.min(5, Number(rating) || 5));
+  return '⭐'.repeat(r);
+}
+
+// Phase 4 (2026-09-05): calls go through api() from crm.js (Bearer, JSON, 401 -> login, errors -> toast),
+// alert boxes -> toast, native confirm -> confirmDialog.
+async function loadSuppliers() {
+  try {
+    SUPPLIERS = await api(API + '/suppliers') || [];   // an empty body used to end up as [] too
+  } catch(e) {
+    console.warn('Failed to fetch suppliers from API', e);
+    SUPPLIERS = [];
+  }
+  renderSuppliers();
+}
+
+function renderSuppliers() {
+  const q = (document.getElementById('searchInput').value || '').toLowerCase();
+  const filtered = SUPPLIERS.filter(s =>
+    (s.name || '').toLowerCase().includes(q) ||
+    (s.contact_person || '').toLowerCase().includes(q) ||
+    (s.products_supplied || '').toLowerCase().includes(q)
+  );
+
+  document.getElementById('supplierCount').textContent = '(' + filtered.length + ')';
+  const grid = document.getElementById('supplierGrid');
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty-state">No suppliers found. Click "+" to add a new supplier.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(s => `
+    <div class="supplier-card">
+      <div class="supplier-header">
+        <div class="supplier-name-box">
+          <div class="supplier-name">${esc(s.name)}</div>
+          <div class="supplier-contact">👤 ${esc(s.contact_person || 'No Contact Specified')}</div>
+        </div>
+        <div class="rating-stars" title="${escAttr(s.rating||5)} Stars">${esc(renderStars(s.rating || 5))}</div>
+      </div>
+
+      <div class="supplier-details">
+        ${s.email ? `<div class="detail-item"><span class="icon">✉️</span> <a href="mailto:${escAttr(s.email)}">${esc(s.email)}</a></div>` : ''}
+        ${s.phone ? `<div class="detail-item"><span class="icon">📞</span> <a href="tel:${escAttr(s.phone)}">${esc(s.phone)}</a></div>` : ''}
+        ${s.wechat_id ? `<div class="detail-item"><span class="icon">💬</span> WeChat: <strong>${esc(s.wechat_id)}</strong></div>` : ''}
+        ${s.payment_terms ? `<div class="detail-item"><span class="icon">💳</span> Terms: <strong>${esc(s.payment_terms)}</strong></div>` : ''}
+        ${s.address ? `<div class="detail-item"><span class="icon">📍</span> ${esc(s.address)}</div>` : ''}
+      </div>
+
+      ${s.products_supplied ? `<div><span class="products-tag">📦 ${esc(s.products_supplied)}</span></div>` : ''}
+
+      ${s.notes ? `<div style="font-size:11px;color:#5A6685;font-style:italic;">"${esc(s.notes)}"</div>` : ''}
+
+      <div class="supplier-actions">
+        <button class="btn-small" onclick="openSupplierModal('${safeId(s.id)}')">✏️ Edit</button>
+        <button class="btn-small btn-danger" onclick="deleteSupplier('${safeId(s.id)}')">🗑️ Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openSupplierModal(id) {
+  const modal = document.getElementById('supplierModal');
+  modal.classList.add('open');
+
+  if (id) {
+    const s = SUPPLIERS.find(x => x.id === id);
+    if (s) {
+      document.getElementById('modalTitle').firstElementChild.textContent = 'Edit Supplier';
+      document.getElementById('editId').value = s.id;
+      document.getElementById('fName').value = s.name || '';
+      document.getElementById('fContactPerson').value = s.contact_person || '';
+      document.getElementById('fEmail').value = s.email || '';
+      document.getElementById('fPhone').value = s.phone || '';
+      document.getElementById('fWechat').value = s.wechat_id || '';
+      document.getElementById('fRating').value = s.rating || 5;
+      document.getElementById('fPaymentTerms').value = s.payment_terms || 'Net 30';
+      document.getElementById('fProductsSupplied').value = s.products_supplied || '';
+      document.getElementById('fAddress').value = s.address || '';
+      document.getElementById('fNotes').value = s.notes || '';
+      document.getElementById('deleteBtn').style.display = 'inline-block';
+      return;
+    }
+  }
+
+  document.getElementById('modalTitle').firstElementChild.textContent = 'Add Supplier';
+  document.getElementById('editId').value = '';
+  document.getElementById('fName').value = '';
+  document.getElementById('fContactPerson').value = '';
+  document.getElementById('fEmail').value = '';
+  document.getElementById('fPhone').value = '';
+  document.getElementById('fWechat').value = '';
+  document.getElementById('fRating').value = '5';
+  document.getElementById('fPaymentTerms').value = 'Net 30';
+  document.getElementById('fProductsSupplied').value = '';
+  document.getElementById('fAddress').value = '';
+  document.getElementById('fNotes').value = '';
+  document.getElementById('deleteBtn').style.display = 'none';
+}
+
+function closeSupplierModal() {
+  document.getElementById('supplierModal').classList.remove('open');
+}
+
+async function saveSupplier() {
+  const id = document.getElementById('editId').value;
+  const name = document.getElementById('fName').value;
+  if (!name) { toast('Supplier name is required.', 'error'); return; }
+
+  const payload = {
+    name,
+    contact_person: document.getElementById('fContactPerson').value,
+    email: document.getElementById('fEmail').value,
+    phone: document.getElementById('fPhone').value,
+    wechat_id: document.getElementById('fWechat').value,
+    rating: Number(document.getElementById('fRating').value) || 5,
+    payment_terms: document.getElementById('fPaymentTerms').value,
+    products_supplied: document.getElementById('fProductsSupplied').value,
+    address: document.getElementById('fAddress').value,
+    notes: document.getElementById('fNotes').value
+  };
+
+  try {
+    const url = id ? API + '/suppliers/' + id : API + '/suppliers';
+    const method = id ? 'PUT' : 'POST';
+
+    await api(url, { method, body: payload });
+    toast('Supplier saved successfully!', 'success');
+    closeSupplierModal();
+    loadSuppliers();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+async function deleteSupplier(idToDelete) {
+  const id = idToDelete || document.getElementById('editId').value;
+  if (!id) return;
+  if (!(await confirmDialog('Are you sure you want to delete this supplier?', { ok: 'Delete' }))) return;
+
+  try {
+    await api(API + '/suppliers/' + id, { method: 'DELETE' });
+    toast('Supplier deleted.', 'success');
+    closeSupplierModal();
+    loadSuppliers();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+loadSuppliers();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

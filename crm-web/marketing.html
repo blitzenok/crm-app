@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* marketing-only styling; everything shared lives in crm.css */
+.section{margin-bottom:20px;}
+.notice{background:#FFF8EC;border:1px solid #F5DFAE;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#7A5B18;margin-bottom:20px;}
+.notice a{color:#1B2A4A;font-weight:700;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#991B1B;margin-bottom:20px;}
+.banner-error b{display:block;margin-bottom:3px;font-size:13px;}
+.check-list{display:flex;flex-direction:column;}
+.check{display:flex;gap:12px;padding:12px 20px;border-bottom:1px solid #F7F8FC;align-items:flex-start;}
+.check:last-child{border-bottom:none;}
+.check-mark{font-size:15px;line-height:1.3;flex:0 0 20px;}
+.check-body{flex:1;min-width:0;}
+.check-title{font-size:12.5px;font-weight:600;color:#2D3654;}
+.check-detail{font-size:11.5px;color:#5A6685;margin-top:2px;word-break:break-word;}
+.check-hint{font-size:11.5px;color:#7A869A;margin-top:4px;}
+.lookup-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:16px 20px;border-bottom:1px solid #F0F3FA;}
+.lookup-bar input{padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;min-width:260px;flex:1;}
+.attr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;padding:16px 20px;}
+.attr{background:#FAFBFD;border:1px solid #F0F3FA;border-radius:8px;padding:8px 12px;min-width:0;}
+.attr-k{font-size:10.5px;text-transform:uppercase;letter-spacing:0.3px;color:#7A869A;font-weight:600;}
+.attr-v{font-size:12.5px;color:#2D3654;word-break:break-word;margin-top:2px;}
+.sub-head{padding:12px 20px 6px;font-size:12px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.3px;}
+.muted{color:#7A869A;}
+.link-btn{font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #E8ECF4;color:#1B2A4A;text-decoration:none;white-space:nowrap;display:inline-block;}
+.link-btn:hover{background:#E8ECF4;}
+@media(max-width:768px){
+.stats-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.lookup-bar input{min-width:0;width:100%;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Marketing</div>
+      <button class="refresh-btn" onclick="loadAll(true)">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+
+      <div id="banner"></div>
+
+      <div class="notice">
+        This page is a window on Customer.io, not a second control room.
+        <b>Start, pause and edit journeys in Customer.io</b> &mdash; <a id="cioLink" href="https://fly.customer.io/" target="_blank" rel="noopener">open the workspace</a>.
+        Journey and message numbers below cover the last 30 days; the two account counters at the top are
+        the totals Customer.io itself shows. Everything is read fresh at most once a minute.
+      </div>
+
+      <div class="stats-row" id="statsRow"></div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Launch readiness</div></div>
+        <div class="check-list" id="readinessList"><div class="empty-state">Loading...</div></div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Journeys</div><div class="table-head-count" id="journeyCount">&mdash;</div></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Trigger</th><th>State</th><th>Sent 30d</th><th>Opened</th><th>Clicked</th><th>Updated</th><th></th></tr></thead>
+            <tbody id="journeyRows"><tr class="loading-row"><td colspan="8"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Transactional messages</div></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Sent 30d</th><th>Delivered</th></tr></thead>
+            <tbody id="transactionalRows"><tr class="loading-row"><td colspan="3"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Recent messages</div></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>When</th><th>Subject</th><th>To</th><th>State</th></tr></thead>
+            <tbody id="messageRows"><tr class="loading-row"><td colspan="4"><span class="spinner"></span></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Customer lookup</div></div>
+        <div class="lookup-bar">
+          <input type="email" id="lookupEmail" placeholder="customer@example.com" autocomplete="off">
+          <button class="btn btn-primary" onclick="lookup()">Look up</button>
+        </div>
+        <div id="lookupResult"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('marketing');
+const API = '/api/marketing';
+
+/* small helpers */
+/* A metric the server could not read comes back as null and must never print as 0 — that would read
+   as "nobody opened it" when the truth is "we do not know". */
+function num(v) { return (v === null || v === undefined) ? '—' : String(v); }
+function when(iso) { return iso ? fmtDate(iso) : '—'; }
+function row(colspan, text) { return '<tr><td colspan="' + colspan + '" class="muted" style="text-align:center;padding:28px">' + esc(text) + '</td></tr>'; }
+function link(url, label) {
+  const safe = safeUrl(url);
+  if (!safe || safe === '#') return '';
+  return '<a class="link-btn" href="' + escAttr(safe) + '" target="_blank" rel="noopener">' + esc(label) + '</a>';
+}
+function showBanner(html) { document.getElementById('banner').innerHTML = html; }
+function unavailableBanner() {
+  showBanner('<div class="banner-error"><b>Customer.io unavailable</b>' +
+    esc('The panel could not read the account just now. Journeys that are running keep running — this page only reports them. ' +
+        'If this does not clear in a minute, check the API key in /opt/crm-api/.env and the blitz-api log.') + '</div>');
+}
+
+/* overview */
+function renderStats(d) {
+  const drafts = (d.campaigns || []).filter(c => c.active === false || (c.state && c.state !== 'running')).length;
+  const cards = [
+    { icon: '👥', cls: 'blue',   value: num(d.workspace && d.workspace.people), label: 'People in Customer.io' },
+    { icon: '📧', cls: 'green',  value: num(d.workspace && d.workspace.messages_sent), label: 'Messages sent, all time' },
+    { icon: '📣', cls: 'purple', value: String((d.campaigns || []).length), label: 'Journeys' },
+    { icon: '📝', cls: 'amber',  value: String(drafts), label: 'Not started yet' }
+  ];
+  document.getElementById('statsRow').innerHTML = cards.map(c =>
+    '<div class="stat-card"><div class="stat-card-top"><div class="stat-icon ' + escAttr(c.cls) + '">' + esc(c.icon) + '</div></div>' +
+    '<div class="stat-value">' + esc(c.value) + '</div><div class="stat-label">' + esc(c.label) + '</div></div>').join('');
+}
+
+/* A journey entered by a segment has no event name, only the ids of the segments that let people
+   in — printing the provider's own word for that kind of trigger ("seg_attr") told the reader
+   nothing. An unknown kind still falls back to the word, which is better than an empty cell. */
+function triggerText(t) {
+  if (!t) return '—';
+  if (t.event_name) return t.event_name + (t.type ? ' (' + t.type + ')' : '');
+  const ids = t.segment_ids || [];
+  if (ids.length) return 'joins segment ' + ids.map(function (id) { return '#' + id; }).join(', ');
+  return t.type || '—';
+}
+
+function renderJourneys(list) {
+  const tb = document.getElementById('journeyRows');
+  const count = document.getElementById('journeyCount');
+  if (list === null) { count.textContent = '—'; tb.innerHTML = row(8, 'Customer.io did not answer for this section.'); return; }
+  count.textContent = String(list.length);
+  if (!list.length) { tb.innerHTML = row(8, 'No journeys in this workspace yet.'); return; }
+  tb.innerHTML = list.map(c => {
+    const m = c.metrics30d || {};
+    const trigger = triggerText(c.trigger);
+    /* The storefront sends five events and no more; a journey waiting for anything else sits there
+       for ever without a single entry, and the row is the only place that shows it. */
+    const dead = c.trigger && c.trigger.event_from_shop === false
+      ? '<div class="check-hint">The shop never sends this event</div>' : '';
+    const badge = c.state === 'running' ? 'badge-sent' : 'badge-none';
+    return '<tr>' +
+      '<td><b>' + esc(c.name) + '</b>' + (c.created_by ? '<div class="check-hint">by ' + esc(c.created_by) + '</div>' : '') + '</td>' +
+      '<td>' + esc(trigger) + dead + '</td>' +
+      '<td><span class="badge ' + escAttr(badge) + '">' + esc(c.state || 'unknown') + '</span></td>' +
+      '<td>' + esc(num(m.sent)) + '</td>' +
+      '<td>' + esc(num(m.opened)) + '</td>' +
+      '<td>' + esc(num(m.clicked)) + '</td>' +
+      '<td class="muted">' + esc(when(c.updated)) + '</td>' +
+      '<td>' + link(c.edit_url, 'Open in Customer.io') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderTransactional(list) {
+  const tb = document.getElementById('transactionalRows');
+  if (list === null) { tb.innerHTML = row(3, 'Customer.io did not answer for this section.'); return; }
+  if (!list.length) { tb.innerHTML = row(3, 'No transactional templates in this workspace.'); return; }
+  tb.innerHTML = list.map(t => {
+    const m = t.metrics30d || {};
+    return '<tr><td><b>' + esc(t.name) + '</b></td><td>' + esc(num(m.sent)) + '</td><td>' + esc(num(m.delivered)) + '</td></tr>';
+  }).join('');
+}
+
+/* The feed shows the last letters the account sent. A letter that failed carries the provider's own
+   explanation, and that line is the point of the section: an empty Recent-messages table and a table
+   full of "550 unknown mailbox" mean very different things on launch day. */
+function renderMessages(list) {
+  const tb = document.getElementById('messageRows');
+  if (list === null) { tb.innerHTML = row(4, 'Customer.io did not answer for this section.'); return; }
+  if (!list.length) { tb.innerHTML = row(4, 'No letters sent from this workspace yet.'); return; }
+  tb.innerHTML = list.map(m =>
+    '<tr><td class="muted">' + esc(when(m.ts)) + '</td>' +
+    '<td>' + esc(m.subject || '—') +
+      (m.failure_message ? '<div class="check-hint">' + esc(m.failure_message) + '</div>' : '') + '</td>' +
+    '<td>' + esc(m.recipient || m.recipient_masked || '—') + '</td>' +
+    '<td>' + esc(m.state || '—') + '</td></tr>').join('');
+}
+
+/* The workspace link is derived from a journey link the server built; without journeys it stays the
+   plain Customer.io address. It points at the automations list, which is the address the interface
+   itself uses (copied from it on 2026-09-09) — '/journeys' on its own was never seen working, and
+   every guessed address in this panel has so far turned out to be a 404. */
+function setWorkspaceLink(list) {
+  const first = (list || []).find(c => c && c.edit_url);
+  if (!first) return;
+  const cut = first.edit_url.indexOf('/journeys');
+  if (cut <= 0) return;
+  const url = safeUrl(first.edit_url.slice(0, cut) + '/journeys/automations');
+  if (url && url !== '#') document.getElementById('cioLink').setAttribute('href', url);
+}
+
+async function loadOverview(fresh) {
+  try {
+    const d = await api(API + '/overview' + (fresh ? '?fresh=1' : ''), { toast: false });
+    showBanner('');
+    renderStats(d);
+    renderJourneys(d.campaigns || []);
+    renderTransactional(d.transactional);
+    renderMessages(d.last_messages);
+    setWorkspaceLink(d.campaigns);
+  } catch (e) {
+    unavailableBanner();
+    document.getElementById('statsRow').innerHTML = '';
+    renderJourneys(null);
+    renderTransactional(null);
+    renderMessages(null);
+  }
+}
+
+/* readiness */
+/* One line per launch step. Three states on purpose: done, not done, and "cannot be checked from
+   here" — the API says nothing about trigger filters or the test-mode switch itself. */
+function readinessLines(d) {
+  const orders = d.orders_status_fill || {};
+  const draft = d.campaigns_draft;
+  return [
+    { key: 'keys_present', title: 'Customer.io API key is in place',
+      state: d.keys_present === true ? 'ok' : 'no' },
+    { key: 'test_mode_suspected', title: 'Test mode is off',
+      state: d.test_mode_suspected === null ? 'unknown' : (d.test_mode_suspected ? 'no' : 'ok'),
+      detail: d.test_mode_suspected === null ? 'One recent letter went to an address other than its addressee; not enough to tell yet.'
+            : (d.test_mode_suspected
+                ? ((d.test_mode_evidence && d.test_mode_evidence.count ? d.test_mode_evidence.count + ' letters' : 'Recent letters')
+                   + ' meant for customers were delivered to '
+                   + ((d.test_mode_evidence && (d.test_mode_evidence.recipient || d.test_mode_evidence.recipient_masked)) || 'one address')
+                   + ' instead: a test address is set in the workspace.')
+                : '') },
+    { key: 'campaigns_draft', title: 'Every journey has been started',
+      state: draft === null ? 'unknown' : (draft.length ? 'no' : 'ok'),
+      detail: draft && draft.length ? 'Still a draft: ' + draft.join(', ') : '' },
+    /* The server reads the trigger filter now (campaign detail → filter segments → their
+       conditions). It still answers null when Customer.io could not be read, and that stays a
+       question mark: a provider that did not answer is not a journey without a filter. */
+    { key: 'abandonment_filter', title: 'Shop Abandonment only fires with items in the cart',
+      state: d.abandonment_filter === true ? 'ok' : (d.abandonment_filter === false ? 'no' : 'unknown'),
+      detail: d.abandonment_filter_detail
+           || (d.abandonment_filter === true || d.abandonment_filter === false ? ''
+               : 'The trigger filter could not be read just now — check it by eye in Customer.io.') },
+    { key: 'replenishment_exists', title: 'Replenishment journey exists',
+      state: d.replenishment_exists === null ? 'unknown' : (d.replenishment_exists ? 'ok' : 'no'),
+      detail: 'Recognised by the journey name.' },
+    { key: 'vip_exists', title: 'VIP journey exists',
+      state: d.vip_exists === null ? 'unknown' : (d.vip_exists ? 'ok' : 'no'),
+      detail: 'Recognised by the journey name.' },
+    { key: 'broadcast_exists', title: 'An API-triggered broadcast exists',
+      state: d.broadcast_exists === null ? 'unknown' : (d.broadcast_exists ? 'ok' : 'no') },
+    { key: 'orders_status_fill', title: 'Orders carry a real status',
+      state: orders.total === null || orders.total === undefined ? 'unknown'
+           : (orders.total > 0 && orders.with_status === orders.total ? 'ok' : 'no'),
+      detail: (orders.total === null || orders.total === undefined)
+           ? 'Could not read the orders just now.'
+           /* The file holds more than orders: insider signups are written to it too, and one basket can be
+              there twice. Saying how many records were left out keeps the count from reading as a
+              wall of work that is not there (2026-09-09). */
+           : orders.with_status + ' of ' + orders.total + ' orders have a status.'
+             + (orders.skipped ? ' ' + orders.skipped + ' more records in the file are not orders (signups, duplicates) and are not counted.' : '') },
+    { key: 'consent_field_supported', title: 'Marketing consent is captured at signup',
+      state: d.consent_field_supported === true ? 'ok' : 'no' }
+  ];
+}
+
+function renderReadiness(d) {
+  const marks = { ok: '✅', no: '❌', unknown: '❓' };
+  const hints = d.hints || {};
+  document.getElementById('readinessList').innerHTML = readinessLines(d).map(l =>
+    '<div class="check">' +
+      '<div class="check-mark">' + esc(marks[l.state] || '❓') + '</div>' +
+      '<div class="check-body">' +
+        '<div class="check-title">' + esc(l.title) + '</div>' +
+        (l.detail ? '<div class="check-detail">' + esc(l.detail) + '</div>' : '') +
+        (l.state === 'ok' || !hints[l.key] ? '' : '<div class="check-hint">' + esc(hints[l.key]) + '</div>') +
+      '</div>' +
+    '</div>').join('');
+}
+
+async function loadReadiness(fresh) {
+  try {
+    renderReadiness(await api(API + '/readiness' + (fresh ? '?fresh=1' : ''), { toast: false }));
+  } catch (e) {
+    document.getElementById('readinessList').innerHTML =
+      '<div class="empty-state">The checklist needs Customer.io and could not read it just now.</div>';
+  }
+}
+
+/* customer lookup */
+function renderLookup(email, d) {
+  const box = document.getElementById('lookupResult');
+  if (!d.found) {
+    box.innerHTML = '<div class="empty-state">' + esc(email) + ' is not in Customer.io.</div>';
+    return;
+  }
+  const attrs = d.attributes || {};
+  const keys = Object.keys(attrs).sort();
+  let html = '<div class="sub-head">Profile attributes</div>';
+  html += keys.length
+    ? '<div class="attr-grid">' + keys.map(k =>
+        '<div class="attr"><div class="attr-k">' + esc(k) + '</div><div class="attr-v">' + esc(attrs[k]) + '</div></div>').join('') + '</div>'
+    : '<div class="empty-state">No attributes on this profile.</div>';
+
+  html += '<div class="sub-head">Last messages</div><div class="table-scroll"><table>' +
+    '<thead><tr><th>When</th><th>Subject</th><th>To</th><th>State</th></tr></thead><tbody>';
+  if (d.last_messages === null) html += row(4, 'Customer.io did not answer for this section.');
+  else if (!d.last_messages.length) html += row(4, 'No letters to this address yet.');
+  else html += d.last_messages.map(m =>
+    '<tr><td class="muted">' + esc(when(m.ts)) + '</td><td>' + esc(m.subject || '—') +
+    (m.failure_message ? '<div class="check-hint">' + esc(m.failure_message) + '</div>' : '') + '</td>' +
+    '<td>' + esc(m.recipient || m.recipient_masked || '—') + '</td><td>' + esc(m.state || '—') + '</td></tr>').join('');
+  html += '</tbody></table></div>';
+
+  html += '<div class="sub-head">Last events</div><div class="table-scroll"><table>' +
+    '<thead><tr><th>When</th><th>Event</th><th>Person</th></tr></thead><tbody>';
+  if (d.last_events === null) html += row(3, 'Customer.io did not answer for this section.');
+  else if (!d.last_events.length) html += row(3, 'No events for this person yet.');
+  else html += d.last_events.map(e =>
+    '<tr><td class="muted">' + esc(when(e.ts)) + '</td><td>' + esc(e.name || '—') + '</td>' +
+    '<td>' + esc(e.email || e.email_masked || '—') + '</td></tr>').join('');
+  html += '</tbody></table></div>';
+
+  box.innerHTML = html;
+}
+
+async function lookup() {
+  const email = (document.getElementById('lookupEmail').value || '').trim();
+  if (!email) { toast('Enter an e-mail address', 'info'); return; }
+  const box = document.getElementById('lookupResult');
+  box.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
+  try {
+    renderLookup(email, await api(API + '/customer?email=' + encodeURIComponent(email), { toast: false }));
+  } catch (e) {
+    box.innerHTML = '<div class="empty-state">' +
+      esc(e && e.status === 400 ? 'That does not look like an e-mail address.'
+                                : 'Customer.io could not be read just now.') + '</div>';
+  }
+}
+document.getElementById('lookupEmail').addEventListener('keydown', function (e) { if (e.key === 'Enter') lookup(); });
+
+/* boot */
+// The two halves are started, not awaited: the panel draws whichever comes back first, and a slow
+// checklist never holds the journey table. Refresh passes fresh through to both; the boot call does
+// not, so opening the page is a cache hit whenever somebody looked in the last five minutes.
+function loadAll(fresh) { loadOverview(fresh); loadReadiness(fresh); }
+loadAll();
+</script>
+
+</body>
+</html>

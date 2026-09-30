@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* customers-only styling; everything shared lives in crm.css */
+.search-box{flex:1;max-width:320px;}
+.search-box input{width:100%;padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; }
+.btn-small{padding:5px 10px;font-size:11px;border-radius:6px;background:#E8ECF4;color:#1B2A4A;font-weight:600;}
+.btn-small:hover{background:#E6F4EA;}
+.customer-card{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:14px;}
+.avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;}
+.cust-info{flex:1;}
+.cust-name{font-weight:700;font-size:14px;}
+.cust-sub{font-size:12px;color:#5A6685;margin-top:2px;}
+.cust-due{font-weight:700;font-size:13px;}
+.cust-due.zero{color:#2E7D32;}
+.cust-due.owed{color:#E65100;}
+.cust-actions{display:flex;gap:6px;}
+.fab{position:fixed;bottom:30px;right:30px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#1F7A3D,#145C2C);color:#fff;font-size:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px rgba(0,0,0,0.2);border:none;z-index:100;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;align-items:center;justify-content:center;}
+.modal-card{background:#fff;border-radius:16px;padding:22px;width:420px;max-height:85vh;overflow-y:auto;}
+.modal-card h3{margin-bottom:16px;}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.form-group input, .form-group select{width:100%;padding:10px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.modal-actions{display:flex;gap:10px;margin-top:16px;}
+.btn-danger{background:#FFF0F0;color:#E53935;}
+.empty-state{text-align:center;color:#5A6685;padding:40px;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+@media(max-width:768px){
+body{font-size:15px!important;background:var(--bg)!important;color:var(--text)!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important
+
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+
+
+
+.topbar .logo-img,.topbar-logo{display:flex!important;align-items:center;gap:0;margin-right:4px;}
+.topbar .logo-img img,.topbar-logo img{width:30px!important;height:30px!important;border-radius:8px!important;object-fit:cover!important;display:block!important;}
+
+
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+
+
+.table-responsive,.table-wrap,.table-container{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;width:100%!important;}
+table{min-width:600px!important;}
+
+
+.side-panel,.drawer,.modal-drawer{width:100vw!important;max-width:100%!important;right:0!important;left:0!important;}
+
+
+.sidebar{flex-wrap:nowrap!important;}
+
+
+.btn,.action-btn,.chip,button{min-height:36px!important;}
+
+
+.products-grid,.cards-grid,.items-grid{grid-template-columns:1fr 1fr!important;}
+
+
+.mobile-fab{display:flex!important;position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#10B981,#059669);color:#fff;font-size:26px;font-weight:300;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(16,185,129,0.4);z-index:1001;cursor:pointer;border:none;transition:transform 0.15s;-webkit-transform:translateZ(0);transform:translateZ(0);}
+.mobile-fab:active{transform:scale(0.92);}
+
+.mobile-signout-btn{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);color:#fff;font-size:16px;cursor:pointer;padding:0;flex-shrink:0;}
+.modal-overlay,.overlay{padding:10px!important}
+}
+.sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding-bottom:env(safe-area-inset-bottom)!important;display:flex!important;flex-direction:row!important;justify-content:space-around!important;align-items:center!important;background:#fff!important;border-top:2px solid var(--border)!important;border-right:none!important;box-shadow:0 -2px 12px rgba(0,0,0,0.06)!important;z-index:1000!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;}
+.nav-item.active{color:var(--green)!important;font-weight:700!important}
+.content{padding:16px 14px 82px!important;margin-left:0!important}
+/* phase 3: the white background and the light border are dropped here on purpose. crm.css paints the mobile
+   topbar navy and writes the title and the search field in white; keeping the white bar made both invisible. */
+.topbar{position:sticky!important;top:0!important;z-index:900!important;flex-wrap:wrap!important;height:auto!important;padding:10px 14px!important;gap:8px!important}
+.search-box{max-width:100%!important;order:3;flex:1 1 100%!important}
+/* phase 3: the desktop rule above paints the field #F8FAFF; on the navy mobile topbar crm.css writes the
+   text in white, so the field itself has to go transparent or the typed text disappears. */
+.search-box input{background:transparent!important}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Customers <span id="custCount" style="color:#5A6685;font-weight:400;font-size:13px;"></span></div>
+      <div class="search-box"><input type="text" id="searchInput" placeholder="Search by name or phone..." oninput="renderCustomers()"></div>
+    </div>
+    <div class="content">
+      <div id="customerList"><div class="empty-state">Loading customers...</div></div>
+    </div>
+  </div>
+</div>
+
+<button class="fab" onclick="openModal()">+</button>
+
+<!-- Add/Edit Customer Modal -->
+<div class="modal-overlay" id="custModal">
+  <div class="modal-card">
+    <h3 id="modalTitle">Add Customer</h3>
+    <input type="hidden" id="editId">
+    <div class="form-group"><label>Customer Name</label><input type="text" id="fName"></div>
+    <div class="form-group"><label>Type</label><select id="fType"><option>Individual</option><option>Company</option></select></div>
+    <div class="form-group"><label>Contact No</label><input type="text" id="fPhone"></div>
+    <div class="form-group"><label>Email</label><input type="email" id="fEmail"></div>
+    <div class="form-group"><label>Address</label><input type="text" id="fAddress"></div>
+    <div class="form-group"><label>Credit Limit ($, 0 = unlimited)</label><input type="number" id="fCredit" value="0"></div>
+    <div class="modal-actions">
+      <button class="btn" style="flex:1;background:#E8ECF4;" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-danger" id="deleteBtn" style="display:none;" onclick="deleteCustomer()">Delete</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="saveCustomer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('customers');
+const API = '/msolpeptides-api';
+
+let CUSTOMERS = [];
+// phase 3 (B4): the rows the table currently shows; the Edit button passes the index into this array,
+// so no customer record is serialised into an inline onclick any more.
+let VISIBLE = [];
+
+
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+}
+
+async function loadCustomers() {
+  try {
+    CUSTOMERS = await api(API + '/customers');
+    renderCustomers();
+  } catch(e) { console.error(e); }
+}
+
+function renderCustomers() {
+  const q = (document.getElementById('searchInput').value || '').toLowerCase();
+  const filtered = CUSTOMERS.filter(c => c.name.toLowerCase().includes(q) || (c.phone||'').includes(q));
+  VISIBLE = filtered;
+  document.getElementById('custCount').textContent = filtered.length + ' of ' + CUSTOMERS.length;
+  const container = document.getElementById('customerList');
+  if (!filtered.length) { container.innerHTML = '<div class="empty-state">No customers found.</div>'; return; }
+  container.innerHTML = filtered.map((c, i) => `
+    <div class="customer-card">
+      <div class="avatar">${esc(initials(c.name))}</div>
+      <div class="cust-info">
+        <div class="cust-name">${esc(c.name)}</div>
+        <div class="cust-sub">${esc(c.phone || 'No phone')} ${esc(c.email ? '· '+c.email : '')}</div>
+      </div>
+      <div class="cust-due ${c.balance > 0 ? 'owed' : 'zero'}">${c.balance > 0 ? '$'+c.balance.toFixed(2)+' due' : 'No Due'}</div>
+      <div class="cust-actions">
+        <button class="btn-small" onclick="window.location.href='/crm/account-statement.html?customer=${safeId(c.id)}'">📄 Statement</button>
+        <button class="btn-small" onclick="openModal(${i})">✏️ Edit</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openModal(idx) {
+  const customer = VISIBLE[idx];
+  document.getElementById('custModal').classList.add('open');
+  if (customer && customer.id) {
+    document.getElementById('modalTitle').textContent = 'Edit Customer';
+    document.getElementById('editId').value = customer.id;
+    document.getElementById('fName').value = customer.name || '';
+    document.getElementById('fType').value = customer.type || 'Individual';
+    document.getElementById('fPhone').value = customer.phone || '';
+    document.getElementById('fEmail').value = customer.email || '';
+    document.getElementById('fAddress').value = customer.address || '';
+    document.getElementById('fCredit').value = customer.credit_limit || 0;
+    document.getElementById('deleteBtn').style.display = customer.id === 'walkin' ? 'none' : 'inline-block';
+  } else {
+    document.getElementById('modalTitle').textContent = 'Add Customer';
+    document.getElementById('editId').value = '';
+    ['fName','fPhone','fEmail','fAddress'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fType').value = 'Individual';
+    document.getElementById('fCredit').value = 0;
+    document.getElementById('deleteBtn').style.display = 'none';
+  }
+}
+function closeModal() { document.getElementById('custModal').classList.remove('open'); }
+
+async function saveCustomer() {
+  const id = document.getElementById('editId').value;
+  const payload = {
+    name: document.getElementById('fName').value,
+    type: document.getElementById('fType').value,
+    phone: document.getElementById('fPhone').value,
+    email: document.getElementById('fEmail').value,
+    address: document.getElementById('fAddress').value,
+    credit_limit: Number(document.getElementById('fCredit').value) || 0
+  };
+  if (!payload.name) { toast('Customer name is required.', 'error'); return; }
+  try {
+    const url = id ? API + '/customers/' + id : API + '/customers';
+    const method = id ? 'PUT' : 'POST';
+    await api(url, { method, body: payload });
+    closeModal();
+    loadCustomers();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+async function deleteCustomer() {
+  const id = document.getElementById('editId').value;
+  if (!id || !(await confirmDialog('Delete this customer?', {ok:'Delete'}))) return;
+  try {
+    await api(API + '/customers/' + id, { method: 'DELETE' });
+    closeModal();
+    loadCustomers();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+loadCustomers();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>
