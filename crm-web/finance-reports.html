@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=15a8f6da73">
+<style>
+/* copied from reports.html — .report-card is not in crm.css */
+.report-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:20px 22px; margin-bottom:16px; min-width:0; }
+.report-card h3{ font-size:14px; font-weight:700; margin-bottom:14px; color:#1B2A4A; }
+.main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:24px 28px;max-width:100%;}
+.fin-panel{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;}
+.fin-panel select,.fin-panel button{border:1px solid #EAECF4;border-radius:8px;padding:7px 12px;font-size:12px;background:#fff;cursor:pointer;}
+.fin-panel label{font-size:13px;color:#1B2A4A;display:flex;align-items:center;gap:6px;}
+#fin-summary{font-size:13px;color:#5A6685;margin-bottom:16px;line-height:1.5;}
+#fin-summary .fin-caption{display:block;margin-top:4px;font-size:12px;}
+.fin-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;}
+.fin-tiles [data-tile]{background:#F8FAFC;border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;min-width:0;}
+.tile-label{font-size:10px;font-weight:700;color:#6B7280;letter-spacing:0.6px;text-transform:uppercase;}
+.tile-value{font-size:22px;font-weight:800;color:#1a1a2e;margin-top:6px;letter-spacing:-0.5px;word-break:break-word;}
+.fin-chart{margin:8px 0 14px;max-width:100%;}
+.fin-chart svg{max-width:100%;height:auto;display:block;}
+/* not .table-wrap: crm.css sets overflow:hidden!important on phones */
+.fin-table-wrap{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;}
+.report-card table{width:100%;border-collapse:collapse;min-width:440px;}
+.report-card thead th{ text-align:left; padding:10px 8px 10px 0; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+.report-card tbody td{ padding:10px 8px 10px 0; font-size:13px; border-bottom:1px solid #F0F2FA; vertical-align:top; word-break:break-word; }
+.fin-note{font-size:12px;color:#5A6685;margin-top:12px;line-height:1.4;}
+.fin-loading,.fin-empty,.fin-error{padding:18px 4px;font-size:13px;color:#5A6685;}
+.fin-error{color:#C62828;}
+@media(max-width:768px){
+  .content{padding:14px;padding-bottom:82px;}
+  .fin-tiles{grid-template-columns:1fr 1fr;}
+  .report-card{padding:16px;}
+  /* crm.css turns every table into a card list on phones (thead and first cell hidden, min-width 600px) — here the
+     first cell is the month / product / source / name, so keep real tables and scroll them inside .fin-table-wrap */
+  .report-card table{min-width:440px!important;}
+  .report-card thead{display:table-header-group!important;}
+  .report-card tbody tr{display:table-row!important;padding:0!important;border-bottom:none!important;}
+  .report-card tbody td,.report-card tbody td:first-child{display:table-cell!important;padding:8px 8px 8px 0!important;border:none!important;border-bottom:1px solid #F0F2FA!important;font-size:12px!important;}
+}
+</style>
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=dc7b9e857b"></script>
+    <script src="auth.js"></script>
+    <script src="orders-model.js?v=3123f1cc3a"></script>
+    <script src="finance-model.js?v=8dfba2ca3a"></script>
+    <script src="crm-charts.js?v=4cc1a39a7f"></script>
+
+<div class="app-wrapper">
+<aside class="sidebar" id="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display:none;background:none;border:none;font-size:24px;cursor:pointer;padding:0 10px;" aria-label="Toggle menu">☰</button>
+    <div class="topbar-titles">
+      <div class="topbar-title">Finance Reports</div>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-icon-btn" onclick="logout()">↩</button>
+    </div>
+  </header>
+  <div class="content">
+    <div class="fin-panel">
+      <select id="fin-period" aria-label="Period">
+        <option value="30d">Last 30 days</option>
+        <option value="90d">Last 90 days</option>
+        <option value="ytd">This year</option>
+        <option value="all" selected>All time</option>
+      </select>
+      <label><input type="checkbox" id="fin-paid-only" checked> Paid only</label>
+      <button type="button" id="fin-refresh">Refresh</button>
+    </div>
+    <div id="fin-summary"></div>
+
+    <section class="report-card" id="fin-aov">
+      <h3>Average order value</h3>
+      <div class="fin-body"><div class="fin-loading">Loading…</div></div>
+    </section>
+    <section class="report-card" id="fin-products">
+      <h3>Product demand</h3>
+      <div class="fin-body"><div class="fin-loading">Loading…</div></div>
+    </section>
+    <section class="report-card" id="fin-sources">
+      <h3>Where customers come from</h3>
+      <div class="fin-body"><div class="fin-loading">Loading…</div></div>
+    </section>
+    <section class="report-card" id="fin-repeat">
+      <h3>Repeat customers</h3>
+      <div class="fin-body"><div class="fin-loading">Loading…</div></div>
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+if (!localStorage.getItem('crm_token')) window.location.href='/crm/login.html';
+renderNav('finance-reports');
+
+var PERIOD_LABEL = { '30d': 'Last 30 days', '90d': 'Last 90 days', 'ytd': 'This year', 'all': 'All time' };
+var allOrders = [];
+var loadError = false;
+
+function money(n) { return OrdersModel.formatMoney(n); }
+function pct(share) { return Math.round(Number(share) * 100) + '%'; }
+function periodVal() { return document.getElementById('fin-period').value || 'all'; }
+function paidOnlyVal() { return !!document.getElementById('fin-paid-only').checked; }
+
+function persist() {
+  try {
+    localStorage.setItem('crm_fin_period', periodVal());
+    localStorage.setItem('crm_fin_paid_only', paidOnlyVal() ? '1' : '0');
+  } catch (e) { /* private mode */ }
+}
+function restore() {
+  try {
+    var p = localStorage.getItem('crm_fin_period');
+    if (p && /^(30d|90d|ytd|all)$/.test(p)) document.getElementById('fin-period').value = p;
+    var o = localStorage.getItem('crm_fin_paid_only');
+    if (o === '0' || o === '1') document.getElementById('fin-paid-only').checked = o === '1';
+  } catch (e) { /* private mode */ }
+}
+
+function tile(name, label, value) {
+  return '<div data-tile="' + escAttr(name) + '"><div class="tile-label">' + esc(label) + '</div><div class="tile-value">' + esc(value) + '</div></div>';
+}
+function withChart(kind, svg) {
+  return String(svg || '').replace('<svg', '<svg data-chart="' + kind + '"');
+}
+function bodyOf(id) { return document.querySelector('#' + id + ' .fin-body'); }
+
+function setLoading() {
+  document.getElementById('fin-summary').textContent = 'Loading…';
+  ['fin-aov', 'fin-products', 'fin-sources', 'fin-repeat'].forEach(function (id) {
+    bodyOf(id).innerHTML = '<div class="fin-loading">Loading…</div>';
+  });
+}
+function setError() {
+  document.getElementById('fin-summary').textContent = '';
+  ['fin-aov', 'fin-products', 'fin-sources', 'fin-repeat'].forEach(function (id) {
+    bodyOf(id).innerHTML = '<div class="fin-error">Could not load orders</div>';
+  });
+}
+
+function render() {
+  if (loadError) { setError(); return; }
+  var selected = FinanceModel.select(allOrders, { period: periodVal(), paidOnly: paidOnlyVal(), now: new Date() });
+  var aov = FinanceModel.aov(selected);
+  var prods = FinanceModel.products(selected, { top: 20 });
+  var srcs = FinanceModel.sources(selected);
+  var rep = FinanceModel.repeat(selected);
+  var empty = aov.orders === 0;
+  var periodLabel = PERIOD_LABEL[periodVal()] || periodVal();
+
+  document.getElementById('fin-summary').innerHTML =
+    esc(aov.orders + ' orders · ' + money(aov.value) + ' order value · ' + periodLabel) +
+    '<span class="fin-caption">Order value = amount due (not cash received)</span>';
+
+  var aovHtml = '<div class="fin-tiles">' +
+    tile('orders', 'Orders', String(aov.orders)) +
+    tile('value', 'Order value', money(aov.value)) +
+    tile('average', 'Average', money(aov.average)) +
+    tile('median', 'Median', money(aov.median)) +
+    '</div>';
+  if (empty) {
+    aovHtml += '<div class="fin-empty">No orders in this period</div>';
+  } else {
+    aovHtml += '<div class="fin-chart">' + withChart('aov', CrmCharts.bars({
+      items: aov.byMonth.map(function (m) { return { label: m.label, value: m.average }; }),
+      format: money
+    })) + '</div>';
+    aovHtml += '<div class="fin-table-wrap"><table data-table="aov"><thead><tr><th>Month</th><th>Orders</th><th>Value</th><th>Average</th></tr></thead><tbody>' +
+      aov.byMonth.map(function (m) {
+        return '<tr><td>' + esc(m.label) + '</td><td>' + esc(String(m.orders)) + '</td><td>' + esc(money(m.value)) + '</td><td>' + esc(money(m.average)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  bodyOf('fin-aov').innerHTML = aovHtml;
+
+  var prodHtml = '';
+  if (empty) {
+    prodHtml = '<div class="fin-empty">No orders in this period</div>';
+  } else {
+    prodHtml += '<div class="fin-chart">' + withChart('products', CrmCharts.hbars({
+      items: prods.map(function (p) { return { label: p.name, value: p.units }; }),
+      format: String
+    })) + '</div>';
+    prodHtml += '<div class="fin-table-wrap"><table data-table="products"><thead><tr><th>Product</th><th>Units</th><th>Orders</th><th>Value</th><th>Share</th></tr></thead><tbody>' +
+      prods.map(function (p) {
+        var label = p.name + (p.mg ? ' ' + p.mg : '');
+        return '<tr data-key="' + escAttr(p.key) + '"><td>' + esc(label) + '</td><td>' + esc(String(p.units)) + '</td><td>' + esc(String(p.orders)) + '</td><td>' + esc(money(p.value)) + '</td><td>' + esc(pct(p.share)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  prodHtml += '<p class="fin-note">Line value = price × qty as saved in the order, before discount and shipping</p>';
+  bodyOf('fin-products').innerHTML = prodHtml;
+
+  var srcHtml = '';
+  if (empty) {
+    srcHtml = '<div class="fin-empty">No orders in this period</div>';
+  } else {
+    srcHtml += '<div class="fin-chart">' + withChart('sources', CrmCharts.donut({
+      items: srcs.map(function (s) { return { label: s.source, value: s.orders }; })
+    })) + '</div>';
+    srcHtml += '<div class="fin-table-wrap"><table data-table="sources"><thead><tr><th>Source</th><th>Orders</th><th>Value</th><th>Share</th></tr></thead><tbody>' +
+      srcs.map(function (s) {
+        return '<tr><td>' + esc(s.source) + '</td><td>' + esc(String(s.orders)) + '</td><td>' + esc(money(s.value)) + '</td><td>' + esc(pct(s.share)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  srcHtml += '<p class="fin-note">Source is recorded for orders placed after the shop update (stage B); older orders show what the coupon tells.</p>';
+  bodyOf('fin-sources').innerHTML = srcHtml;
+
+  var repHtml = '<div class="fin-tiles">' +
+    tile('customers', 'Customers', String(rep.customers)) +
+    tile('repeat', 'Bought twice or more', String(rep.repeat)) +
+    tile('share', 'Share', pct(rep.share)) +
+    '</div>';
+  if (empty) {
+    repHtml += '<div class="fin-empty">No orders in this period</div>';
+  } else {
+    repHtml += '<div class="fin-table-wrap"><table data-table="repeat"><thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Value</th><th>First</th><th>Last</th></tr></thead><tbody>' +
+      rep.list.map(function (c) {
+        return '<tr><td>' + esc(c.name) + '</td><td>' + esc(c.email) + '</td><td>' + esc(String(c.orders)) + '</td><td>' + esc(money(c.value)) + '</td><td>' + esc(c.first) + '</td><td>' + esc(c.last) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  repHtml += '<p class="fin-note">Customers are matched by e-mail; orders without e-mail are not counted here.</p>';
+  bodyOf('fin-repeat').innerHTML = repHtml;
+}
+
+async function load() {
+  setLoading();
+  loadError = false;
+  var d;
+  try {
+    d = await api('/msolpeptides-api/orders');
+  } catch (e) {
+    loadError = true;
+    setError();
+    return;
+  }
+  allOrders = OrdersModel.load(Array.isArray(d) ? d : ((d && d.orders) || []));
+  render();
+}
+
+restore();
+document.getElementById('fin-period').addEventListener('change', function () { persist(); render(); });
+document.getElementById('fin-paid-only').addEventListener('change', function () { persist(); render(); });
+document.getElementById('fin-refresh').addEventListener('click', function () { persist(); load(); });
+if (typeof OrdersModel === 'undefined' || typeof FinanceModel === 'undefined' || typeof CrmCharts === 'undefined') {
+  loadError = true;
+  setError();
+} else {
+  load();
+}
+</script>
+</body>
+</html>

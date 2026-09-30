@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* inventory-only styling; everything shared lives in crm.css */
+.stats-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; }
+.table-header h3{ font-size:14px; font-weight:700; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+.btn-secondary:hover{ background:#E6F4EA; color:#1B2A4A; }
+.btn-danger{ background:#FFF0F0; color:#E53935; border:1px solid #FFCDD2; }
+.btn-danger:hover{ background:#FFE0E0; }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; }
+tbody tr:hover{ background:#F8FAFF; }
+.product-img{ width:40px; height:40px; border-radius:8px; object-fit:cover; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-in-stock{ background:#E8F5E9; color:#2E7D32; }
+.badge-out-of-stock{ background:#FFEBEE; color:#C62828; }
+.badge-low-stock{ background:#FFF3E0; color:#E65100; }
+.badge-category{ background:#E6F4EA; color:#1B2A4A; }
+.modal-overlay{ position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.4); display:none; align-items:center; justify-content:center; z-index:1000; }
+.modal-overlay.active{ display:flex; }
+.modal{ background:#fff; border-radius:16px; padding:28px; width:500px; max-width:90vw; max-height:90vh; overflow-y:auto; }
+.modal h2{ font-size:18px; font-weight:700; margin-bottom:20px; }
+.form-group{ margin-bottom:14px; }
+.form-group label{ display:block; font-size:12px; font-weight:600; color:#5A6685; margin-bottom:4px; }
+.form-group input, .form-group select, .form-group textarea{ width:100%; padding:10px 12px; border:1px solid #E8ECF4; border-radius:8px; font-size:13px; outline:none; transition:border 0.15s; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus{ border-color:#1B2A4A; }
+.form-row{ display:flex; gap:12px; }
+.form-row .form-group{ flex:1; }
+.modal-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:24px; }
+.toggle-switch{ position:relative; width:40px; height:22px; }
+.toggle-switch input{ opacity:0; width:0; height:0; }
+.toggle-slider{ position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#ccc; border-radius:22px; transition:0.3s; }
+.toggle-slider:before{ position:absolute; content:''; height:16px; width:16px; left:3px; bottom:3px; background:#fff; border-radius:50%; transition:0.3s; }
+input:checked + .toggle-slider{ background:#1B2A4A; }
+input:checked + .toggle-slider:before{ transform:translateX(18px); }
+/* phase 3: a stray <style> tag opened here inside the previous, unclosed <style> block and the browser dropped the
+   .modal-lg rule that followed it; phase 4 restores the rule on purpose — the product modal is 560px wide as designed. */
+.modal-lg{width:560px;max-width:94vw;}
+.modal-header-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.modal-header-bar h2{font-size:17px;}
+.modal-close-x{background:none;border:none;font-size:20px;color:#5A6685;cursor:pointer;padding:4px 8px;line-height:1;}
+.section-block{background:#F8FAFF;border:1px solid #E8ECF4;border-radius:12px;padding:16px;margin-bottom:14px;}
+.section-title{font-size:11px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+.form-hint{font-size:11px;color:#8891A8;margin-top:3px;display:block;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;}
+.toggle-row-label{font-size:13px;font-weight:600;color:#1a1a2e;}
+.sku-row{display:flex;gap:8px;}
+.sku-row input{flex:1;}
+.btn-generate{background:#E6F4EA;color:#1F7A3D;border:1px solid #C8E6C9;padding:0 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.store-price-readonly{background:#F0F2FA!important;color:#5A6685!important;font-weight:700;}
+.img-upload-grid{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.img-thumb{position:relative;width:72px;height:72px;border-radius:10px;overflow:hidden;border:1px solid #E8ECF4;}
+.img-thumb img{width:100%;height:100%;object-fit:cover;}
+.img-thumb .img-remove{position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;line-height:1;}
+.img-add-btn{width:72px;height:72px;border:2px dashed #C9D2E8;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;color:#1F7A3D;font-size:11px;font-weight:700;background:#fff;}
+.img-add-btn:hover{border-color:#1F7A3D;background:#F0F9F1;}
+.btn-view{background:#E3F2FD;color:#1565C0;border:1px solid #BBDEFB;padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;font-weight:600;}
+.btn-editc{background:#FFF3E0;color:#E65100;border:1px solid #FFE0B2;padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;font-weight:600;}
+.btn-stockc{background:#E8F5E9;color:#2E7D32;border:1px solid #C8E6C9;padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;font-weight:600;}
+.btn-delc{background:#FFEBEE;color:#C62828;border:1px solid #FFCDD2;padding:5px 10px;font-size:11px;border-radius:8px;cursor:pointer;font-weight:600;}
+.action-cell{display:flex;gap:6px;flex-wrap:wrap;}
+.stock-modal-product{text-align:center;margin-bottom:18px;}
+.stock-modal-product b{font-size:15px;display:block;}
+.stock-modal-product .current-stock{font-size:12px;color:#5A6685;margin-top:4px;}
+.stock-modal-product .current-stock b{display:inline;color:#2E7D32;font-size:13px;}
+.stepper-row{display:flex;align-items:center;justify-content:center;gap:24px;margin:20px 0;}
+.stepper-btn{width:48px;height:48px;border-radius:50%;border:none;background:#F0F2FA;color:#1B2A4A;font-size:22px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.stepper-btn:hover{background:#E6F4EA;color:#1F7A3D;}
+.stepper-value{font-size:32px;font-weight:800;color:#1a1a2e;min-width:100px;text-align:center;}
+.stock-warning{background:#FFF8E1;border:1px solid #FFE082;border-radius:10px;padding:10px 14px;font-size:12px;color:#8A6D00;text-align:center;margin-bottom:6px;}
+.view-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #F0F2FA;font-size:13px;}
+.view-row:last-child{border-bottom:none;}
+.view-row .vlabel{color:#5A6685;font-weight:600;}
+.view-row .vval{color:#1a1a2e;font-weight:600;text-align:right;}
+@media(max-width:768px){
+body{font-size:15px!important;background:var(--bg)!important;color:var(--text)!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important;-webkit-font-smoothing:antialiased!important
+
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+
+
+
+.topbar .logo-img,.topbar-logo{display:flex!important;align-items:center;gap:0;margin-right:4px;}
+.topbar .logo-img img,.topbar-logo img{width:30px!important;height:30px!important;border-radius:8px!important;object-fit:cover!important;display:block!important;}
+
+
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+
+
+.table-responsive,.table-wrap,.table-container{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;width:100%!important;}
+table{min-width:600px!important;}
+
+
+.side-panel,.drawer,.modal-drawer{width:100vw!important;max-width:100%!important;right:0!important;left:0!important;}
+
+
+.sidebar{flex-wrap:nowrap!important;}
+
+
+.btn,.action-btn,.chip,button{min-height:36px!important;}
+
+
+.products-grid,.cards-grid,.items-grid{grid-template-columns:1fr 1fr!important;}
+
+
+.mobile-fab{display:flex!important;position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#10B981,#059669);color:#fff;font-size:26px;font-weight:300;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(16,185,129,0.4);z-index:1001;cursor:pointer;border:none;transition:transform 0.15s;-webkit-transform:translateZ(0);transform:translateZ(0);}
+.mobile-fab:active{transform:scale(0.92);}
+
+.mobile-signout-btn{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);color:#fff;font-size:16px;cursor:pointer;padding:0;flex-shrink:0;}
+.modal-overlay,.overlay{padding:10px!important}
+}
+.sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding-bottom:env(safe-area-inset-bottom)!important;display:flex!important;flex-direction:row!important;justify-content:space-around!important;align-items:center!important;background:#fff!important;border-top:2px solid var(--border)!important;border-right:none!important;box-shadow:0 -2px 12px rgba(0,0,0,0.06)!important;z-index:1000!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;}
+.widgets-row,.quick-tabs,.secondary-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}
+.top-widget,.funnel-card{background:var(--card)!important;border:2px solid var(--border)!important;border-radius:var(--radius)!important;padding:14px!important;box-shadow:0 1px 3px rgba(0,0,0,0.04)!important}
+.top-widget-title{color:var(--navy)!important;font-size:12px!important;font-weight:800!important;text-transform:uppercase!important;letter-spacing:.4px!important}
+.funnel-card{margin-top:14px!important}
+}
+</style>
+
+
+
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Inventory Management <span>— BioLabs Shop</span></div>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Product</button>
+    </div>
+    <div class="content">
+    <div style="margin:0 0 14px;padding:12px 14px;border-radius:10px;background:#E8F5E9;border:1px solid #A5D6A7;color:#1B5E20;font-size:13px"><b>Movement-based on-hand</b> (PO intake) lives under <a href="/crm/inventory-intake.html"><b>Store → Inventory Intake</b></a>. This Products list stays catalog-only.</div>
+
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-label">Total Products</div><div class="stat-value" id="statTotal">—</div><div class="stat-sub">Active SKUs</div></div>
+        <div class="stat-card"><div class="stat-label">In Stock</div><div class="stat-value" id="statInStock" style="color:#2E7D32;">—</div><div class="stat-sub">Available now</div></div>
+        <div class="stat-card"><div class="stat-label">Out of Stock</div><div class="stat-value" id="statOutStock" style="color:#C62828;">—</div><div class="stat-sub">Need restock</div></div>
+        <div class="stat-card"><div class="stat-label">Avg Price</div><div class="stat-value" id="statAvgPrice">—</div><div class="stat-sub">USD</div></div>
+      </div>
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Products</h3>
+          <button class="btn btn-secondary" onclick="loadProducts()">🔄 Refresh</button>
+        </div>
+        <table>
+          <thead><tr><th>Image</th><th>Name</th><th>Category</th><th>Price</th><th>Orig.</th><th>Stock</th><th>Badge</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody id="productsBody"><tr><td colspan="9" style="text-align:center;color:#5A6685;padding:40px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="productModal">
+  <div class="modal modal-lg">
+    <div class="modal-header-bar"><h2 id="modalTitle">Add Product</h2><button class="modal-close-x" onclick="closeModal()">✕</button></div>
+    <input type="hidden" id="editId">
+    <input type="hidden" id="fSlug">
+
+    <div class="section-block">
+      <div class="section-title">📋 Product Information</div>
+      <div class="form-group"><label>Product Name</label><input type="text" id="fName" placeholder="e.g. Wolverine Blend"></div>
+      <div class="toggle-row"><span class="toggle-row-label">This is a Service</span><label class="toggle-switch"><input type="checkbox" id="fIsService"><span class="toggle-slider"></span></label></div>
+      <span class="form-hint" style="margin:-6px 0 10px;">Enable if selling services (no stock required)</span>
+      <div class="form-row">
+        <div class="form-group"><label>Quantity Type</label><select id="fQtyType"><option value="Unit">Unit</option><option value="Vial">Vial</option><option value="Box">Box</option><option value="Kit">Kit</option><option value="Case">Case</option></select></div>
+        <div class="form-group"><label>Category</label><select id="fCategory"><option value="Recovery & Repair">Recovery & Repair</option><option value="Growth Hormone">Growth Hormone</option><option value="Weight Loss">Weight Loss</option><option value="Anti-Aging">Anti-Aging</option><option value="NAD+ & Longevity">NAD+ & Longevity</option><option value="Cognitive">Cognitive</option><option value="Immune Support">Immune Support</option></select></div>
+      </div>
+      <div class="form-group"><label>Supplier</label><input type="text" id="fSupplier" list="supplierList" placeholder="Not Applicable"><datalist id="supplierList"></datalist></div>
+      <div class="form-row">
+        <div class="form-group"><label>SKU</label><div class="sku-row"><input type="text" id="fSku" placeholder="AUTO-GENERATED"><button type="button" class="btn-generate" onclick="generateSku()">Generate</button></div></div>
+        <div class="form-group"><label>Barcode</label><input type="text" id="fBarcode" placeholder="Barcode"></div>
+      </div>
+      <div class="form-group"><label>Product Expiry Date</label><input type="date" id="fExpiryDate"></div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-title">💲 Pricing & Details</div>
+      <div class="form-row">
+        <div class="form-group"><label>Quantity</label><input type="number" id="fQty" step="1" placeholder="0"></div>
+        <div class="form-group"><label>Low Stock Alert Optional</label><input type="number" id="fLowStock" step="1" placeholder="0"><span class="form-hint">Show a Low Stock warning when quantity drops to this level or below. Leave 0 to disable.</span></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Product Cost</label><input type="number" id="fCost" step="0.01" placeholder="0.00"></div>
+        <div class="form-group"><label>Sell Price</label><input type="number" id="fPrice" step="0.01" placeholder="0.00" oninput="syncStorePrice()"></div>
+      </div>
+      <div class="form-group"><label>Original Price (optional, shown as strikethrough discount)</label><input type="number" id="fOrigPrice" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label>Notes</label><textarea id="fNotes" rows="2" placeholder="Internal notes"></textarea></div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-title">🏪 Store Details</div>
+      <div class="form-group"><label>Short Description</label><input type="text" id="fTagline" placeholder="Short tagline shown on product cards"></div>
+      <div class="form-group"><label>Detail Description</label><textarea id="fDesc" rows="3" placeholder="Full product description (RUO compliant)"></textarea></div>
+      <div class="form-group"><label>Store Price</label><input type="text" id="fStorePrice" class="store-price-readonly" readonly><span class="form-hint">This will be visible to your store only</span></div>
+      <div class="form-group"><label>Badge</label><input type="text" id="fBadge" placeholder="e.g. Bestseller, New"></div>
+      <div class="toggle-row"><span class="toggle-row-label">Active on Store</span><label class="toggle-switch"><input type="checkbox" id="fActive" checked><span class="toggle-slider"></span></label></div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-title">🖼 Upload Product Images</div>
+      <span class="form-hint" style="margin-bottom:8px;display:block;">800 x 800 size is recommended for a better view</span>
+      <div class="img-upload-grid" id="imgUploadGrid">
+        <div class="img-add-btn" onclick="document.getElementById('fImageFile').click()">
+          <span style="font-size:20px;">+</span><span>Add</span>
+        </div>
+      </div>
+      <input type="file" id="fImageFile" accept="image/*" style="display:none;" onchange="handleImageUpload(event)">
+      <input type="hidden" id="fImage">
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="saveProduct()">💾 Update</button>
+      <button class="btn btn-danger" id="modalDeleteBtn" onclick="deleteFromModal()" style="display:none;">🗑️ Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="stockModal">
+  <div class="modal" style="width:380px;">
+    <div class="modal-header-bar"><h2>📦 Update Stock</h2><button class="modal-close-x" onclick="closeStockModal()">✕</button></div>
+    <input type="hidden" id="stockEditId">
+    <div class="stock-modal-product">
+      <b id="stockProductName">—</b>
+      <div class="current-stock">Current Stock: <b id="stockCurrentVal">0.00</b></div>
+    </div>
+    <div class="stepper-row">
+      <button class="stepper-btn" onclick="stockStep(-1)">−</button>
+      <div class="stepper-value" id="stockValue">0.00</div>
+      <button class="stepper-btn" onclick="stockStep(1)">+</button>
+    </div>
+    <div class="stock-warning">ℹ️ This will replace current stock</div>
+    <div class="modal-actions"><button class="btn btn-secondary" onclick="closeStockModal()">Cancel</button><button class="btn btn-primary" onclick="saveStock()">✓ Save</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="viewModal">
+  <div class="modal" style="width:420px;">
+    <div class="modal-header-bar"><h2>👁 Product Details</h2><button class="modal-close-x" onclick="closeViewModal()">✕</button></div>
+    <div id="viewModalBody"></div>
+    <div class="modal-actions"><button class="btn btn-secondary" onclick="closeViewModal()">Close</button></div>
+  </div>
+</div>
+<script>
+renderNav('inventory');
+const API='/msolpeptides-api';
+let products=[];
+// Phase 1 (2026-09-04): the catalog is loaded with the session token and only rendered when the API confirms it sent the full
+// records (X-CRM-Fields: full); otherwise editing could save a product with empty cost / stock / supplier fields.
+// Phase 5 (2026-09-05): raw:true - api() hands over the Response itself, so the X-CRM-Fields header stays readable here.
+let catalogLoaded=false;
+async function loadProducts(){catalogLoaded=false;try{const r=await api(API+'/products',{raw:true,toast:false});if(r.headers.get('X-CRM-Fields')!=='full')throw new Error('session not confirmed by the server');products=await r.json();catalogLoaded=true;renderTable();renderStats();}catch(e){document.getElementById('productsBody').innerHTML='<tr><td colspan="9" style="text-align:center;color:#E53935;padding:40px;">Failed to load the full catalog ('+esc(e.message)+'). Reload the page or sign in again before editing.</td></tr>';}}
+function renderTable(){const b=document.getElementById('productsBody');if(!products.length){b.innerHTML='<tr><td colspan="9" style="text-align:center;color:#5A6685;padding:40px;">No products</td></tr>';return;}b.innerHTML=products.map((p,i)=>`<tr><td><img src="${escAttr(safeUrl(p.image_url||''))}" class="product-img" onerror="this.style.display='none'"></td><td style="font-weight:600;">${esc(p.name||'')}</td><td><span class="badge badge-category">${esc(p.category||'')}</span></td><td style="font-weight:600;">$${esc(p.price||0)}</td><td style="color:#5A6685;text-decoration:line-through;">${esc(p.original_price?'$'+p.original_price:'—')}</td><td><span class="badge badge-${escAttr((p.stock_status||'').toLowerCase().replace(/ /g,'-'))}">${esc(p.stock_status||'—')}</span></td><td>${p.badge?'<span class="badge badge-category">'+esc(p.badge)+'</span>':'—'}</td><td>${p.is_active?'✅':'❌'}</td><td><div class="action-cell"><button class="btn-view" onclick="viewProduct(${i})">👁 View</button><button class="btn-editc" onclick="editProduct(${i})">✏️ Edit</button><button class="btn-stockc" onclick="openStockModal(${i})">📦 Stock</button><button class="btn-delc" onclick="deleteProduct('${safeId(p.id||p.slug)}')">🗑️ Delete</button></div></td></tr>`).join('');}
+function renderStats(){document.getElementById('statTotal').textContent=products.length;const ins=products.filter(p=>p.stock_status==='In Stock').length;const outs=products.filter(p=>p.stock_status==='Out of Stock').length;const avg=products.length?(products.reduce((s,p)=>s+(parseFloat(p.price)||0),0)/products.length).toFixed(0):0;document.getElementById('statInStock').textContent=ins;document.getElementById('statOutStock').textContent=outs;document.getElementById('statAvgPrice').textContent='$'+avg;}
+function computeStockStatus(qty, lowThresh){
+  qty = Number(qty)||0; lowThresh = Number(lowThresh)||0;
+  if(qty<=0) return 'Out of Stock';
+  if(lowThresh>0 && qty<=lowThresh) return 'Low Stock';
+  return 'In Stock';
+}
+function slugify(s){return (s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');}
+function renderImageGrid(url){
+  const grid=document.getElementById('imgUploadGrid');
+  const addBtn=grid.querySelector('.img-add-btn');
+  grid.querySelectorAll('.img-thumb').forEach(el=>el.remove());
+  if(url){
+    const thumb=document.createElement('div');thumb.className='img-thumb';
+    thumb.innerHTML=`<img src="${escAttr(safeUrl(url))}"><button type="button" class="img-remove" onclick="removeImage()">✕</button>`;
+    grid.insertBefore(thumb, addBtn);
+  }
+}
+function removeImage(){document.getElementById('fImage').value='';renderImageGrid('');}
+function syncStorePrice(){const v=parseFloat(document.getElementById('fPrice').value)||0;document.getElementById('fStorePrice').value='$'+v.toFixed(2);}
+function generateSku(){const name=document.getElementById('fName').value||'PROD';const initials=name.split(/\s+/).map(w=>w[0]).join('').toUpperCase().slice(0,4);document.getElementById('fSku').value='SKU-'+initials+'-'+Date.now().toString().slice(-5);}
+async function handleImageUpload(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  const slug=document.getElementById('fSlug').value || slugify(document.getElementById('fName').value) || 'product';
+  const fd=new FormData(); fd.append('image', file); fd.append('slug', slug);
+  try{
+    // api() passes FormData through untouched (no Content-Type, the browser sets the boundary).
+    // {toast:false}: every failure is reported below in this page's own "Upload failed: ..." wording.
+    const res=await api(API+'/upload-image',{method:'POST',body:fd,toast:false});
+    if(res&&res.url){document.getElementById('fImage').value=res.url;renderImageGrid(res.url);}
+    else toast('Upload failed: '+((res&&res.error)||'Unknown'),'error');
+  }catch(e){toast('Upload failed: '+e.message,'error');}
+}
+function populateSupplierList(){
+  const list=document.getElementById('supplierList'); if(!list) return;
+  const suppliers=[...new Set(products.map(p=>p.supplier).filter(Boolean))];
+  list.innerHTML=suppliers.map(s=>`<option value="${escAttr(s)}">`).join('');
+}
+function openAddModal(){
+  document.getElementById('modalTitle').textContent='Add Product';
+  document.getElementById('editId').value='';
+  document.getElementById('modalDeleteBtn').style.display='none';
+  ['fName','fSlug','fTagline','fPrice','fOrigPrice','fBadge','fImage','fDesc','fSupplier','fSku','fBarcode','fExpiryDate','fQty','fLowStock','fCost','fNotes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('fCategory').value='Recovery & Repair';
+  document.getElementById('fQtyType').value='Unit';
+  document.getElementById('fActive').checked=true;
+  document.getElementById('fIsService').checked=false;
+  document.getElementById('fStorePrice').value='$0.00';
+  renderImageGrid('');
+  populateSupplierList();
+  document.getElementById('productModal').classList.add('active');
+}
+function editProduct(i){
+  const p=products[i];
+  document.getElementById('modalTitle').textContent='Edit Product';
+  document.getElementById('editId').value=i;
+  document.getElementById('modalDeleteBtn').style.display='inline-block';
+  document.getElementById('fName').value=p.name||'';
+  document.getElementById('fSlug').value=p.slug||'';
+  document.getElementById('fTagline').value=p.tagline||'';
+  document.getElementById('fPrice').value=p.price||'';
+  document.getElementById('fOrigPrice').value=p.original_price||'';
+  document.getElementById('fCategory').value=p.category||'Recovery & Repair';
+  document.getElementById('fBadge').value=p.badge||'';
+  document.getElementById('fImage').value=p.image_url||'';
+  document.getElementById('fDesc').value=p.description||'';
+  document.getElementById('fActive').checked=p.is_active!==false;
+  document.getElementById('fIsService').checked=!!p.is_service;
+  document.getElementById('fQtyType').value=p.quantity_type||'Unit';
+  document.getElementById('fSupplier').value=p.supplier||'';
+  document.getElementById('fSku').value=p.sku||'';
+  document.getElementById('fBarcode').value=p.barcode||'';
+  document.getElementById('fExpiryDate').value=p.expiry_date||'';
+  document.getElementById('fQty').value=(p.stock_qty!==undefined?p.stock_qty:'');
+  document.getElementById('fLowStock').value=(p.low_stock_threshold!==undefined?p.low_stock_threshold:'');
+  document.getElementById('fCost').value=(p.cost!==undefined?p.cost:'');
+  document.getElementById('fNotes').value=p.notes||'';
+  syncStorePrice();
+  renderImageGrid(p.image_url||'');
+  populateSupplierList();
+  document.getElementById('productModal').classList.add('active');
+}
+function closeModal(){document.getElementById('productModal').classList.remove('active');}
+function deleteFromModal(){const eid=document.getElementById('editId').value;if(eid==='')return;const p=products[parseInt(eid)];closeModal();deleteProduct(p.id||p.slug);}
+async function saveProduct(){if(!catalogLoaded){toast('Catalog not loaded - reload the page before saving','error');return;}
+  const eid=document.getElementById('editId').value;
+  const qty=parseFloat(document.getElementById('fQty').value)||0;
+  const lowThresh=parseFloat(document.getElementById('fLowStock').value)||0;
+  const isService=document.getElementById('fIsService').checked;
+  const d={
+    name:document.getElementById('fName').value,
+    slug:document.getElementById('fSlug').value||slugify(document.getElementById('fName').value),
+    tagline:document.getElementById('fTagline').value,
+    price:parseFloat(document.getElementById('fPrice').value)||0,
+    original_price:parseFloat(document.getElementById('fOrigPrice').value)||0,
+    category:document.getElementById('fCategory').value,
+    stock_status: isService ? 'In Stock' : computeStockStatus(qty, lowThresh),
+    badge:document.getElementById('fBadge').value,
+    image_url:document.getElementById('fImage').value,
+    description:document.getElementById('fDesc').value,
+    is_active:document.getElementById('fActive').checked,
+    is_service:isService,
+    quantity_type:document.getElementById('fQtyType').value,
+    supplier:document.getElementById('fSupplier').value,
+    sku:document.getElementById('fSku').value,
+    barcode:document.getElementById('fBarcode').value,
+    expiry_date:document.getElementById('fExpiryDate').value,
+    stock_qty:qty,
+    low_stock_threshold:lowThresh,
+    cost:parseFloat(document.getElementById('fCost').value)||0,
+    notes:document.getElementById('fNotes').value
+  };
+  // Phase 3 (2026-09-05): one product is saved with PUT /products/:id (the server merges the fields into the stored record and
+  // keeps id/slug; an unknown id creates the product). The whole-list POST /products is no longer used by this page.
+  const id=eid!==''?String(products[parseInt(eid)].id||products[parseInt(eid)].slug||''):'p'+Date.now();
+  if(!id){toast('This product has neither id nor slug - it cannot be saved','error');return;}
+  // {toast:false}: the page reports every failure itself with its own "Save failed: ..." wording
+  try{const res=await api(API+'/products/'+encodeURIComponent(id),{method:'PUT',body:d,toast:false});if(res&&res.ok){closeModal();loadProducts();}else{toast('Save failed: '+((res&&res.error)||'unexpected answer'),'error');}}catch(e){toast('Save failed: '+e.message,'error');}
+}
+function viewProduct(i){
+  const p=products[i];
+  const rows=[
+    ['Name', p.name||'—'],
+    ['SKU', p.sku||'—'],
+    ['Barcode', p.barcode||'—'],
+    ['Category', p.category||'—'],
+    ['Supplier', p.supplier||'Not Applicable'],
+    ['Quantity Type', p.quantity_type||'Unit'],
+    ['Stock Qty', (p.stock_qty!==undefined?p.stock_qty:'—')],
+    ['Low Stock Alert', (p.low_stock_threshold||'Disabled')],
+    ['Product Cost', '$'+(parseFloat(p.cost)||0).toFixed(2)],
+    ['Sell Price', '$'+(parseFloat(p.price)||0).toFixed(2)],
+    ['Original Price', p.original_price?'$'+parseFloat(p.original_price).toFixed(2):'—'],
+    ['Stock Status', p.stock_status||'—'],
+    ['Expiry Date', p.expiry_date||'—'],
+    ['Active', p.is_active!==false?'✅ Yes':'❌ No'],
+    ['Service Item', p.is_service?'✅ Yes':'❌ No'],
+    ['Notes', p.notes||'—']
+  ];
+  document.getElementById('viewModalBody').innerHTML=rows.map(r=>`<div class="view-row"><span class="vlabel">${esc(r[0])}</span><span class="vval">${esc(r[1])}</span></div>`).join('');
+  document.getElementById('viewModal').classList.add('active');
+}
+function closeViewModal(){document.getElementById('viewModal').classList.remove('active');}
+let stockStepValue=0;
+function openStockModal(i){
+  const p=products[i];
+  document.getElementById('stockEditId').value=i;
+  document.getElementById('stockProductName').textContent=p.name||'';
+  const cur=parseFloat(p.stock_qty)||0;
+  document.getElementById('stockCurrentVal').textContent=cur.toFixed(2);
+  stockStepValue=cur;
+  document.getElementById('stockValue').textContent=stockStepValue.toFixed(2);
+  document.getElementById('stockModal').classList.add('active');
+}
+function closeStockModal(){document.getElementById('stockModal').classList.remove('active');}
+function stockStep(dir){stockStepValue=Math.max(0, stockStepValue+dir);document.getElementById('stockValue').textContent=stockStepValue.toFixed(2);}
+async function saveStock(){if(!catalogLoaded){toast('Catalog not loaded - reload the page before saving','error');return;}
+  const i=parseInt(document.getElementById('stockEditId').value);
+  const p=products[i];
+  const id=String(p.id||p.slug||'');
+  if(!id){toast('This product has neither id nor slug - it cannot be saved','error');return;}
+  const stock={stock_qty:stockStepValue, stock_status: p.is_service ? 'In Stock' : computeStockStatus(stockStepValue, p.low_stock_threshold||0)};
+  // Phase 3 (2026-09-05): only the two stock fields go to the server (PUT /products/:id merges them into the stored record)
+  // {toast:false}: the page reports every failure itself with its own "Save failed: ..." wording
+  try{const res=await api(API+'/products/'+encodeURIComponent(id),{method:'PUT',body:stock,toast:false});if(res&&res.ok){closeStockModal();loadProducts();}else{toast('Save failed: '+((res&&res.error)||'unexpected answer'),'error');}}catch(e){toast('Save failed: '+e.message,'error');}
+}
+// Phase 2 (2026-09-05): the row is removed only after the server confirmed the save (r.ok); a 401/4xx/5xx keeps the catalog as it was.
+// Phase 3 (2026-09-05): one product is removed with DELETE /products/:id instead of re-posting the remaining list.
+// {toast:false}: the catch below marks the catalog stale and reports the failure in its own words.
+async function deleteProduct(id){if(!catalogLoaded){toast('Catalog not loaded - reload the page before deleting','error');return;}if(!(await confirmDialog('Delete this product?',{ok:'Delete'})))return;try{await api(API+'/products/'+encodeURIComponent(id),{method:'DELETE',toast:false});loadProducts();}catch(e){catalogLoaded=false;toast('Delete failed: '+e.message+'. The product was not deleted - reload the page before saving again.','error');}}
+loadProducts();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

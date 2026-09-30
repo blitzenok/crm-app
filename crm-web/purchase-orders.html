@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* purchase-orders-only styling; everything shared lives in crm.css */
+.stats-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:22px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; }
+.table-header h3{ font-size:14px; font-weight:700; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; }
+.btn-receive{ background:#E8F5E9; color:#2E7D32; border:1px solid #C8E6C9; }
+.btn-receive:hover{ background:#C8E6C9; }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-draft{background:#E8ECF4;color:#5A6685;}
+.badge-ordered{background:#E3F2FD;color:#1565C0;}
+.badge-received{background:#E8F5E9;color:#2E7D32;}
+.badge-partial{background:#FFF3E0;color:#E65100;}
+.badge-cancelled{background:#FFEBEE;color:#C62828;}
+.empty-state{text-align:center;color:#5A6685;padding:40px;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;align-items:center;justify-content:center;}
+.modal-card{background:#fff;border-radius:16px;padding:22px;width:480px;max-width:100%;max-height:85vh;overflow-y:auto;} /* phase 4 (review B): max-width kept the modal inside a phone screen (the page's own 95vw rule was dead-chained) */
+.modal-card h3{margin-bottom:16px;}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.form-group input, .form-group select{width:100%;padding:10px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.form-group input:focus, .form-group select:focus{outline:none;border-color:#1F7A3D;}
+.line-item-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;padding:8px;border:1px solid #E8ECF4;border-radius:8px;background:#F8FAFF;}
+.line-item-row select{flex:1;}
+.line-item-row input{width:70px;}
+.modal-actions{display:flex;gap:10px;margin-top:16px;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-row,.stats-grid,.kpi-row,.stat-row,.cards-row,.quick-grid{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}
+.modal-overlay,.overlay{padding:10px!important}
+.stats-grid{grid-template-columns:1fr!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Purchase Orders</div>
+      <button class="btn btn-primary" onclick="openModal()">+ New PO</button>
+    </div>
+    <div class="content">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total POs</div><div class="stat-value" id="statTotal">0</div></div>
+        <div class="stat-card"><div class="stat-label">Pending Delivery</div><div class="stat-value" id="statPending">0</div></div>
+        <div class="stat-card"><div class="stat-label">Total Spend (Month)</div><div class="stat-value" id="statSpend">$0</div></div>
+      </div>
+      <div class="table-card">
+        <div class="table-header"><h3>Purchase Orders</h3></div>
+        <table><thead><tr><th>PO #</th><th>Supplier</th><th>Items</th><th>Total</th><th>Status</th><th>Expected</th><th>Actions</th></tr></thead>
+        <tbody id="poTable"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="poModal">
+  <div class="modal-card">
+    <h3>New Purchase Order</h3>
+    <div class="form-group"><label>Supplier</label><select id="poSupplier"></select></div>
+    <div class="form-group"><label>Expected Delivery</label><input type="date" id="poExpected"></div>
+    <div class="form-group"><label>Line Items</label><div id="poLines"></div><button class="btn" style="background:#E8ECF4;margin-top:8px;" onclick="addPOLine()">+ Add Product</button></div>
+    <div class="form-group"><label>Notes</label><input type="text" id="poNotes"></div>
+    <div class="modal-actions">
+      <button class="btn" style="flex:1;background:#E8ECF4;" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="savePO()">Create PO</button>
+    </div>
+  </div>
+</div>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('purchase-orders');
+const API='/msolpeptides-api';let SUPPLIERS=[];let PRODUCTS=[];let POLINES=[];
+// Phase 4 (2026-09-05): calls go through api() from crm.js (Bearer, JSON, 401 -> login, errors -> toast); the one
+// validation alert box is a toast, native confirm -> confirmDialog. markReceived/deletePO used to ignore a failed
+// answer and reload the list anyway - now the error surfaces and the list is left alone.
+async function loadData(){try{const[sup,prods]=await Promise.all([api(API+'/suppliers'),api(API+'/products')]);SUPPLIERS=sup||[];PRODUCTS=(prods||[]).filter(p=>p.is_active);document.getElementById('poSupplier').innerHTML=SUPPLIERS.map(s=>`<option value="${escAttr(s.id)}">${esc(s.name)}</option>`).join('');loadPOs();}catch(e){console.error(e);}}
+async function loadPOs(){try{const pos=await api(API+'/purchase-orders')||[];const tbody=document.getElementById('poTable');if(!pos.length){tbody.innerHTML='<tr><td colspan="7" class="empty-state">No purchase orders yet.</td></tr>';return;}
+const pending=pos.filter(p=>p.status==='ordered'||p.status==='draft');const monthStart=new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString();const monthSpend=pos.filter(p=>p.created_at>=monthStart).reduce((s,p)=>s+p.total,0);
+document.getElementById('statTotal').textContent=pos.length;document.getElementById('statPending').textContent=pending.length;document.getElementById('statSpend').textContent='$'+monthSpend.toFixed(2);
+tbody.innerHTML=pos.map(p=>`<tr><td><b>${esc(p.po_number)}</b></td><td>${esc(p.supplier_name)}</td><td>${p.line_items.length} items</td><td>$${p.total.toFixed(2)}</td><td><span class="badge badge-${escAttr(p.status)}">${esc(p.status)}</span></td><td>${esc(p.expected_delivery||'-')}</td><td>${p.status==='ordered'||p.status==='draft'?`<button class="btn btn-receive" onclick="markReceived('${safeId(p.id)}')">Mark Received</button>`:''} <button class="btn" style="background:#FFEBEE;color:#C62828;" onclick="deletePO('${safeId(p.id)}')">Del</button></td></tr>`).join('');}catch(e){console.error(e);}}
+function openModal(){POLINES=[];document.getElementById('poExpected').value='';document.getElementById('poNotes').value='';document.getElementById('poLines').innerHTML='';addPOLine();document.getElementById('poModal').classList.add('open');}
+function closeModal(){document.getElementById('poModal').classList.remove('open');}
+function addPOLine(){POLINES.push({product_id:'',qty:1,unit_cost:0});renderPOLines();}
+function renderPOLines(){document.getElementById('poLines').innerHTML=POLINES.map((li,idx)=>`<div class="line-item-row"><select onchange="updatePOLine(${idx},'product_id',this.value)"><option value="">Select product</option>${PRODUCTS.map(p=>`<option value="${escAttr(p.id)}" ${li.product_id===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select><input type="number" placeholder="Qty" value="${escAttr(li.qty)}" onchange="updatePOLine(${idx},'qty',this.value)" min="1"><input type="number" placeholder="Cost" value="${escAttr(li.unit_cost)}" onchange="updatePOLine(${idx},'unit_cost',this.value)" step="0.01"><button class="btn" style="background:#FFEBEE;color:#C62835;padding:4px 8px;" onclick="POLINES.splice(${idx},1);renderPOLines()">X</button></div>`).join('');}
+function updatePOLine(idx,field,val){POLINES[idx][field]=field==='qty'||field==='unit_cost'?Number(val):val;if(field==='product_id'){const p=PRODUCTS.find(x=>x.id===val);if(p)POLINES[idx].unit_cost=p.cost||0;}renderPOLines();}
+async function savePO(){if(!POLINES.length||!POLINES[0].product_id){toast('Add at least one product.','error');return;}const user=(window.CRM_CURRENT_USER&&window.CRM_CURRENT_USER.name)||'unknown';const payload={supplier_id:document.getElementById('poSupplier').value,expected_delivery:document.getElementById('poExpected').value,notes:document.getElementById('poNotes').value,line_items:POLINES.filter(li=>li.product_id).map(li=>({product_id:li.product_id,name:(PRODUCTS.find(p=>p.id===li.product_id)||{}).name||'',qty:li.qty,unit_cost:li.unit_cost})),user};try{await api(API+'/purchase-orders',{method:'POST',body:payload});closeModal();loadPOs();}catch(e){/* api() already showed the error toast */}}
+async function markReceived(poId){if(!(await confirmDialog('Mark this PO as received? Stock will be updated.',{ok:'Mark received'})))return;try{await api(API+'/purchase-orders/'+poId,{method:'PUT',body:{status:'received'}});loadPOs();}catch(e){/* api() already showed the error toast */}}
+async function deletePO(poId){if(!(await confirmDialog('Delete this PO?',{ok:'Delete'})))return;try{await api(API+'/purchase-orders/'+poId,{method:'DELETE'});loadPOs();}catch(e){/* api() already showed the error toast */}}
+loadData();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

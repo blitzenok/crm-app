@@ -51,6 +51,8 @@ function attemptFromResult({ processor, mode, priority, startedAt, result, card 
     cascadeAction: result.cascadeAction,
     reason: result.reason || "",
     errorMessage: result.errorMessage || "",
+    // infra 2026-09-29 honest-charge: set by the UMG adapter when find-by-ext-id proved the card was not charged
+    ...(result.noChargeConfirmed ? { noChargeConfirmed: true } : {}),
     raw: stripSecrets(result.raw || {}),
   };
 }
@@ -120,6 +122,9 @@ export async function chargeCart(input, deps) {
           mismatch: Boolean(pricing.mismatch),
           lines: pricing.lines,
           volumeDiscount: pricing.volumeDiscount || null,
+          // infra 2026-09-29 honest-charge: coupon / discount come from products-api coupon-quote; emails and store-forward read them
+          coupon: pricing.coupon || "",
+          discount: pricing.discount || null,
         },
       }
     : {};
@@ -131,7 +136,7 @@ export async function chargeCart(input, deps) {
     status: "new",
     inFlight: true,
     amount: formatAmount(input.amount),
-    currency: input.currency || "USD",
+    currency: "USD", // infra 2026-09-29 cleffo: USD only (the charge route refuses any other currency before this point)
     customer: stripSecrets({
       first_name: input.customer?.first_name || input.customer?.firstName || "",
       last_name: input.customer?.last_name || input.customer?.lastName || "",
@@ -189,6 +194,8 @@ export async function chargeCart(input, deps) {
           amount: order.amount,
           currency: order.currency,
           extOrderId: key,
+          // infra 2026-09-29 honest-charge: txn ids this order already has, so find-by-ext-id can tell a new charge from an old one
+          knownTxnIds: (order.attempts || []).map((a) => a.processorTxnId).filter(Boolean).map(String),
           subscriptionStatus: input.subscriptionStatus,
         }, deps.processorDeps?.[psp.id] || {});
       }
@@ -248,7 +255,23 @@ export function applyProcessorUpdate(store, { processor, processorTxnId, status,
   const order = found.order;
   const idx = order.attempts.findIndex((a) => a.attemptId === found.attempt.attemptId);
   if (idx === -1) return null;
-  const nextStatus = String(status || body?.status || found.attempt.processorStatus).toUpperCase();
+  return settleAttempt(store, order, idx, { processor, processorTxnId, status, body });
+}
+
+/**
+ * infra 2026-09-29 honest-charge: same update, but for an attempt that has no txn id yet (create timed out, then
+ * find-by-ext-id found or ruled out the charge). Located by order id + attempt id; the txn id, when known, is stored.
+ */
+export function applyProcessorUpdateByOrder(store, { orderId, attemptId, processor, processorTxnId, status, body, reason }) {
+  const order = store.getOrder(orderId);
+  if (!order) return null;
+  const idx = (order.attempts || []).findIndex((a) => a.attemptId === attemptId);
+  if (idx === -1) return null;
+  return settleAttempt(store, order, idx, { processor, processorTxnId, status, body, reason });
+}
+
+function settleAttempt(store, order, idx, { processor, processorTxnId, status, body, reason }) {
+  const nextStatus = String(status || body?.status || order.attempts[idx].processorStatus).toUpperCase();
   const attempt = {
     ...order.attempts[idx],
     processorStatus: nextStatus === "APPORVED" ? "APPROVED" : nextStatus,
@@ -260,19 +283,23 @@ export function applyProcessorUpdate(store, { processor, processorTxnId, status,
     txid: body?.txid ?? order.attempts[idx].txid,
     raw: stripSecrets({ ...(order.attempts[idx].raw || {}), ...(body || {}) }),
     polledAt: nowIso(),
+    ...(processorTxnId != null ? { processorTxnId: String(processorTxnId) } : {}),
+    ...(reason ? { reason } : {}),
   };
-  if (["APPROVED", "CAPTURED"].includes(attempt.processorStatus)) {
+  if (["APPROVED", "CAPTURED", "PAID"].includes(attempt.processorStatus)) { // infra 2026-09-29 honest-charge: PAID too
     attempt.cascadeAction = "success";
     attempt.declineClass = null;
     order.status = "approved";
     order.winningProcessor = processor;
     order.winningTxnId = String(processorTxnId);
     order.descriptor = attempt.descriptor;
-  } else if (["DECLINED", "CANCELED", "CANCELLED"].includes(attempt.processorStatus)) {
+  } else if (["DECLINED", "CANCELED", "CANCELLED", "NOT_CHARGED"].includes(attempt.processorStatus)) {
     order.status = order.status === "approved" ? order.status : "declined";
   } else if (["REFUNDED", "CHARGEBACK"].includes(attempt.processorStatus)) {
     order.status = attempt.processorStatus.toLowerCase();
   }
+  // infra 2026-09-29 honest-charge: a txn id found later by find-by-ext-id also becomes the order's winning txn id
+  if (processorTxnId != null && !order.winningTxnId && order.status === "pending") order.winningTxnId = String(processorTxnId);
   order.attempts[idx] = attempt;
   order.updatedAt = nowIso();
   order.lastStatus = attempt.processorStatus;

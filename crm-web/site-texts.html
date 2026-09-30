@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Site texts — BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+.meta{font-size:12px;color:#5A6685;margin:0 0 16px;line-height:1.5}
+.cluster{border:1px solid #E8ECF4;border-radius:14px;padding:16px 18px;margin:0 0 14px;background:#fff}
+.cluster-head{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.cluster-head input{flex:1}
+.item{border:1px solid #F0F2FA;border-radius:10px;padding:12px;margin:0 0 10px;background:#F8F9FC}
+.item textarea{width:100%;min-height:88px;resize:vertical}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.field{margin:0 0 10px}
+.field label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px}
+.field input,.field textarea,.cluster-head input{width:100%;border:1px solid #CBD5E1;border-radius:8px;padding:8px 10px;font:inherit}
+.versions{width:100%;border-collapse:collapse;font-size:13px}
+.versions th,.versions td{text-align:left;padding:8px;border-bottom:1px solid #F0F2FA;vertical-align:top}
+.preview{font-size:12px;color:#5A6685}
+.save-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 20px}
+#form-err{color:#C62828;font-size:12px;font-weight:600;min-height:16px}
+@media(max-width:768px){
+.sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;background:#fff;border-top:2px solid #CBD5E1;z-index:1000;overflow-x:auto;}
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.nav{display:flex;flex-direction:row;padding:0 4px;overflow-x:auto;}
+.nav-item{flex:0 0 64px;flex-direction:column;font-size:10px;padding:6px 3px;}
+.content{padding:14px;padding-bottom:82px;}
+.topbar{background:#1B2A4A;}
+.topbar-title{color:#fff;}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">Site texts <span>Science FAQ — live on save</span></div>
+  </header>
+  <div class="content">
+
+<div class="card">
+  <h3>Science FAQ</h3>
+  <p class="meta">Changes go live on <a href="https://biolabsresearch.co/science#faq" target="_blank" rel="noopener">biolabsresearch.co/science</a> as soon as you save. Previous saves are listed below — Restore publishes that copy immediately.</p>
+  <p class="meta" id="saved-meta">Loading…</p>
+  <div class="field">
+    <label for="kicker">Small heading</label>
+    <input id="kicker" maxlength="40" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="title">Title</label>
+    <input id="title" maxlength="80" autocomplete="off">
+  </div>
+  <div id="clusters"></div>
+  <div class="save-bar">
+    <button type="button" class="btn btn-secondary" id="add-group">Add group</button>
+    <button type="button" class="btn btn-primary" id="save-btn">Save</button>
+    <span id="form-err"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent versions</h3>
+  <p class="meta">The last 50 saves. Restore does not delete history — you can undo a restore the same way.</p>
+  <div id="versions-box"></div>
+</div>
+
+  </div>
+</div>
+</div>
+<script src="site-texts.js?v=523ff42ef3"></script>
+</body>
+</html>

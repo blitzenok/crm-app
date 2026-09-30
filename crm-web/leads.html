@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* leads-only styling; everything shared lives in crm.css */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;display:flex;height:100vh;overflow:hidden;}
+.logo-box{display:flex;flex-direction:column;align-items:flex-start;gap:0;width:100%;}
+.logo-emblem-wrap{width:100%;display:flex;justify-content:center;margin-bottom:14px;}
+.logo-emblem{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#1F7A3D 0%,#1B2A4A 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 20px rgba(31,122,61,0.45);}
+.logo-emblem svg{width:34px;height:34px;}
+.logo-wordmark{font-size:30px;font-weight:900;color:#fff;letter-spacing:1px;text-transform:uppercase;line-height:1;width:100%;text-align:center;}
+.logo-wordmark .sol{color:#1B2A4A;}
+.logo-tagline-row{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:5px;width:100%;}
+.logo-dot{width:4px;height:4px;border-radius:50%;background:#1B2A4A;flex-shrink:0;}
+.nav-section-label{font-size:10px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.6px;padding:14px 14px 6px;margin-top:2px;}
+.topbar-sub{color:#5A6685;font-size:12px;font-weight:400;margin-top:2px;}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.stat-card{background:#fff;border-radius:12px;padding:18px 20px;border:1px solid #EAECF4;}
+.stat-label{font-size:10px;font-weight:700;color:#5A6685;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px;}
+.stat-value{font-size:30px;font-weight:800;line-height:1;letter-spacing:-1.5px;margin-bottom:8px;} /* phase 4: color:#fff removed — the numbers were white on the white card on desktop; the colour now comes from crm.css */
+.stat-trend{font-size:12px;font-weight:600;}
+.stat-trend.up{color:#0E9F6E;}
+.stat-trend.neutral{color:#8A94A6;}
+.stat-trend.down{color:#E02424;}
+.table-card{background:#fff;border-radius:14px;border:1px solid #DDE3F0;flex:1;display:flex;flex-direction:column;min-height:0;box-shadow:0 2px 12px rgba(0,0,0,0.06);}
+.table-head{padding:16px 22px;border-bottom:1px solid #DDE3F0;background:#fff;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.table-title{font-size:14px;font-weight:700;color:#1B2A4A;flex:1;}
+.filter-sel{border:1px solid #D0D7E8;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a2e;outline:none;background:#fff;cursor:pointer;}
+.filter-sel:focus{border-color:#1B2A4A;box-shadow:0 0 0 2px rgba(31,122,61,0.2);}
+.export-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;background:#E6F4EA;border:1px solid #C8E6C9;border-radius:8px;font-size:12px;font-weight:600;color:#1F7A3D;cursor:pointer;}
+.export-btn:hover{border-color:#1B2A4A;color:#1B2A4A;}
+.table-wrap{overflow:auto;flex:1;}
+thead th{font-size:10px;font-weight:700;color:#5A6685;letter-spacing:0.6px;text-transform:uppercase;padding:10px 14px;text-align:left;border-bottom:1px solid #DDE3F0;background:#E8ECF7;position:sticky;top:0;z-index:2;}
+tbody tr{transition:background 0.1s;}
+tbody tr:hover{background:#FAFBFD;}
+tbody td{padding:10px 14px;font-size:12px;color:#2D3654;border-bottom:1px solid #F7F8FC;vertical-align:middle;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-sent{background:#F0FDF4;color:#0E9F6E;}
+.badge-pending{background:#E8ECF4;color:#8A94A6;}
+.badge-replied{background:#E6F4EA;color:#3B82F6;}
+.badge-interested{background:#F5F3FF;color:#7C3AED;}
+.badge-bounced{background:#FEF2F2;color:#E02424;}
+.badge-contacted{background:#FFFBEB;color:#D97706;}
+.email-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;white-space:nowrap;}
+.email-btn.primary{background:linear-gradient(135deg,#1F7A3D,#1B2A4A);color:#fff;box-shadow:0 2px 8px rgba(31,122,61,0.35);}
+.email-btn.primary:hover{background:#3a7be0;}
+.email-btn.sent{background:#F0FDF4;color:#0E9F6E;cursor:default;}
+.email-btn.no-email{background:#E8ECF4;color:#8A94A6;cursor:not-allowed;}
+.pagination{padding:14px 22px;border-top:1px solid #F0F3FA;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.pag-info{font-size:12px;color:#8A94A6;}
+.pag-btns{display:flex;gap:4px;}
+.pag-btn{min-width:30px;height:30px;border-radius:6px;border:1px solid #E8ECF4;background:#fff;font-size:12px;color:#5A6685;cursor:pointer;padding:0 8px;}
+.pag-btn:hover{border-color:#1B2A4A;color:#1B2A4A;}
+.pag-btn.active{background:#1B2A4A;border-color:#1B2A4A;color:#fff;font-weight:700;}
+.pag-btn:disabled{opacity:0.4;cursor:default;}
+.modal-to{font-size:12px;color:#8A94A6;margin-top:3px;}
+.lang-tabs{display:flex;gap:6px;margin-bottom:4px;}
+.lang-tab{padding:5px 12px;border-radius:6px;border:1px solid #E8ECF4;font-size:11px;font-weight:600;cursor:pointer;color:#8A94A6;background:#fff;}
+.lang-tab.active{background:#1B2A4A;color:#fff;border-color:#1B2A4A;}
+.btn-send{padding:8px 22px;border-radius:8px;background:#1B2A4A;border:none;font-size:13px;font-weight:700;color:#fff;cursor:pointer;display:flex;align-items:center;gap:6px;}
+.btn-send:hover{background:#3a7be0;}
+.btn-send:disabled{background:#a0b4c8;cursor:not-allowed;}
+/* Phase 7 (2026-09-06): the hidden e-mail triggers below carry display rules of their own, so [hidden] needs the weight */
+[hidden]{display:none!important;}
+.cb-cell{width:36px;text-align:center;}
+input[type=checkbox]{width:15px;height:15px;accent-color:#1B2A4A;cursor:pointer;}
+.bulk-bar{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#fff2A4A;border:1px solid rgba(31,122,61,0.4);border-radius:14px;padding:12px 20px;z-index:500;align-items:center;gap:14px;box-shadow:0 8px 32px rgba(0,0,0,0.35);}
+.bulk-bar.show{display:flex;}
+.bulk-count{font-size:13px;font-weight:700;color:#fff;}
+.bulk-send{padding:7px 16px;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);border:none;border-radius:8px;font-size:12px;font-weight:700;color:#fff;cursor:pointer;}
+.bulk-clear{padding:7px 12px;background:#E8ECF4;border:1px solid #EAECF4;border-radius:8px;font-size:12px;color:#5A6685;cursor:pointer;}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:#1B2A4A;}
+.sort-arrow{margin-left:3px;opacity:0.4;font-size:10px;}
+th.sort-asc .sort-arrow::after{content:' ↑';opacity:1;color:#1B2A4A;}
+th.sort-desc .sort-arrow::after{content:' ↓';opacity:1;color:#1B2A4A;}
+.status-wrap{position:relative;display:inline-block;}
+.status-dropdown{display:none;position:absolute;top:110%;left:0;background:#fff;border:1px solid #E8ECF4;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12);z-index:300;min-width:160px;overflow:hidden;}
+.status-dropdown.open{display:block;}
+.status-opt{padding:8px 14px;font-size:12px;cursor:pointer;}
+.status-opt:hover{background:#E8ECF4;}
+tr.row-interested td:first-child{border-left:3px solid #10B981;}
+tr.row-pending td:first-child{border-left:3px solid #F59E0B;}
+.side-panel{position:fixed;top:0;right:-420px;width:400px;height:100vh;background:#fff;border-left:1px solid #E8ECF4;box-shadow:-8px 0 40px rgba(0,0,0,0.12);z-index:200;transition:right 0.28s ease;display:flex;flex-direction:column;}
+.side-panel.open{right:0;}
+.sp-header{padding:22px 20px 18px;background:#fff;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #EAECF4;}
+.sp-close{width:30px;height:30px;border-radius:8px;border:1px solid #EAECF4;background:#fff;color:#5A6685;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.sp-name{font-size:15px;font-weight:700;color:#fff;flex:1;line-height:1.3;}
+.sp-body{padding:18px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:0;}
+.sp-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #F0F3FA;}
+.sp-label{font-size:10px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.5px;width:75px;flex-shrink:0;}
+.sp-val{font-size:12px;color:#1a1a2e;font-weight:500;}
+.sp-tl-title{font-size:10px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 10px;}
+.sp-tl-item{display:flex;gap:10px;margin-bottom:10px;}
+.sp-tl-dot{width:7px;height:7px;border-radius:50%;background:#1B2A4A;margin-top:5px;flex-shrink:0;}
+.sp-tl-text{font-size:12px;color:#5A6685;line-height:1.4;}
+.sp-tl-time{font-size:10px;color:#8A94A6;margin-top:1px;}
+.sp-footer{padding:14px 20px;border-top:1px solid #E8ECF4;}
+.sp-email-btn{width:100%;padding:10px;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);border:none;border-radius:9px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;}
+.overlay-bg{display:none;position:fixed;inset:0;z-index:199;background:rgba(0,0,0,0.1);}
+.overlay-bg.show{display:block;}
+.nav-section-label{font-size:10px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.6px;padding:14px 14px 6px;margin-top:2px;}
+*{box-sizing:border-box!important}
+body{font-size:15px!important;background:var(--bg)!important;color:var(--text)!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important;-webkit-font-smoothing:antialiased!important}
+@media(max-width:768px){
+.stats-row{grid-template-columns:repeat(2,1fr);
+
+thead{display:none!important
+
+.topbar{position:sticky!important;top:0!important;z-index:999!important;background:#1B2A4A!important;border-bottom:2px solid #131F38!important;height:54px!important;padding:0 12px!important;display:flex!important;align-items:center!important;gap:8px!important
+
+.content{padding:14px!important;padding-bottom:82px!important
+
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+
+
+
+.topbar .logo-img,.topbar-logo{display:flex!important;align-items:center;gap:0;margin-right:4px;}
+.topbar .logo-img img,.topbar-logo img{width:30px!important;height:30px!important;border-radius:8px!important;object-fit:cover!important;display:block!important;}
+
+
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+
+
+.table-responsive,.table-wrap,.table-container{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;width:100%!important;}
+table{min-width:600px!important;}
+
+
+.side-panel,.drawer,.modal-drawer{width:100vw!important;max-width:100%!important;right:0!important;left:0!important;}
+
+
+.sidebar{flex-wrap:nowrap!important;}
+
+
+.btn,.action-btn,.chip,button{min-height:36px!important;}
+
+
+.products-grid,.cards-grid,.items-grid{grid-template-columns:1fr 1fr!important;}
+
+
+.mobile-fab{display:flex!important;position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#10B981,#059669);color:#fff;font-size:26px;font-weight:300;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(16,185,129,0.4);z-index:1001;cursor:pointer;border:none;transition:transform 0.15s;-webkit-transform:translateZ(0);transform:translateZ(0);}
+.mobile-fab:active{transform:scale(0.92);}
+
+.mobile-signout-btn{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);color:#fff;font-size:16px;cursor:pointer;padding:0;flex-shrink:0;}
+.modal-overlay,.overlay{padding:10px!important}
+}
+.main-content,.main{padding-bottom:82px!important;margin:0!important;max-width:100%!important}
+}
+.topbar-sub{color:rgba(255,255,255,0.65)!important;font-size:12px!important;font-weight:400!important}
+.topbar-title{color:#fff!important;font-size:17px!important;font-weight:800!important;flex:1!important}
+.topbar-title span{display:none!important}
+.topbar-btn{background:rgba(255,255,255,0.1)!important;border:2px solid rgba(255,255,255,0.2)!important;color:#fff!important;width:38px!important;height:38px!important;border-radius:10px!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important;font-size:16px!important}
+.search-box{flex:1!important;max-width:180px!important;background:rgba(255,255,255,0.12)!important;border:2px solid rgba(255,255,255,0.2)!important;border-radius:10px!important;height:38px!important}
+.search-box input{font-size:13px!important;color:#fff!important}
+.search-box input::placeholder{color:rgba(255,255,255,0.6)!important}
+.search-icon{color:rgba(255,255,255,0.8)!important}
+}
+tbody tr{display:block!important;padding:10px 12px!important;border-bottom:1.5px solid #E2E8F0!important}
+tbody tr:last-child{border-bottom:none!important}
+tbody td{display:flex!important;justify-content:space-between!important;align-items:center!important;padding:3px 0!important;border:none!important;font-size:13px!important;text-align:right!important}
+tbody td:first-child{display:none!important}
+}
+.search-wrap input{width:140px;}
+.sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding-bottom:env(safe-area-inset-bottom)!important;display:flex!important;flex-direction:row!important;justify-content:space-around!important;align-items:center!important;background:#fff!important;border-top:2px solid var(--border)!important;border-right:none!important;box-shadow:0 -2px 12px rgba(0,0,0,0.06)!important;z-index:1000!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;}
+.nav-signout{color:#E53935!important;}
+.topbar-sub{color:rgba(255,255,255,0.65)!important;font-size:12px!important;font-weight:400!important}
+.topbar-btn{background:transparent!important;border:none!important;color:var(--text)!important;width:38px!important;height:38px!important;border-radius:10px!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important;font-size:16px!important}
+.search-box{flex:1!important;max-width:180px!important;background:var(--bg)!important;border:2px solid var(--border)!important;border-radius:10px!important;height:38px!important}
+.search-box input::placeholder{color:var(--muted)!important}
+.search-icon{color:var(--muted)!important}
+.widgets-row,.quick-tabs,.secondary-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}
+.top-widget,.funnel-card{background:var(--card)!important;border:2px solid var(--border)!important;border-radius:var(--radius)!important;padding:14px!important;box-shadow:0 1px 3px rgba(0,0,0,0.04)!important}
+.top-widget-title{color:var(--navy)!important;font-size:12px!important;font-weight:800!important;text-transform:uppercase!important;letter-spacing:.4px!important}
+.funnel-card{margin-top:14px!important}
+}
+</style>
+
+
+
+
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+
+<!-- SIDEBAR -->
+<div class="app-wrapper">
+<aside class="sidebar" id="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">
+      All Leads
+      <span id="topbar-sub">Loading leads...</span>
+    </div>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" aria-label="Search leads" placeholder="Search company, email, city...">
+    </div>
+    <div class="topbar-actions">
+      <button class="topbar-btn" title="Refresh" onclick="loadData()">↻</button>
+      <div class="avatar avatar-sm" style="cursor:default" title="Yehuda Ashash">YA</div>
+    <button class="mobile-signout-btn" onclick="logout()" title="Sign Out">⏻</button>
+</div>
+  </header>
+
+  <div class="content">
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">👥 Total Leads</div>
+        <div class="stat-value" id="s-total">—</div>
+        <div class="stat-trend neutral" id="s-filtered">all markets</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">📧 Emails Sent</div>
+        <div class="stat-value" id="s-sent">—</div>
+        <div class="stat-trend up" id="s-sent-pct">↑ outreach rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">📭 Not Contacted</div>
+        <div class="stat-value" id="s-pending">—</div>
+        <div class="stat-trend neutral">ready to contact</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">💬 Replies / Interested</div>
+        <div class="stat-value" id="s-replied">—</div>
+        <div class="stat-trend up">↑ hot pipeline</div>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-card">
+      <div class="table-head">
+        <div class="table-title">Leads</div>
+        <div class="search-wrap">
+          <input type="text" id="search-box" aria-label="Search leads by company, email, or city" placeholder="Search company, email..." oninput="applyFilters()">
+        </div>
+        <select class="filter-sel" id="filter-country" aria-label="Filter by country" onchange="applyFilters()">
+          <option value="">All Countries</option>
+        </select>
+        <select class="filter-sel" id="filter-status" aria-label="Filter by status" onchange="applyFilters()">
+          <option value="">All Status</option>
+          <option>Not Contacted</option>
+          <option>Sent</option>
+          <option>Email Sent</option>
+          <option>Replied</option>
+          <option>Interested</option>
+          <option>Qualified</option>
+          <option>Closed</option>
+          <option>Bounced</option>
+          <option>Contacted</option>
+        </select>
+        <select class="filter-sel" id="filter-category" aria-label="Filter by category" onchange="applyFilters()">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="cb-cell"><input type="checkbox" id="cb-all" onchange="toggleAll(this)"></th>
+              <th>#</th>
+              <th class="sortable" id="th-company" onclick="sortBy('company')">Company <span class="sort-arrow"></span></th>
+              <th>Contact</th>
+              <th>Email</th>
+              <th class="sortable" id="th-country" onclick="sortBy('country')">Country <span class="sort-arrow"></span></th>
+              <th class="sortable" id="th-category" onclick="sortBy('category')">Category <span class="sort-arrow"></span></th>
+              <th class="sortable" id="th-status" onclick="sortBy('status')">Status <span class="sort-arrow"></span></th>
+              <th style="text-align:center">Action</th>
+            </tr>
+          </thead>
+          <tbody id="leads-tbody">
+            <tr><td colspan="8" style="text-align:center;padding:50px;color:#8A94A6">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <div class="pag-info" id="pag-info">—</div>
+        <div class="pag-btns" id="pag-btns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EMAIL MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-icon">✉️</div>
+      <div class="modal-info">
+        <div class="modal-title" id="modal-company">Send Email</div>
+        <div class="modal-to">To: <span id="modal-to-email" style="font-weight:600;color:#1a1a2e"></span></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div>
+        <div class="field-label">Language</div>
+        <div class="lang-tabs" id="lang-tabs">
+          <div class="lang-tab active" onclick="setLang('en',this)">🇬🇧 English</div>
+          <div class="lang-tab" onclick="setLang('de',this)">🇩🇪 German</div>
+          <div class="lang-tab" onclick="setLang('es',this)">🇪🇸 Spanish</div>
+          <div class="lang-tab" onclick="setLang('it',this)">🇮🇹 Italian</div>
+          <div class="lang-tab" onclick="setLang('pl',this)">🇵🇱 Polish</div>
+          <div class="lang-tab" onclick="setLang('pt',this)">🇵🇹 Portuguese</div>
+        </div>
+      </div>
+      <div>
+        <div class="field-label">Subject</div>
+        <input type="text" class="field-input" id="modal-subject" />
+      </div>
+      <div>
+        <div class="field-label">Message</div>
+        <textarea class="field-textarea" id="modal-body-text"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div class="modal-footer-left">From: meir@mastersol-ltd.com</div>
+      <div class="modal-footer-right">
+        <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+        <button class="btn-send" id="btn-send-final" onclick="sendEmail()" hidden>📤 Send Email</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+</div><!-- /app-wrapper -->
+
+<script>
+renderNav('leads');
+// ── STATE ──
+let allLeads = [], filteredLeads = [], currentPage = 1;
+const PER_PAGE = 30;
+let currentLeadIdx = null;
+
+// ── AUTH ── logout() comes from crm.js
+
+// ── FLAGS ──
+const COUNTRY_ISO2 = {
+  'Italy':'it','Spain':'es','Poland':'pl','Slovenia':'si','Portugal':'pt',
+  'Germany':'de','Austria':'at','Romania':'ro','Czech Republic':'cz',
+  'Greece':'gr','Hungary':'hu','Slovakia':'sk','France':'fr',
+  'Netherlands':'nl','Belgium':'be','UK':'gb','Switzerland':'ch',
+  'Israel':'il','USA':'us','Cyprus':'cy','Croatia':'hr','Bulgaria':'bg',
+  'Serbia':'rs','Ukraine':'ua','EU':'eu','Europe':'eu'
+};
+function flag(c) {
+  if (!c) return '';
+  let iso = COUNTRY_ISO2[c] || COUNTRY_ISO2[c.split(/[\/,]/)[0].trim()];
+  if (!iso) return '<span style="display:inline-block;padding:1px 5px;background:#e2e8f0;border-radius:3px;font-size:10px;font-weight:700;color:#64748b">' + esc(c.substring(0,2).toUpperCase()) + '</span>';
+  return '<img src="https://flagcdn.com/24x18/' + iso + '.png" width="24" height="18" style="border-radius:2px;vertical-align:middle;margin-right:4px" alt="' + escAttr(c) + '">';
+}
+
+// ── BADGE ──
+function badge(s) {
+  const m = {'Sent':'badge-sent','Email Sent':'badge-sent','Not Contacted':'badge-pending','Replied':'badge-replied','Interested':'badge-interested','Bounced':'badge-bounced','Contacted':'badge-contacted'};
+  return `<span class="badge ${escAttr(m[s]||'badge-pending')}">${esc(s||'—')}</span>`;
+}
+
+// ── TEMPLATES ──
+const TEMPLATES = {
+  en: {
+    subject: 'Your clients are already asking for this - have you heard of peptides?',
+    body: `Hello,
+
+I hope this message finds you well.
+
+My name is Yehuda Ashash, I am the CEO at BioFirst - a specialized B2B distributor of research-grade **peptides** for professional clinics and wellness centers across Europe.
+
+We work exclusively with licensed medical and wellness professionals, providing them with the highest-quality **peptides** that deliver **Faster results** and **higher precision** compared to traditional supplement options.
+
+Our top solutions include:
+- Wolverine Blend (BPC-157 + TB-500) - rapid recovery
+- NAD+ - cellular energy and longevity
+- AOD-9604 - metabolic support
+- Tesamorelin/Ipamorelin - GH optimization
+
+All products are Research Use Only (RUO), shipped with full CoA and SDS documentation.
+
+Would you be open to a brief call to explore if this fits your current offering?
+
+Best regards,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  },
+  de: {
+    subject: 'Ihre Kunden fragen bereits danach - kennen Sie Peptide?',
+    body: `Hallo,
+
+ich hoffe, diese Nachricht erreicht Sie wohlauf.
+
+Mein Name ist Yehuda Ashash, ich bin CEO bei BioFirst - einem spezialisierten B2B-Distributor von forschungsreinen **Peptiden** fur professionelle Kliniken und Wellnesszentren in Europa.
+
+Wir arbeiten ausschliesslich mit lizenzierten medizinischen und Wellness-Fachleuten zusammen und bieten ihnen hochwertigste **Peptide**, die **schnellere Ergebnisse** und **hoehere Prazision** im Vergleich zu herkommlichen Erganzen liefern.
+
+Unsere Top-Losungen:
+- Wolverine Blend (BPC-157 + TB-500) - schnelle Regeneration
+- NAD+ - zelluläre Energie und Langlebigkeit
+- AOD-9604 - Stoffwechsel-Unterstutzung
+- Tesamorelin/Ipamorelin - GH-Optimierung
+
+Alle Produkte sind nur fur Forschungszwecke (RUO) bestimmt, geliefert mit vollstandiger CoA- und SDS-Dokumentation.
+
+Waren Sie offen fur ein kurzes Gesprach?
+
+Mit freundlichen Grussen,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  },
+  es: {
+    subject: 'Sus clientes ya lo estan pidiendo - ha oido hablar de los peptidos?',
+    body: `Hola,
+
+Espero que este mensaje le encuentre bien.
+
+Mi nombre es Yehuda Ashash, soy CEO en BioFirst - un distribuidor B2B especializado en **peptidos** de grado investigacion para clinicas profesionales y centros de bienestar en Europa.
+
+Trabajamos exclusivamente con profesionales medicos y de bienestar con licencia, proporcionandoles **peptidos** de la mas alta calidad que ofrecen **resultados mas rapidos** y **mayor precision** en comparacion con los suplementos tradicionales.
+
+Nuestras principales soluciones:
+- Wolverine Blend (BPC-157 + TB-500) - recuperacion rapida
+- NAD+ - energia celular y longevidad
+- AOD-9604 - soporte metabolico
+- Tesamorelin/Ipamorelin - optimizacion de GH
+
+Todos los productos son de Uso en Investigacion (RUO), entregados con documentacion CoA y SDS completa.
+
+Estaria abierto a una breve llamada?
+
+Saludos cordiales,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  },
+  it: {
+    subject: 'I vostri clienti lo stanno gia chiedendo - avete sentito parlare dei peptidi?',
+    body: `Salve,
+
+Spero che questo messaggio la trovi bene.
+
+Mi chiamo Yehuda Ashash, sono il CEO di BioFirst - un distributore B2B specializzato in **peptidi** di grado ricerca per cliniche professionali e centri benessere in Europa.
+
+Lavoriamo esclusivamente con professionisti medici e del benessere autorizzati, fornendo loro **peptidi** della massima qualita che offrono **risultati piu rapidi** e **maggiore precisione** rispetto agli integratori tradizionali.
+
+Le nostre soluzioni principali:
+- Wolverine Blend (BPC-157 + TB-500) - recupero rapido
+- NAD+ - energia cellulare e longevita
+- AOD-9604 - supporto metabolico
+- Tesamorelin/Ipamorelin - ottimizzazione GH
+
+Tutti i prodotti sono per uso di ricerca (RUO), consegnati con documentazione CoA e SDS completa.
+
+Sarebbe disponibile per una breve chiamata?
+
+Cordiali saluti,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  },
+  pl: {
+    subject: 'Pana klienci juz o to pytaja - czy slyszal Pan o peptydach?',
+    body: `Dzien dobry,
+
+Mam nadzieje, ze ta wiadomosc zastanie Pana w dobrym zdrowiu.
+
+Nazywam sie Yehuda Ashash, jestem CEO w BioFirst - wyspecjalizowanym dystrybutorem B2B **peptydow** badawczych dla profesjonalnych klinik i centrow wellness w Europie.
+
+Wspolpracujemy wylacznie z licencjonowanymi specjalistami medycznymi i wellness, dostarczajac im **peptydy** najwyzszej jakosci, ktore zapewniaja **szybsze wyniki** i **wyzsza precyzje** w porownaniu z tradycyjnymi suplementami.
+
+Nasze glowne rozwiazania:
+- Wolverine Blend (BPC-157 + TB-500) - szybka regeneracja
+- NAD+ - energia komorek i dlugosc zycia
+- AOD-9604 - wsparcie metaboliczne
+- Tesamorelin/Ipamorelin - optymalizacja GH
+
+Wszystkie produkty sa przeznaczone tylko do badan naukowych (RUO), dostarczane z pelna dokumentacja CoA i SDS.
+
+Czy bylby Pan otwarty na krotka rozmowe?
+
+Z powazaniem,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  },
+  pt: {
+    subject: 'Os seus clientes ja estao pedindo isso - ja ouviu falar de peptideos?',
+    body: `Ola,
+
+Espero que esta mensagem o encontre bem.
+
+Meu nome e Yehuda Ashash, sou CEO da BioFirst - um distribuidor B2B especializado em **peptideos** de grau de pesquisa para clinicas profissionais e centros de bem-estar na Europa.
+
+Trabalhamos exclusivamente com profissionais medicos e de bem-estar licenciados, fornecendo-lhes **peptideos** da mais alta qualidade que oferecem **resultados mais rapidos** e **maior precisao** em comparacao com os suplementos tradicionais.
+
+Nossas principais solucoes:
+- Wolverine Blend (BPC-157 + TB-500) - recuperacao rapida
+- NAD+ - energia celular e longevidade
+- AOD-9604 - suporte metabolico
+- Tesamorelin/Ipamorelin - otimizacao GH
+
+Todos os produtos sao para uso em pesquisa (RUO), entregues com documentacao CoA e SDS completa.
+
+Estaria aberto para uma breve chamada?
+
+Atenciosamente,
+Yehuda Ashash | CBO
+BioFirst Ltd
+meir@mastersol-ltd.com`
+  }
+};
+
+// ── LOAD DATA ──
+async function loadData() {
+  // Auth handled by auth.js — leads now come from GET /api/leads (JSON store)
+  try {
+    // Phase 4: api() carries the Bearer header and walks to the login page itself on 401, so the branch
+    // that printed "Session expired" here is gone. {toast:false} - the "Load failed" row below is this
+    // page's own message for every other failure.
+    const d = await api('/api/leads', { toast: false });
+    const rows = d && Array.isArray(d.leads) ? d.leads : (Array.isArray(d) ? d : []);
+    allLeads = rows.map((l, i) => ({
+      id: l.id,
+      rowIndex: i + 2,
+      status: l.status || 'Not Contacted',
+      company: l.company || '',
+      contact: l.contact || '',
+      email: l.email || '',
+      country: l.country || '',
+      category: l.category || l.priority || '',
+      city: l.city || '',
+      phone: l.phone || '',
+      notes: l.notes || '',
+      coupon: l.coupon || '',
+      priority: l.priority || '',
+      unsubscribed: !!l.unsubscribed,
+      last_email_sent_at: l.last_email_sent_at || null
+    }));
+    buildFilters();
+    applyFilters();
+    renderStats();
+  } catch(e) {
+    document.getElementById('leads-tbody').innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#E02424">Load failed - <a href="#" onclick="loadData()">Retry</a></td></tr>';
+  }
+}
+
+// ── FILTERS ──
+function buildFilters() {
+  const countries = [...new Set(allLeads.map(l => l.country).filter(Boolean))].sort();
+  const countryEl = document.getElementById('filter-country');
+  countries.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; countryEl.appendChild(o); });
+
+  const categories = [...new Set(allLeads.map(l => l.category).filter(Boolean))].sort();
+  const catEl = document.getElementById('filter-category');
+  categories.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; catEl.appendChild(o); });
+}
+
+function applyFilters() {
+  const search  = document.getElementById('search-box').value.toLowerCase();
+  const country = document.getElementById('filter-country').value;
+  const status  = document.getElementById('filter-status').value;
+  const cat     = document.getElementById('filter-category').value;
+
+  filteredLeads = allLeads.filter(l => {
+    if (search && !`${l.company} ${l.email} ${l.contact}`.toLowerCase().includes(search)) return false;
+    if (country && l.country !== country) return false;
+    if (status && l.status !== status) return false;
+    if (cat && l.category !== cat) return false;
+    return true;
+  });
+
+  currentPage = 1;
+  renderTable();
+  renderStats();
+
+  const total = filteredLeads.length;
+  const diff  = total < allLeads.length ? ` (filtered from ${allLeads.length.toLocaleString()})` : '';
+  document.getElementById('topbar-sub').textContent = `${total.toLocaleString()} leads${diff}`;
+}
+
+// ── RENDER TABLE ──
+function renderTable() {
+  const start = (currentPage - 1) * PER_PAGE;
+  const page  = filteredLeads.slice(start, start + PER_PAGE);
+  const tbody = document.getElementById('leads-tbody');
+
+  if (!page.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:40px;color:#8A94A6">No leads found</td></tr>';
+    document.getElementById('pag-info').textContent = '0 results';
+    document.getElementById('pag-btns').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map((l, i) => {
+    const num = start + i + 1;
+    const hasEmail = l.email && l.email.includes('@');
+    const isSent   = ['Sent','Email Sent'].includes(l.status);
+    const globalIdx = start + i;
+    let btn = '';
+    if (isSent) {
+      btn = `<button class="email-btn sent" disabled>✓ Sent</button>`;
+    } else if (hasEmail) {
+      // Phase 7 (2026-09-06): EMAIL_UI = hide - no Send Email button while there is no provider (see sendEmail below)
+      btn = '';
+    } else {
+      btn = ''; // Phase 7 review: the "No Email" plaque is hidden with the button, so both cases render the same empty cell
+    }
+
+    const rowClass = l.status === 'Interested' ? 'row-interested' : (l.status === 'Not Contacted' ? 'row-pending' : '');
+
+    const statusBadge = `<div class="status-wrap">
+      <span class="badge ${{'Sent':'badge-sent','Email Sent':'badge-sent','Not Contacted':'badge-pending','Replied':'badge-replied','Interested':'badge-interested','Bounced':'badge-bounced','Contacted':'badge-contacted'}[l.status]||'badge-pending'}" onclick="toggleStatusDD(event,${globalIdx})" style="cursor:pointer">${esc(l.status||'—')} ▾</span>
+      <div class="status-dropdown" id="sdd-${globalIdx}">
+        ${['Not Contacted','Sent','Email Sent','Replied','Interested','Qualified','Closed','Bounced'].map(s=>`<div class="status-opt" onclick="changeStatus(${globalIdx},'${s}')">${s}</div>`).join('')}
+      </div>
+    </div>`;
+
+    return `<tr class="${rowClass}">
+      <td class="cb-cell"><input type="checkbox" class="row-cb" data-idx="${globalIdx}" onchange="updateBulk()" ${!hasEmail?'disabled':''}></td>
+      <td style="color:#8A94A6;font-size:11px">${num}</td>
+      <td style="font-weight:600;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;color:#1a1a2e" onclick="openPanel(${globalIdx})">${esc(l.company || '—')}</td>
+      <td style="color:#5A6685">${esc(l.contact || '—')}</td>
+      <td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        ${l.email ? `<a href="mailto:${escAttr(l.email)}" style="color:#1B2A4A;text-decoration:none" title="${escAttr(l.email)}">${esc(l.email)}</a>` : '—'}
+      </td>
+      <td style="white-space:nowrap">${flag(l.country)}${esc(l.country || '—')}</td>
+      <td style="color:#5A6685;font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(l.category || '—')}</td>
+      <td>${statusBadge}</td>
+      <td style="text-align:center">${btn}</td>
+    </tr>`;
+  }).join('');
+
+  renderPagination();
+}
+
+function renderPagination() {
+  const total = filteredLeads.length;
+  const pages = Math.ceil(total / PER_PAGE);
+  const start = (currentPage - 1) * PER_PAGE + 1;
+  const end   = Math.min(currentPage * PER_PAGE, total);
+
+  document.getElementById('pag-info').textContent = `Showing ${start.toLocaleString()}-${end.toLocaleString()} of ${total.toLocaleString()} leads`;
+
+  let html = `<button class="pag-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+  const range = [];
+  for (let p = Math.max(1, currentPage-2); p <= Math.min(pages, currentPage+2); p++) range.push(p);
+  range.forEach(p => { html += `<button class="pag-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${esc(p)}</button>`; });
+  html += `<button class="pag-btn" onclick="goPage(${currentPage+1})" ${currentPage>=pages?'disabled':''}>›</button>`;
+
+  document.getElementById('pag-btns').innerHTML = html;
+}
+
+function goPage(p) {
+  const pages = Math.ceil(filteredLeads.length / PER_PAGE);
+  if (p < 1 || p > pages) return;
+  currentPage = p;
+  renderTable();
+  document.querySelector('.table-wrap').scrollTop = 0;
+}
+
+// ── STATS ──
+function renderStats() {
+  const leads = filteredLeads.length ? filteredLeads : allLeads;
+  const sent  = leads.filter(l => ['Sent','Email Sent'].includes(l.status)).length;
+  const pend  = leads.filter(l => l.status === 'Not Contacted').length;
+  const rep   = leads.filter(l => ['Replied','Interested'].includes(l.status)).length;
+  const pct   = leads.length ? Math.round(sent / leads.length * 100) : 0;
+
+  document.getElementById('s-total').textContent   = leads.length.toLocaleString();
+  document.getElementById('s-sent').textContent    = sent.toLocaleString();
+  document.getElementById('s-sent-pct').textContent = `↑ ${pct}% outreach rate`;
+  document.getElementById('s-pending').textContent = pend.toLocaleString();
+  document.getElementById('s-replied').textContent = rep.toLocaleString();
+}
+
+// ── MODAL ──
+function openModal(idx) {
+  currentLeadIdx = idx;
+  const lead = filteredLeads[idx];
+  document.getElementById('modal-company').textContent = lead.company || 'Send Email';
+  document.getElementById('modal-to-email').textContent = lead.email;
+
+  // בחר שפה לפי מדינה
+  const langMap = {'Germany':'de','Austria':'de','Switzerland':'de','Spain':'es','Mexico':'es','Italy':'it','Poland':'pl','Portugal':'pt','Brazil':'pt'};
+  const country = lead.country ? lead.country.split(/[\/,]/)[0].trim() : '';
+  const lang = langMap[country] || 'en';
+
+  // reset tabs
+  document.querySelectorAll('.lang-tab').forEach(t => t.classList.remove('active'));
+  const tabs = document.querySelectorAll('.lang-tab');
+  const langOrder = ['en','de','es','it','pl','pt'];
+  const tabIdx = langOrder.indexOf(lang);
+  if (tabIdx >= 0) tabs[tabIdx].classList.add('active');
+  else tabs[0].classList.add('active');
+
+  setLangContent(lang);
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function setLang(lang, el) {
+  document.querySelectorAll('.lang-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  setLangContent(lang);
+}
+
+function setLangContent(lang) {
+  const t = TEMPLATES[lang] || TEMPLATES.en;
+  document.getElementById('modal-subject').value = t.subject;
+  document.getElementById('modal-body-text').value = t.body;
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+    currentLeadIdx = null;
+  }
+}
+
+// Phase 7 (2026-09-06): EMAIL_PROVIDER = none and POST /api/send-email has no route - the triggers are hidden until a provider exists
+async function sendEmail() {
+  if (currentLeadIdx === null) return;
+  const lead    = filteredLeads[currentLeadIdx];
+  const subject = document.getElementById('modal-subject').value.trim();
+  const body    = document.getElementById('modal-body-text').value.trim();
+  const btn     = document.getElementById('btn-send-final');
+
+  if (!subject || !body) { showToast('Fill in subject and message', 'error'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending...';
+
+  try {
+    await api('/api/send-email', {
+      method: 'POST',
+      body: { to: lead.email, subject, body, company: lead.company, rowIndex: lead.rowIndex }
+    });
+
+    // Update status locally
+    lead.status = 'Email Sent';
+    const origIdx = allLeads.findIndex(l => l.rowIndex === lead.rowIndex);
+    if (origIdx >= 0) allLeads[origIdx].status = 'Email Sent';
+
+    renderTable();
+    renderStats();
+    closeModal();
+    showToast(`Email sent to ${lead.company}!`, 'success');
+  } catch(e) {
+    // api() already showed the error toast; the button is restored right after this block
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '📤 Send Email';
+}
+
+// ── EXPORT CSV ──
+function exportCSV() {
+  const leads = filteredLeads.length ? filteredLeads : allLeads;
+  const header = 'Company,Contact,Email,Country,Category,Status';
+  const rows = leads.map(l => [l.company,l.contact,l.email,l.country,l.category,l.status].map(v => `"${(v||'').replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([header + '\n' + rows.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'mastersol-leads.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── TOAST ── showToast() comes from crm.js
+
+// ── INIT ──
+// Auth handled by auth.js
+let _sortCol = null, _sortAsc = true;
+document.addEventListener('DOMContentLoaded', loadData); // 2026-09-05 Alejandro (infra): the table was only populated by the refresh button
+function sortBy(field) {
+  if (_sortCol === field) { _sortAsc = !_sortAsc; } else { _sortCol = field; _sortAsc = true; }
+  document.querySelectorAll('th.sortable').forEach(th => { th.classList.remove('sort-asc','sort-desc'); });
+  const th = document.getElementById('th-' + field);
+  if (th) th.classList.add(_sortAsc ? 'sort-asc' : 'sort-desc');
+  filteredLeads.sort((a,b) => {
+    const av = (a[field]||'').toLowerCase(), bv = (b[field]||'').toLowerCase();
+    return av < bv ? (_sortAsc ? -1 : 1) : av > bv ? (_sortAsc ? 1 : -1) : 0;
+  });
+  currentPage = 1;
+  renderTable();
+}
+
+// ── CHECKBOXES & BULK ──
+let selected = new Set();
+function toggleAll(cb) {
+  document.querySelectorAll('.row-cb:not(:disabled)').forEach(el => {
+    el.checked = cb.checked;
+    const idx = parseInt(el.dataset.idx);
+    cb.checked ? selected.add(idx) : selected.delete(idx);
+  });
+  updateBulkBar();
+}
+function updateBulk() {
+  selected.clear();
+  document.querySelectorAll('.row-cb:checked').forEach(el => selected.add(parseInt(el.dataset.idx)));
+  updateBulkBar();
+}
+function updateBulkBar() {
+  const bar = document.getElementById('bulk-bar');
+  const cnt = document.getElementById('bulk-count');
+  cnt.textContent = selected.size + ' lead' + (selected.size!==1?'s':'') + ' selected';
+  selected.size > 0 ? bar.classList.add('show') : bar.classList.remove('show');
+}
+function clearSelection() {
+  selected.clear();
+  document.querySelectorAll('.row-cb').forEach(el => el.checked = false);
+  document.getElementById('cb-all').checked = false;
+  updateBulkBar();
+}
+function openBulkModal() {
+  const leads = [...selected].map(i => filteredLeads[i]).filter(l => l && l.email);
+  if (!leads.length) { showToast('No leads with email selected','error'); return; }
+  // פתח modal עם הליד הראשון, אבל הצג כמה נשלח
+  currentLeadIdx = [...selected][0];
+  openModal(currentLeadIdx);
+  document.getElementById('modal-company').textContent = leads.length + ' leads selected';
+  document.getElementById('modal-to-email').textContent = leads.map(l=>l.email).join(', ').substring(0,60) + (leads.length>1?'...':'');
+}
+
+// ── STATUS DROPDOWN ──
+function toggleStatusDD(e, idx) {
+  e.stopPropagation();
+  document.querySelectorAll('.status-dropdown').forEach(d => { if (d.id !== 'sdd-'+idx) d.classList.remove('open'); });
+  document.getElementById('sdd-'+idx).classList.toggle('open');
+}
+document.addEventListener('click', () => document.querySelectorAll('.status-dropdown').forEach(d => d.classList.remove('open')));
+
+async function changeStatus(idx, newStatus) {
+  const lead = filteredLeads[idx];
+  if (!lead) return;
+  const prev = lead.status;
+  lead.status = newStatus;
+  const origIdx = allLeads.findIndex(l => l.id === lead.id || l.rowIndex === lead.rowIndex);
+  if (origIdx >= 0) allLeads[origIdx].status = newStatus;
+  renderTable();
+  renderStats();
+  showToast(lead.company + ' -> ' + newStatus, 'success');
+  try {
+    if (lead.id) {
+      // {toast:false}: the catch below rolls the row back and reports it in this page's own words
+      await api('/api/leads/' + encodeURIComponent(lead.id), {
+        method:'PATCH',
+        body:{status:newStatus, status_manual_override:true},
+        toast:false
+      });
+    }
+  } catch(e) {
+    lead.status = prev;
+    if (origIdx >= 0) allLeads[origIdx].status = prev;
+    renderTable();
+    renderStats();
+    showToast('Could not save status override', 'error');
+  }
+}
+
+// ── SIDE PANEL ──
+let panelLead = null;
+function openPanel(idx) {
+  const lead = filteredLeads[idx];
+  if (!lead) return;
+  panelLead = lead;
+  document.getElementById('sp-name').textContent = lead.company || '—';
+  document.getElementById('sp-country-line').textContent = (lead.country || '') + (lead.city ? ' - ' + lead.city : '');
+  document.getElementById('sp-email').innerHTML = lead.email ? '<a href="mailto:'+escAttr(lead.email)+'" style="color:#1B2A4A">'+esc(lead.email)+'</a>' : '—';
+  document.getElementById('sp-category').textContent = lead.category || '—';
+  document.getElementById('sp-status-val').innerHTML = badge(lead.status);
+  document.getElementById('sp-country-val').textContent = lead.country || '—';
+  const couponEl = document.getElementById('sp-coupon');
+  if (couponEl) couponEl.value = lead.coupon || '';
+
+  const activities = [
+    {text: lead.status !== 'Not Contacted' ? 'Email sent to ' + (lead.email||'this lead') : 'Added to pipeline', time:'Recently'},
+    {text: 'Status: ' + (lead.status||'Not Contacted'), time:'Current'},
+    {text: 'Lead discovered in ' + (lead.country||'unknown market'), time:'Campaign'}
+  ];
+  document.getElementById('sp-timeline-items').innerHTML = activities.map(a =>
+    `<div class="sp-tl-item"><div class="sp-tl-dot"></div><div><div class="sp-tl-text">${esc(a.text)}</div><div class="sp-tl-time">${esc(a.time)}</div></div></div>`
+  ).join('');
+
+  document.getElementById('side-panel').classList.add('open');
+  document.getElementById('overlay-bg').classList.add('show');
+}
+function closeSidePanel() {
+  document.getElementById('side-panel').classList.remove('open');
+  document.getElementById('overlay-bg').classList.remove('show');
+}
+function openModalFromPanel() {
+  closeSidePanel();
+  if (!panelLead) return;
+  const idx = filteredLeads.indexOf(panelLead);
+  if (idx >= 0) openModal(idx);
+}
+async function saveCoupon() {
+  if (!panelLead || !panelLead.id) return;
+  const coupon = (document.getElementById('sp-coupon').value || '').trim();
+  panelLead.coupon = coupon;
+  const origIdx = allLeads.findIndex(l => l.id === panelLead.id);
+  if (origIdx >= 0) allLeads[origIdx].coupon = coupon;
+  try {
+    // {toast:false}: 'Coupon not saved' is this page's own wording for every failure
+    await api('/api/leads/' + encodeURIComponent(panelLead.id), {
+      method:'PATCH',
+      body:{coupon},
+      toast:false
+    });
+    showToast('Coupon saved', 'success');
+  } catch(e) { showToast('Coupon not saved', 'error'); }
+}
+
+</script>
+
+<div class="bulk-bar" id="bulk-bar" hidden><!-- Phase 7 review: its only action (bulk e-mail) is hidden while EMAIL_UI = hide -->
+  <span class="bulk-count" id="bulk-count">0 selected</span>
+  <button class="bulk-send" onclick="openBulkModal()" hidden>✉ Send Bulk Email</button>
+  <button class="bulk-clear" onclick="clearSelection()">✕ Clear</button>
+</div>
+<div class="overlay-bg" id="overlay-bg" onclick="closeSidePanel()"></div>
+<div class="side-panel" id="side-panel">
+  <div class="sp-header">
+    <div style="flex:1">
+      <div class="sp-name" id="sp-name">—</div>
+      <div style="font-size:11px;color:#5A6685;margin-top:3px" id="sp-country-line">—</div>
+    </div>
+    <button class="sp-close" onclick="closeSidePanel()">✕</button>
+  </div>
+  <div class="sp-body">
+    <div class="sp-row"><span class="sp-label">Email</span><span class="sp-val" id="sp-email">—</span></div>
+    <div class="sp-row"><span class="sp-label">Category</span><span class="sp-val" id="sp-category">—</span></div>
+    <div class="sp-row"><span class="sp-label">Status</span><span class="sp-val" id="sp-status-val">—</span></div>
+    <div class="sp-row"><span class="sp-label">Country</span><span class="sp-val" id="sp-country-val">—</span></div>
+    <div class="sp-row"><span class="sp-label">Coupon</span><span class="sp-val"><input id="sp-coupon" class="field-input" style="padding:6px 8px;font-size:12px" placeholder="Coupon code" onchange="saveCoupon()"></span></div>
+    <div class="sp-tl-title">Activity</div>
+    <div id="sp-timeline-items"></div>
+  </div>
+  <div class="sp-footer">
+    <button class="sp-email-btn" onclick="openModalFromPanel()" hidden>✉ Send Email to this Lead</button>
+  </div>
+</div>
+
+    <!-- 2026-09-05 Alejandro (infra): removed the "QA FIX" sortBy block. sortBy() already exists in the main script above; this copy re-declared the top-level sort-state variable, threw SyntaxError and never ran. -->
+    
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

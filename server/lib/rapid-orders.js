@@ -204,7 +204,9 @@ export function mapOrderToRapid(order, { cfg, skuMap = {}, prefix, source } = {}
     products,
     subtotal: pc.subtotal != null ? String(pc.subtotal) : undefined,
     shipping_cost: pc.shipping != null ? String(pc.shipping) : undefined,
-    discount: vd && vd.discount ? String(vd.discount) : undefined,
+    // infra 2026-09-29 honest-charge: a coupon order is charged total_due; priceCheck.discount carries that discount
+    // for any source (coupon or volume ladder), volumeDiscount only for the ladder, so it stays the fallback.
+    discount: pc.discount && Number(pc.discount.amount) > 0 ? String(pc.discount.amount) : (vd && vd.discount ? String(vd.discount) : undefined),
     total_cost: order.amount != null ? String(order.amount) : undefined,
     paidtodate: order.amount != null ? String(order.amount) : undefined,
     currency: "USD",

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* account-only styling; everything shared lives in crm.css */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
+.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
+.empty{text-align:center;padding:48px 20px;color:#5A6685;}
+.empty-icon{font-size:36px;margin-bottom:10px;opacity:.6;}
+.empty-title{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
+thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
+tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:#E8F5E9;color:#2E7D32;}
+.badge-gray{background:#E8ECF4;color:#5A6685;}
+.badge-amber{background:#FFF8EC;color:#D97706;}
+.badge-red{background:#FEF2F2;color:#C62828;}
+.health{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.health.green{background:#0E9F6E;}
+.health.yellow{background:#F59E0B;}
+.health.red{background:#E02424;}
+.grid-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.auto-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;}
+.auto-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.auto-name{font-size:14px;font-weight:700;color:#1a1a2e;}
+.auto-desc{font-size:12px;color:#5A6685;line-height:1.5;margin:8px 0 14px;}
+.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.rule-row{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:8px;align-items:center;}
+.seg-list{display:flex;flex-direction:column;gap:8px;}
+.seg-item{border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
+.note{font-size:12px;color:#5A6685;margin-top:8px;}
+.profile-row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:10px 0;border-bottom:1px solid #F0F2FA;}
+.profile-row:last-child{border-bottom:none;}
+.profile-label{color:#5A6685;font-size:13px;}
+.profile-value{font-weight:600;color:#1a1a2e;font-size:13px;text-align:right;word-break:break-word;}
+.form-narrow{max-width:420px;}
+.err{font-size:12px;font-weight:600;color:#C62828;margin-top:5px;min-height:15px;}
+.hint{font-size:12px;color:#5A6685;margin-top:12px;}
+.strength{font-size:12px;font-weight:700;margin-top:5px;min-height:15px;}
+.strength.weak{color:#C62828;}
+.strength.ok{color:#D97706;}
+.strength.strong{color:#0E9F6E;}
+.show-row{display:flex;align-items:center;gap:7px;font-size:12px;color:#5A6685;margin:0 0 14px;}
+.show-row input{width:auto;margin:0;}
+.show-row label{cursor:pointer;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
+@media(max-width:768px){
+.sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;background:#fff;border-top:2px solid var(--border);z-index:1000;overflow-x:auto;}
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.nav{display:flex;flex-direction:row;padding:0 4px;overflow-x:auto;}
+.nav-item{flex:0 0 64px;flex-direction:column;font-size:10px;padding:6px 3px;}
+.content{padding:14px;padding-bottom:82px;}
+.topbar{background:#1B2A4A;}
+.topbar-title{color:#fff;}
+.grid-cards{grid-template-columns:1fr;}
+.rule-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">👤 My Account <span>Profile &amp; password</span></div>
+  </header>
+  <div class="content">
+
+<div class="card">
+  <h3>Profile</h3>
+  <div id="profile"><div class="note">Loading…</div></div>
+</div>
+
+<div class="card">
+  <h3>Change password</h3>
+  <form id="pw-form" class="form-narrow">
+    <div class="field">
+      <label for="cur-pw">Current password</label>
+      <input type="password" id="cur-pw" name="current-password" autocomplete="current-password" required>
+      <div class="err" id="cur-err"></div>
+    </div>
+    <div class="field">
+      <label for="new-pw">New password</label>
+      <input type="password" id="new-pw" name="new-password" autocomplete="new-password" minlength="10" required>
+      <div class="strength" id="strength"></div>
+    </div>
+    <div class="field">
+      <label for="new-pw2">Confirm new password</label>
+      <input type="password" id="new-pw2" name="confirm-password" autocomplete="new-password" required>
+      <div class="err" id="confirm-err"></div>
+    </div>
+    <div class="show-row">
+      <input type="checkbox" id="show-pw"><label for="show-pw">Show passwords</label>
+    </div>
+    <button class="btn btn-primary" type="submit" id="save-btn" disabled>Change password</button>
+    <div class="err" id="form-err"></div>
+    <p class="hint">Minimum 10 characters. A memorable phrase of 3–4 words works well.</p>
+  </form>
+</div>
+
+  </div>
+</div>
+</div>
+<script>
+renderNav('account');
+const API='/api';
+function clearSession(){ localStorage.removeItem('crm_token'); localStorage.removeItem('crm_user'); }
+// a 401 here is either a wrong current password or a dead session - only the second one signs the user out
+function isSessionError(msg){ return !msg || /session|authenticat/i.test(msg); }
+
+const ROLE_LABEL={ admin:'Admin', user:'Staff', staff:'Staff' };
+async function loadProfile(){
+  const box=document.getElementById('profile');
+  try{
+    // {toast:false}: the message belongs in the profile card, not in a toast on top of it
+    const d=await api(API+'/session',{toast:false});
+    const u=(d && d.user) || {};
+    const role=ROLE_LABEL[u.role] || u.role || '';
+    box.innerHTML=`
+      <div class="profile-row"><span class="profile-label">Name</span><span class="profile-value">${esc(u.name||'—')}</span></div>
+      <div class="profile-row"><span class="profile-label">E-mail</span><span class="profile-value">${esc(u.email||'—')}</span></div>
+      <div class="profile-row"><span class="profile-label">Role</span><span class="profile-value">${esc(role||'—')}</span></div>`;
+  }catch(e){
+    box.textContent = e.status ? ('Could not load your profile ('+e.message+').') : 'Cannot reach the server.';
+    box.className='note';
+  }
+}
+
+const curEl=document.getElementById('cur-pw');
+const newEl=document.getElementById('new-pw');
+const new2El=document.getElementById('new-pw2');
+const saveBtn=document.getElementById('save-btn');
+const strengthEl=document.getElementById('strength');
+const curErr=document.getElementById('cur-err');
+const confirmErr=document.getElementById('confirm-err');
+const formErr=document.getElementById('form-err');
+
+function updateState(){
+  const np=newEl.value, np2=new2El.value;
+  let ready=true;
+  if(!np){ strengthEl.textContent=''; strengthEl.className='strength'; ready=false; }
+  else if(np.length<10){ strengthEl.textContent='Too short'; strengthEl.className='strength weak'; ready=false; }
+  else if(np.length<14){ strengthEl.textContent='OK'; strengthEl.className='strength ok'; }
+  else { strengthEl.textContent='Strong'; strengthEl.className='strength strong'; }
+  if(!np2){ confirmErr.textContent=''; ready=false; }
+  else if(np2!==np){ confirmErr.textContent='Passwords do not match'; ready=false; }
+  else { confirmErr.textContent=''; }
+  if(!curEl.value){ ready=false; }
+  saveBtn.disabled=!ready;
+}
+[curEl,newEl,new2El].forEach(function(el){ el.addEventListener('input', updateState); });
+document.getElementById('show-pw').addEventListener('change', function(){
+  const t=this.checked ? 'text' : 'password';
+  curEl.type=t; newEl.type=t; new2El.type=t;
+});
+
+document.getElementById('pw-form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  curErr.textContent=''; formErr.textContent='';
+  const current=curEl.value, np=newEl.value;
+  if(!current || np.length<10 || np!==new2El.value){ updateState(); return; }
+  saveBtn.disabled=true;
+  try{
+    // Phase 5 (2026-09-05): on401:'throw' — a 401 here usually means a wrong current password, not a dead session.
+    await api(API+'/me/password',{ method:'POST', body:{ current:current, new:np }, on401:'throw', toast:false });
+    showToast('Password changed — please sign in again','success');
+    clearSession();
+    setTimeout(function(){ location.href='/crm/login.html'; }, 2000);
+  }catch(e){
+    saveBtn.disabled=false;
+    if(e.status===401){
+      if(isSessionError(e.message)){ logout(); return; }
+      curErr.textContent=e.message;
+    }else if(e.status===0){
+      formErr.textContent='Cannot reach the server';
+    }else{
+      formErr.textContent=e.message || ('HTTP '+e.status);
+    }
+  }
+});
+
+updateState();
+loadProfile();
+</script>
+</body>
+</html>

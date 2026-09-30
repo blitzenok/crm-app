@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research - Expenses & Income</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* expenses-only styling; everything shared lives in crm.css */
+.btn{ padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+.btn-secondary{ background:#E8ECF4; color:#1B2A4A; }
+.btn-secondary:hover{ background:#DCE2EC; }
+.btn-danger{ background:#FFF0F0; color:#E53935; border:1px solid #FFCDD2; }
+.btn-danger:hover{ background:#FFEBEE; }
+.btn-small{ padding:4px 8px; font-size:11px; border-radius:6px; }
+.filter-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:14px 18px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+.filter-group{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.filter-group label{ font-size:12px; font-weight:600; color:#5A6685; }
+.filter-group input{ padding:7px 12px; border:1px solid #E8ECF4; border-radius:8px; font-size:12px; background:#F8FAFF; color:#1a1a2e; }
+.stats-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:18px 20px; position:relative; overflow:hidden; }
+.stat-card::before{ content:''; position:absolute; top:0; left:0; width:4px; height:100%; }
+.stat-card.income::before{ background:#2E7D32; }
+.stat-card.expense::before{ background:#E53935; }
+.stat-card.profit::before{ background:#1F7A3D; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:800; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:4px; }
+.stat-value.positive{ color:#2E7D32; }
+.stat-value.negative{ color:#E53935; }
+.two-col{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px; }
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; display:flex; flex-direction:column; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; background:#FAFCFF; }
+.table-header h3{ font-size:14px; font-weight:700; color:#1a1a2e; display:flex; align-items:center; gap:8px; }
+.table-header .count-badge{ font-size:11px; font-weight:600; background:#E8ECF4; color:#5A6685; padding:2px 8px; border-radius:12px; }
+.table-wrapper{ flex:1; overflow-x:auto; }
+thead th{ text-align:left; padding:10px 16px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; background:#F8FAFF; }
+tbody td{ padding:12px 16px; font-size:12px; border-bottom:1px solid #E8ECF4; vertical-align:middle; }
+tbody tr:hover{ background:#F8FAFF; }
+.badge{ padding:3px 8px; border-radius:12px; font-size:10px; font-weight:700; text-transform:uppercase; display:inline-block; }
+.badge-category{ background:#E8F0FE; color:#1967D2; }
+.badge-source{ background:#E6F4EA; color:#137333; }
+.badge-method{ background:#F1F3F4; color:#5F6368; }
+.empty-state{ text-align:center; padding:30px 20px; color:#5A6685; font-size:13px; }
+.modal-overlay{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:2000; align-items:center; justify-content:center; padding:16px; }
+.modal-card{ background:#fff; border-radius:16px; padding:24px; width:100%; max-width:440px; box-shadow:0 12px 32px rgba(0,0,0,0.15); }
+.modal-card h3{ font-size:16px; font-weight:700; color:#1a1a2e; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; }
+.form-group{ margin-bottom:14px; }
+.form-group label{ display:block; font-size:11px; font-weight:700; color:#5A6685; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+.form-group input, .form-group select, .form-group textarea{ width:100%; padding:9px 12px; border:1px solid #E8ECF4; border-radius:8px; font-size:13px; background:#F8FAFF; font-family:inherit; }
+.form-group textarea{ resize:vertical; min-height:60px; }
+.modal-actions{ display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.stats-grid{grid-template-columns:1fr!important;}
+.two-col{grid-template-columns:1fr!important;}
+.filter-card{flex-direction:column;align-items:stretch;}
+}
+</style>
+</head>
+<body>
+
+<div class="app-wrapper">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Expenses & Income <span>Financial Ledger</span></div>
+      <div class="user-initials" id="topbar-user" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">YA</div>
+    </div>
+
+    <div class="content">
+      <!-- Filter Bar -->
+      <div class="filter-card">
+        <div class="filter-group">
+          <label>From:</label>
+          <input type="date" id="fromDate" onchange="loadData()">
+          <label>To:</label>
+          <input type="date" id="toDate" onchange="loadData()">
+          <button class="btn btn-secondary btn-small" onclick="resetCurrentMonth()">This Month</button>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-small" onclick="loadData()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <!-- Summary Stats -->
+      <div class="stats-grid">
+        <div class="stat-card income">
+          <div class="stat-label">Total Income</div>
+          <div class="stat-value" id="statIncome">$0.00</div>
+          <div class="stat-sub" id="statIncomeCount">0 records</div>
+        </div>
+        <div class="stat-card expense">
+          <div class="stat-label">Total Expenses</div>
+          <div class="stat-value" id="statExpenses">$0.00</div>
+          <div class="stat-sub" id="statExpenseCount">0 records</div>
+        </div>
+        <div class="stat-card profit">
+          <div class="stat-label">Net Profit / Balance</div>
+          <div class="stat-value" id="statNetProfit">$0.00</div>
+          <div class="stat-sub">Income - Expenses</div>
+        </div>
+      </div>
+
+      <!-- Two Column Layout: Expenses & Income -->
+      <div class="two-col">
+        <!-- Expenses Column -->
+        <div class="table-card">
+          <div class="table-header">
+            <h3>💸 Expenses <span class="count-badge" id="expenseBadge">0</span></h3>
+            <button class="btn btn-primary btn-small" onclick="openExpenseModal()">+ Add Expense</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>Method</th>
+                  <th>Amount</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="expensesTbody">
+                <tr><td colspan="6" class="empty-state">Loading expenses...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Income Column -->
+        <div class="table-card">
+          <div class="table-header">
+            <h3>💰 Income <span class="count-badge" id="incomeBadge">0</span></h3>
+            <button class="btn btn-primary btn-small" onclick="openIncomeModal()">+ Add Income</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Source</th>
+                  <th>Description</th>
+                  <th>Amount</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="incomeTbody">
+                <tr><td colspan="5" class="empty-state">Loading income...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Expense -->
+<div class="modal-overlay" id="expenseModal">
+  <div class="modal-card">
+    <h3>Add Expense <span style="font-size:12px;font-weight:400;color:#5A6685;" onclick="closeModal('expenseModal')">✕</span></h3>
+    <form id="expenseForm" onsubmit="saveExpense(event)">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="expDate" required>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="expCategory" required>
+          <option value="Rent">Rent</option>
+          <option value="Utilities">Utilities</option>
+          <option value="Shipping">Shipping</option>
+          <option value="Marketing">Marketing</option>
+          <option value="Supplies">Supplies</option>
+          <option value="Travel">Travel</option>
+          <option value="Other" selected>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount ($)</label>
+        <input type="number" step="0.01" min="0" id="expAmount" placeholder="0.00" required>
+      </div>
+      <div class="form-group">
+        <label>Payment Method</label>
+        <select id="expMethod">
+          <option value="Cash">Cash</option>
+          <option value="Credit Card">Credit Card</option>
+          <option value="Bank Transfer">Bank Transfer</option>
+          <option value="PayPal">PayPal</option>
+          <option value="WeChat">WeChat</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="expDesc" placeholder="Details about this expense..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('expenseModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Expense</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Add Income -->
+<div class="modal-overlay" id="incomeModal">
+  <div class="modal-card">
+    <h3>Add Income <span style="font-size:12px;font-weight:400;color:#5A6685;" onclick="closeModal('incomeModal')">✕</span></h3>
+    <form id="incomeForm" onsubmit="saveIncome(event)">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="incDate" required>
+      </div>
+      <div class="form-group">
+        <label>Source</label>
+        <select id="incSource" required>
+          <option value="Sales">Sales</option>
+          <option value="Commission">Commission</option>
+          <option value="Other" selected>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount ($)</label>
+        <input type="number" step="0.01" min="0" id="incAmount" placeholder="0.00" required>
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea id="incDesc" placeholder="Details about this income..."></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('incomeModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Income</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('expenses');
+const API = '/msolpeptides-api';
+
+// Phase 5 (2026-09-05): every call goes through api() from crm.js — Bearer header, JSON in/out, the 401 redirect and
+// the error toast are all in one place now; the native confirm box is confirmDialog from the same shell.
+
+
+
+
+function resetCurrentMonth() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+  document.getElementById('fromDate').value = `${year}-${month}-01`;
+  document.getElementById('toDate').value = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+  loadData();
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function openExpenseModal() {
+  document.getElementById('expDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('expCategory').value = 'Other';
+  document.getElementById('expAmount').value = '';
+  document.getElementById('expMethod').value = 'Cash';
+  document.getElementById('expDesc').value = '';
+  openModal('expenseModal');
+}
+
+function openIncomeModal() {
+  document.getElementById('incDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('incSource').value = 'Other';
+  document.getElementById('incAmount').value = '';
+  document.getElementById('incDesc').value = '';
+  openModal('incomeModal');
+}
+
+async function loadData() {
+  const from = document.getElementById('fromDate').value;
+  const to = document.getElementById('toDate').value;
+  
+  let expUrl = API + '/expenses';
+  let incUrl = API + '/income';
+  const params = [];
+  if (from) params.push('from=' + encodeURIComponent(from));
+  if (to) params.push('to=' + encodeURIComponent(to));
+  if (params.length) {
+    expUrl += '?' + params.join('&');
+    incUrl += '?' + params.join('&');
+  }
+
+  try {
+    const [expenses, income] = await Promise.all([api(expUrl), api(incUrl)]);
+
+    renderExpenses(Array.isArray(expenses) ? expenses : []);
+    renderIncome(Array.isArray(income) ? income : []);
+    calculateTotals(Array.isArray(expenses) ? expenses : [], Array.isArray(income) ? income : []);
+  } catch(e) {
+    // api() already showed the toast; the tables must not stay on "Loading..." (review B)
+    const row = (n) => '<tr><td colspan="' + n + '" class="empty-state" style="color:#E53935;">Failed to load: ' + esc(e.message) + '</td></tr>';
+    document.getElementById('expensesTbody').innerHTML = row(6);
+    document.getElementById('incomeTbody').innerHTML = row(5);
+  }
+}
+
+function renderExpenses(list) {
+  document.getElementById('expenseBadge').textContent = list.length;
+  const tbody = document.getElementById('expensesTbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No expenses found for selected period.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(item => `
+    <tr>
+      <td style="white-space:nowrap;font-weight:600;">${esc(item.date || '')}</td>
+      <td><span class="badge badge-category">${esc(item.category || 'Other')}</span></td>
+      <td>${esc(item.description || '-')}</td>
+      <td><span class="badge badge-method">${esc(item.payment_method || 'Cash')}</span></td>
+      <td style="font-weight:700;color:#E53935;">${fmtMoney(item.amount)}</td>
+      <td>
+        <button class="btn btn-danger btn-small" onclick="deleteExpense('${safeId(item.id)}')" title="Delete">✕</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderIncome(list) {
+  document.getElementById('incomeBadge').textContent = list.length;
+  const tbody = document.getElementById('incomeTbody');
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No income records found for selected period.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(item => `
+    <tr>
+      <td style="white-space:nowrap;font-weight:600;">${esc(item.date || '')}</td>
+      <td><span class="badge badge-source">${esc(item.source || 'Other')}</span></td>
+      <td>${esc(item.description || '-')}</td>
+      <td style="font-weight:700;color:#2E7D32;">${fmtMoney(item.amount)}</td>
+      <td>
+        <button class="btn btn-danger btn-small" onclick="deleteIncome('${safeId(item.id)}')" title="Delete">✕</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function calculateTotals(expenses, income) {
+  const totalExp = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const totalInc = income.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+  const netProfit = totalInc - totalExp;
+
+  document.getElementById('statExpenses').textContent = fmtMoney(totalExp);
+  document.getElementById('statExpenseCount').textContent = `${expenses.length} records`;
+
+  document.getElementById('statIncome').textContent = fmtMoney(totalInc);
+  document.getElementById('statIncomeCount').textContent = `${income.length} records`;
+
+  const profitEl = document.getElementById('statNetProfit');
+  profitEl.textContent = fmtMoney(netProfit);
+  if (netProfit >= 0) {
+    profitEl.className = 'stat-value positive';
+  } else {
+    profitEl.className = 'stat-value negative';
+  }
+}
+
+async function saveExpense(e) {
+  e.preventDefault();
+  const crmUser = JSON.parse(localStorage.getItem('crm_user') || '{}');
+  const payload = {
+    date: document.getElementById('expDate').value,
+    category: document.getElementById('expCategory').value,
+    amount: Number(document.getElementById('expAmount').value),
+    payment_method: document.getElementById('expMethod').value,
+    description: document.getElementById('expDesc').value,
+    user: crmUser.name || 'Admin'
+  };
+
+  try {
+    await api(API + '/expenses', { method: 'POST', body: payload });
+    closeModal('expenseModal');
+    loadData();
+  } catch(err) {
+    console.error('Save expense error', err);   // api() has already shown the toast
+  }
+}
+
+async function saveIncome(e) {
+  e.preventDefault();
+  const crmUser = JSON.parse(localStorage.getItem('crm_user') || '{}');
+  const payload = {
+    date: document.getElementById('incDate').value,
+    source: document.getElementById('incSource').value,
+    amount: Number(document.getElementById('incAmount').value),
+    description: document.getElementById('incDesc').value,
+    user: crmUser.name || 'Admin'
+  };
+
+  try {
+    await api(API + '/income', { method: 'POST', body: payload });
+    closeModal('incomeModal');
+    loadData();
+  } catch(err) {
+    console.error('Save income error', err);   // api() has already shown the toast
+  }
+}
+
+async function deleteExpense(id) {
+  if (!(await confirmDialog('Are you sure you want to delete this expense entry?', { ok: 'Delete' }))) return;
+  try {
+    await api(API + '/expenses/' + id, { method: 'DELETE' });
+    loadData();
+  } catch(err) {
+    console.error('Delete expense error', err);   // api() has already shown the toast
+  }
+}
+
+async function deleteIncome(id) {
+  if (!(await confirmDialog('Are you sure you want to delete this income entry?', { ok: 'Delete' }))) return;
+  try {
+    await api(API + '/income/' + id, { method: 'DELETE' });
+    loadData();
+  } catch(err) {
+    console.error('Delete income error', err);   // api() has already shown the toast
+  }
+}
+
+// Initial load
+resetCurrentMonth();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

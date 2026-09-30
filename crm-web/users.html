@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* users-only styling; everything shared lives in crm.css */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
+.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
+.empty{text-align:center;padding:48px 20px;color:#5A6685;}
+.empty-icon{font-size:36px;margin-bottom:10px;opacity:.6;}
+.empty-title{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
+thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
+tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:#E8F5E9;color:#2E7D32;}
+.badge-gray{background:#E8ECF4;color:#5A6685;}
+.badge-amber{background:#FFF8EC;color:#D97706;}
+.badge-red{background:#FEF2F2;color:#C62828;}
+.health{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.health.green{background:#0E9F6E;}
+.health.yellow{background:#F59E0B;}
+.health.red{background:#E02424;}
+.grid-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.auto-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;}
+.auto-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.auto-name{font-size:14px;font-weight:700;color:#1a1a2e;}
+.auto-desc{font-size:12px;color:#5A6685;line-height:1.5;margin:8px 0 14px;}
+.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.rule-row{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:8px;align-items:center;}
+.seg-list{display:flex;flex-direction:column;gap:8px;}
+.seg-item{border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
+.note{font-size:12px;color:#5A6685;margin-top:8px;}
+.err{font-size:12px;font-weight:600;color:#C62828;margin-top:5px;min-height:15px;}
+.add-grid{display:grid;grid-template-columns:1.4fr 1.4fr .8fr auto;gap:10px;align-items:end;}
+.add-grid .field{margin-bottom:0;}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.otp{border:1px solid #FBBF24;background:#FFFBEB;}
+.otp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.otp-head h3{margin-bottom:0;}
+.otp-title{font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:10px;word-break:break-word;}
+.otp-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.otp-row code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;font-weight:700;color:#1a1a2e;background:#fff;border:1px solid #FBBF24;border-radius:8px;padding:8px 12px;user-select:all;word-break:break-all;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
+@media(max-width:768px){
+.add-grid{grid-template-columns:1fr;}
+.sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;background:#fff;border-top:2px solid var(--border);z-index:1000;overflow-x:auto;}
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.nav{display:flex;flex-direction:row;padding:0 4px;overflow-x:auto;}
+.nav-item{flex:0 0 64px;flex-direction:column;font-size:10px;padding:6px 3px;}
+.content{padding:14px;padding-bottom:82px;}
+.topbar{background:#1B2A4A;}
+.topbar-title{color:#fff;}
+.grid-cards{grid-template-columns:1fr;}
+.rule-row{grid-template-columns:1fr;}
+/* phase 3: crm.css turns tables into card lists on phones and hides the first cell (a checkbox or a product
+   picture on the other pages). Here the first cell is the e-mail, i.e. who the row is about — keep it. */
+tbody td:first-child{display:flex!important}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">🔑 Users <span>Team access</span></div>
+  </header>
+  <div class="content" data-admin-only>
+
+<div class="card otp" id="otp-card" style="display:none">
+  <div class="otp-head">
+    <h3>One-time password</h3>
+    <button class="btn btn-secondary" type="button" onclick="closeOtp()">Close</button>
+  </div>
+  <div id="otp-body"></div>
+</div>
+
+<div class="card">
+  <h3>Add user</h3>
+  <form id="add-form">
+    <div class="add-grid">
+      <div class="field">
+        <label for="u-email">E-mail</label>
+        <input type="email" id="u-email" name="email" autocomplete="off" required placeholder="name@example.com">
+      </div>
+      <div class="field">
+        <label for="u-name">Name</label>
+        <input type="text" id="u-name" name="name" autocomplete="off" required maxlength="80" placeholder="Full name">
+      </div>
+      <div class="field">
+        <label for="u-role">Role</label>
+        <select id="u-role" name="role"><option value="staff">Staff</option><option value="admin">Admin</option></select>
+      </div>
+      <div><button class="btn btn-primary" type="submit" id="add-btn">Add user</button></div>
+    </div>
+    <div class="err" id="add-err"></div>
+    <p class="note">The new password is generated by the server and shown once, right here.</p>
+  </form>
+</div>
+
+<div class="card" id="edit-card" style="display:none">
+  <div class="otp-head">
+    <h3 id="edit-title">Edit user</h3>
+    <button class="btn btn-secondary" type="button" onclick="closeEdit()">Close</button>
+  </div>
+  <form id="edit-form">
+    <div class="add-grid">
+      <div class="field">
+        <label for="e-name">Name</label>
+        <input type="text" id="e-name" autocomplete="off" required maxlength="80" placeholder="Full name">
+      </div>
+      <div class="field">
+        <label for="e-role">Role</label>
+        <select id="e-role"><option value="staff">Staff</option><option value="admin">Admin</option></select>
+      </div>
+      <div><button class="btn btn-primary" type="submit" id="edit-btn">Save</button></div>
+      <div><button class="btn btn-secondary" type="button" onclick="closeEdit()">Cancel</button></div>
+    </div>
+    <div class="err" id="edit-err"></div>
+    <p class="note" id="edit-note"></p>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Team</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>E-mail</th><th>Name</th><th>Role</th><th>Last login</th><th>Actions</th></tr></thead>
+      <tbody id="users-body"><tr><td colspan="5"><div class="note">Loading…</div></td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+  </div>
+</div>
+</div>
+<script>
+renderNav('users');
+function tableNote(text){
+  const box=document.getElementById('users-body');
+  const tr=document.createElement('tr'), td=document.createElement('td'), div=document.createElement('div');
+  td.colSpan=5; div.className='note'; div.textContent=text; td.appendChild(div); tr.appendChild(td);
+  box.innerHTML=''; box.appendChild(tr);
+}
+
+let USERS=[];   // last loaded list; row handlers address it by index, so no e-mail ever lands in an inline handler
+let ME='';      // lower-cased e-mail of the signed-in user
+let OTP='';     // the one-time password while its panel is open - never stored anywhere else
+let EDIT=null;  // {email,name,role} snapshot of the row being edited; null when the card is closed.
+                // Keyed by e-mail, not by row index: loadUsers() rebuilds USERS and the indexes shift.
+
+function roleLabel(r){ return r==='admin' ? 'Admin' : (r==='staff' ? 'Staff' : (r || '—')); }
+
+function renderUsers(){
+  const box=document.getElementById('users-body');
+  if(!USERS.length){ tableNote('No users yet.'); return; }
+  box.innerHTML=USERS.map(function(u,i){
+    const me=String(u.email||'').toLowerCase()===ME;
+    return `<tr>
+      <td>${esc(u.email)}${me ? ' <span class="badge badge-green">you</span>' : ''}</td>
+      <td data-label="Name">${esc(u.name)}</td>
+      <td data-label="Role"><span class="badge ${u.role==='admin' ? 'badge-amber' : 'badge-gray'}">${esc(roleLabel(u.role))}</span></td>
+      <td data-label="Last login">${esc(fmtDate(u.lastLogin))}</td>
+      <td><div class="row-actions">
+        <button class="btn btn-secondary" type="button" onclick="editUser(${i})">Edit</button>
+        <button class="btn btn-secondary" type="button" onclick="resetPassword(${i})">Reset password</button>
+        ${me ? '' : `<button class="btn btn-danger" type="button" onclick="deleteUser(${i})">Delete</button>`}
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function editUser(i){
+  const u=USERS[i];
+  if(!u) return;
+  const me=String(u.email||'').toLowerCase()===ME;
+  EDIT={ email:u.email, name:u.name||'', role:u.role==='admin' ? 'admin' : 'staff' };
+  document.getElementById('edit-title').innerHTML='Edit '+esc(u.email);
+  document.getElementById('edit-err').textContent='';
+  document.getElementById('e-name').value=EDIT.name;
+  const roleEl=document.getElementById('e-role');
+  roleEl.value=EDIT.role;
+  roleEl.disabled=me;
+  document.getElementById('edit-note').textContent=me ? 'You cannot change your own role.' : '';
+  document.getElementById('edit-card').style.display='block';
+  document.getElementById('e-name').focus();
+}
+function closeEdit(){
+  EDIT=null;
+  document.getElementById('edit-card').style.display='none';
+}
+
+function showOneTimePassword(email, password){
+  OTP=password;
+  document.getElementById('otp-body').innerHTML=`
+    <div class="otp-title">Password for ${esc(email)}</div>
+    <div class="otp-row">
+      <code id="otp-code">${esc(password)}</code>
+      <button class="btn btn-secondary" type="button" onclick="copyOtp()">Copy</button>
+    </div>
+    <p class="note">This password is shown only once. Send it to the user through a secure channel.</p>`;
+  document.getElementById('otp-card').style.display='block';
+}
+function closeOtp(){
+  OTP='';
+  document.getElementById('otp-body').innerHTML='';
+  document.getElementById('otp-card').style.display='none';
+}
+function selectCopy(){
+  const code=document.getElementById('otp-code');
+  if(!code) return false;
+  try{
+    const range=document.createRange(); range.selectNodeContents(code);
+    const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    const ok=document.execCommand('copy');
+    sel.removeAllRanges();
+    return ok;
+  }catch(e){ return false; }
+}
+function copyOtp(){
+  function fallback(){
+    const ok=selectCopy();
+    showToast(ok ? 'Password copied' : 'Copy failed — select it by hand', ok ? 'success' : 'error');
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(OTP).then(function(){ showToast('Password copied','success'); }, fallback);
+    return;
+  }
+  fallback();
+}
+
+async function loadMe(){
+  try{
+    const d=await api('/api/session',{toast:false});   // a hiccup here must not shout at the user
+    ME=String((d && d.user && d.user.email) || '').toLowerCase();
+    if(ME) return;
+  }catch(e){}
+  ME=String((window.CRM_CURRENT_USER || {}).email || '').toLowerCase();
+}
+
+async function loadUsers(){
+  // {toast:false}: the reason is already written into the table, a toast on top of it would say it twice
+  try{
+    const data=await api('/api/users',{toast:false});
+    // the table endpoint answers {data:[...], version, timestamp, tombstoned}; a bare array is accepted too
+    const list = Array.isArray(data) ? data : (data && Array.isArray(data.data) ? data.data : []);
+    USERS=list.slice().sort(function(a,b){
+      return String(a.email||'').toLowerCase().localeCompare(String(b.email||'').toLowerCase());
+    });
+    renderUsers();
+  }catch(e){
+    if(e.status===403) tableNote('Admin access required.');
+    else if(e.status===0) tableNote('Cannot reach the server.');
+    else tableNote('Could not load users (HTTP '+e.status+').');
+  }
+}
+
+async function resetPassword(i){
+  const u=USERS[i];
+  if(!u) return;
+  if(!(await confirmDialog('Generate a new password for '+u.email+'? Their current sessions will be signed out.',{ok:'Reset'}))) return;
+  try{
+    const d=await api('/api/users/'+encodeURIComponent(u.email)+'/reset-password',{ method:'POST' });
+    showOneTimePassword((d && d.email) || u.email, (d && d.password) || '');
+    toast('Password reset','success');
+  }catch(e){ /* api() already showed the error toast */ }
+}
+
+async function deleteUser(i){
+  const u=USERS[i];
+  if(!u) return;
+  if(!(await confirmDialog('Delete '+u.email+'? This cannot be undone.',{ok:'Delete'}))) return;
+  try{
+    await api('/api/users/'+encodeURIComponent(u.email),{ method:'DELETE' });
+    if(EDIT && EDIT.email===u.email) closeEdit();
+    toast('User deleted','success');
+    await loadUsers();
+  }catch(e){ /* api() already showed the error toast */ }
+}
+
+document.getElementById('add-form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const errEl=document.getElementById('add-err');
+  const btn=document.getElementById('add-btn');
+  errEl.textContent='';
+  const email=document.getElementById('u-email').value.trim().toLowerCase();
+  const name=document.getElementById('u-name').value.trim();
+  const role=document.getElementById('u-role').value;
+  if(!email || !name){ errEl.textContent='E-mail and name are required'; return; }
+  btn.disabled=true;
+  try{
+    // {toast:false}: the message belongs next to the form, not in the corner of the screen
+    const d=await api('/api/users',{ method:'POST', body:{ email:email, name:name, role:role }, toast:false });
+    this.reset();
+    showOneTimePassword((d && d.user && d.user.email) || email, (d && d.password) || '');
+    toast('User created','success');
+    await loadUsers();
+  }catch(err){ errEl.textContent=err.message; }
+  btn.disabled=false;
+});
+
+document.getElementById('edit-form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  if(!EDIT) return;
+  const errEl=document.getElementById('edit-err');
+  const btn=document.getElementById('edit-btn');
+  errEl.textContent='';
+  const name=document.getElementById('e-name').value.trim();
+  const roleEl=document.getElementById('e-role');
+  if(!name){ errEl.textContent='Name is required'; return; }
+  const patch={};
+  if(name!==EDIT.name) patch.name=name;
+  if(!roleEl.disabled && roleEl.value!==EDIT.role) patch.role=roleEl.value;
+  if(!Object.keys(patch).length){ toast('Nothing to change','error'); return; }
+  if(patch.role && !(await confirmDialog('Change role of '+EDIT.email+' to '+roleLabel(patch.role)+'?',{ok:'Change role'}))) return;
+  btn.disabled=true;
+  try{
+    await api('/api/users/'+encodeURIComponent(EDIT.email),{ method:'PATCH', body:patch });
+    toast('User updated','success');
+    closeEdit();
+    await loadUsers();
+  }catch(err){ /* api() already showed the error toast */ }
+  btn.disabled=false;
+});
+
+(async function(){ await loadMe(); await loadUsers(); })();
+</script>
+</body>
+</html>

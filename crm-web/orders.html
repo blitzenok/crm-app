@@ -1,0 +1,1942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=15a8f6da73">
+<style>
+/* orders-only styling; everything shared lives in crm.css */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;display:flex;height:100vh;overflow:hidden;}
+.logo-box{display:flex;flex-direction:column;align-items:flex-start;gap:0;width:100%;}
+.logo-emblem-wrap{width:100%;display:flex;justify-content:center;margin-bottom:14px;}
+.logo-emblem{width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#1F7A3D 0%,#1B2A4A 100%);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 6px 20px rgba(31,122,61,0.45);}
+.logo-emblem svg{width:34px;height:34px;}
+.logo-wordmark{font-size:30px;font-weight:900;color:#fff;letter-spacing:1px;text-transform:uppercase;line-height:1;width:100%;text-align:center;}
+.logo-wordmark .sol{color:#1B2A4A;}
+.logo-tagline-row{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:5px;width:100%;}
+.logo-dot{width:4px;height:4px;border-radius:50%;background:#1B2A4A;flex-shrink:0;}
+.nav-section-label{font-size:10px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.6px;padding:14px 14px 6px;margin-top:2px;}
+.avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#10B981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:12px;flex-shrink:0;}
+.topbar-titles{flex:1;}
+.topbar-right{display:flex;align-items:center;gap:10px;}
+.topbar-icon-btn{width:34px;height:34px;border-radius:8px;border:1px solid #EAECF4;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:#5A6685;}
+.topbar-sub{color:#5A6685;font-size:12px;font-weight:400;margin-top:2px;}
+.new-order-btn{display:flex;align-items:center;gap:6px;padding:8px 18px;background:linear-gradient(135deg,#10B981,#059669);border:none;border-radius:9px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 3px 12px rgba(16,185,129,0.4);}
+.new-order-btn:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(16,185,129,0.5);}
+.content{flex:1;overflow-y:auto;padding:24px 28px;display:flex;flex-direction:column;gap:16px;}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.stat-card{background:#fff;border-radius:14px;padding:20px 22px;border:1px solid #E2F5EC;border-left:4px solid #ccc;box-shadow:0 2px 8px rgba(0,0,0,0.04);}
+.stat-card.green{border-left-color:#10B981;}
+.stat-card.amber{border-left-color:#F59E0B;}
+.stat-card.blue{border-left-color:#3B82F6;}
+.stat-card.purple{border-left-color:#8B5CF6;}
+.stat-label{font-size:10px;font-weight:700;color:#6B7280;letter-spacing:0.8px;text-transform:uppercase;margin-bottom:10px;}
+.stat-value{font-size:30px;font-weight:800;color:#1a1a2e;line-height:1;letter-spacing:-1.5px;margin-bottom:8px;}
+.stat-trend{font-size:12px;font-weight:600;}
+.stat-trend.up{color:#10B981;}
+.stat-trend.neutral{color:#6B7280;}
+.table-card{background:#fff;border-radius:14px;border:1px solid #D1FAE5;box-shadow:0 2px 12px rgba(16,185,129,0.08);flex:1;display:flex;flex-direction:column;min-height:0;}
+.table-head{padding:16px 22px;border-bottom:1px solid #EAECF4;background:#fff;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.table-title{font-size:14px;font-weight:700;color:#1B2A4A;flex:1;}
+.filter-sel{border:1px solid #EAECF4;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a2e;outline:none;background:#fff;cursor:pointer;}
+.filter-sel option{color:#1a1a2e;background:#fff;}
+.export-btn{display:flex;align-items:center;gap:5px;padding:7px 14px;background:#E6F4EA;border:1px solid #C8E6C9;border-radius:8px;font-size:12px;font-weight:600;color:#1F7A3D;cursor:pointer;}
+.table-wrap{overflow:auto;flex:1;}
+thead th{font-size:10px;font-weight:700;color:#6B7280;letter-spacing:0.6px;text-transform:uppercase;padding:10px 14px;text-align:left;border-bottom:1px solid #E5F7EF;background:#E8ECF4;position:sticky;top:0;z-index:2;}
+tbody tr{transition:background 0.1s;}
+tbody tr:hover{background:#E8ECF4;}
+tbody tr:nth-child(even){background:#FAFFFE;}
+tbody td{padding:11px 14px;font-size:12px;color:#374151;border-bottom:1px solid #E5F7EF;vertical-align:middle;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.b-pending{background:#FFF8E7;color:#D97706;border:1px solid #FDE68A;}
+.b-confirmed{background:#EFF6FF;color:#3B82F6;border:1px solid #BFDBFE;}
+.b-shipped{background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;}
+.b-delivered{background:#E6F4EA;color:#1F7A3D;border:1px solid #C8E6C9;}
+.b-cancelled{background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;}
+.b-awaiting{background:#FFF4E6;color:#EA580C;border:1px solid #FED7AA;}
+.action-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;white-space:nowrap;margin-right:4px;}
+.btn-ship{background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;}
+.btn-ship:hover{background:#D1FAE5;}
+/* 2026-09-17: .btn-view removed together with the View button */
+.btn-del{background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;}
+.btn-del:hover{background:#FEE2E2;}
+.pagination{padding:14px 22px;border-top:1px solid #D1FAE5;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.pag-info{font-size:12px;color:#6B7280;}
+.pag-btns{display:flex;gap:4px;}
+.pag-btn{min-width:30px;height:30px;border-radius:6px;border:1px solid #D1FAE5;background:#fff;font-size:12px;color:#6B7280;cursor:pointer;padding:0 8px;}
+.pag-btn:hover{border-color:#10B981;color:#10B981;}
+.pag-btn.active{background:#10B981;border-color:#10B981;color:#fff;font-weight:700;}
+.pag-btn:disabled{opacity:0.4;cursor:default;}
+.modal{background:#fff;border-radius:18px;width:560px;max-width:95vw;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,0.18);}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid #EAECF4;display:flex;align-items:center;justify-content:space-between;}
+.modal-icon{width:40px;height:40px;border-radius:10px;background:rgba(16,185,129,0.2);display:flex;align-items:center;justify-content:center;font-size:18px;}
+.modal-title{font-size:15px;font-weight:700;flex:1;} /* phase 4: color:#fff dropped — white on the white .modal made every modal title invisible; crm.css sets #1a1a2e */
+.modal-close{width:30px;height:30px;border-radius:8px;border:1px solid #EAECF4;background:#fff;cursor:pointer;font-size:16px;color:#5A6685;display:flex;align-items:center;justify-content:center;}
+.modal-body{padding:20px 24px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.field-group{display:flex;flex-direction:column;gap:5px;}
+.field-group.full{grid-column:1/-1;}
+.field-label{font-size:11px;font-weight:700;color:#6B7280;letter-spacing:0.5px;text-transform:uppercase;}
+.field-input,.field-sel{border:1px solid #D1FAE5;border-radius:8px;padding:9px 12px;font-size:13px;color:#1a1a2e;width:100%;outline:none;font-family:inherit;background:#FAFFFE;}
+.field-input:focus,.field-sel:focus{border-color:#10B981;box-shadow:0 0 0 2px rgba(16,185,129,0.15);}
+.field-textarea{border:1px solid #D1FAE5;border-radius:8px;padding:9px 12px;font-size:13px;color:#1a1a2e;width:100%;outline:none;font-family:inherit;resize:none;height:70px;background:#FAFFFE;}
+.field-textarea:focus{border-color:#10B981;}
+.modal-footer{padding:16px 24px;border-top:1px solid #E5F7EF;display:flex;justify-content:flex-end;gap:10px;}
+.btn-cancel{padding:8px 18px;border-radius:8px;border:1px solid #D1FAE5;background:#fff;font-size:13px;font-weight:600;color:#6B7280;cursor:pointer;}
+.btn-save{padding:8px 22px;border-radius:8px;background:linear-gradient(135deg,#10B981,#059669);border:none;font-size:13px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 3px 10px rgba(16,185,129,0.3);}
+.toast{position:fixed;bottom:28px;right:28px;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all 0.3s;pointer-events:none;}
+.toast.success{background:#059669;color:#fff;}
+.toast.error{background:#DC2626;color:#fff;}
+.nav-section-label{font-size:10px;font-weight:700;color:#5A6685;text-transform:uppercase;letter-spacing:0.6px;padding:14px 14px 6px;margin-top:2px;}
+*{box-sizing:border-box!important}
+body{font-size:15px!important;background:var(--bg)!important;color:var(--text)!important;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif!important;-webkit-font-smoothing:antialiased!important}
+@media(max-width:768px){
+.sidebar{display:none;
+
+thead{display:none!important
+
+.topbar{position:sticky!important;top:0!important;z-index:999!important;background:#1B2A4A!important;border-bottom:2px solid #131F38!important;height:54px!important;padding:0 12px!important;display:flex!important;align-items:center!important;gap:8px!important
+
+.content{padding:14px!important;padding-bottom:82px!important
+
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+
+
+
+.topbar .logo-img,.topbar-logo{display:flex!important;align-items:center;gap:0;margin-right:4px;}
+.topbar .logo-img img,.topbar-logo img{width:30px!important;height:30px!important;border-radius:8px!important;object-fit:cover!important;display:block!important;}
+
+
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+
+
+.table-responsive,.table-wrap,.table-container{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;width:100%!important;}
+table{min-width:600px!important;}
+
+
+.side-panel,.drawer,.modal-drawer{width:100vw!important;max-width:100%!important;right:0!important;left:0!important;}
+
+
+.sidebar{flex-wrap:nowrap!important;}
+
+
+.btn,.action-btn,.chip,button{min-height:36px!important;}
+
+
+.products-grid,.cards-grid,.items-grid{grid-template-columns:1fr 1fr!important;}
+
+
+.mobile-fab{display:flex!important;position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#10B981,#059669);color:#fff;font-size:26px;font-weight:300;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(16,185,129,0.4);z-index:1001;cursor:pointer;border:none;transition:transform 0.15s;-webkit-transform:translateZ(0);transform:translateZ(0);}
+.mobile-fab:active{transform:scale(0.92);}
+
+.mobile-signout-btn{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,0.1);border:2px solid rgba(255,255,255,0.2);color:#fff;font-size:16px;cursor:pointer;padding:0;flex-shrink:0;}
+.modal-overlay,.overlay{padding:10px!important}
+}
+.main-content,.main{padding-bottom:82px!important;margin:0!important;max-width:100%!important}
+}
+.topbar-sub{color:rgba(255,255,255,0.65)!important;font-size:12px!important;font-weight:400!important}
+.topbar-title{color:#fff!important;font-size:17px!important;font-weight:800!important;flex:1!important}
+.topbar-title span{display:none!important}
+.topbar-btn{background:rgba(255,255,255,0.1)!important;border:2px solid rgba(255,255,255,0.2)!important;color:#fff!important;width:38px!important;height:38px!important;border-radius:10px!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important;font-size:16px!important}
+.search-box{flex:1!important;max-width:180px!important;background:rgba(255,255,255,0.12)!important;border:2px solid rgba(255,255,255,0.2)!important;border-radius:10px!important;height:38px!important}
+.search-box input{font-size:13px!important;color:#fff!important}
+.search-box input::placeholder{color:rgba(255,255,255,0.6)!important}
+.search-icon{color:rgba(255,255,255,0.8)!important}
+}
+tbody tr{display:block!important;padding:10px 12px!important;border-bottom:1.5px solid #E2E8F0!important}
+tbody tr:last-child{border-bottom:none!important}
+tbody td{display:flex!important;justify-content:space-between!important;align-items:center!important;padding:3px 0!important;border:none!important;font-size:13px!important;text-align:right!important}
+tbody td:first-child{display:none!important}
+}
+.stats-row{grid-template-columns:repeat(2,1fr);}
+.sidebar{position:fixed!important;bottom:0!important;left:0!important;right:0!important;top:auto!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding-bottom:env(safe-area-inset-bottom)!important;display:flex!important;flex-direction:row!important;justify-content:space-around!important;align-items:center!important;background:#fff!important;border-top:2px solid var(--border)!important;border-right:none!important;box-shadow:0 -2px 12px rgba(0,0,0,0.06)!important;z-index:1000!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:none;}
+.nav-signout{color:#E53935!important;}
+.topbar-sub{color:rgba(255,255,255,0.65)!important;font-size:12px!important;font-weight:400!important}
+.topbar-btn{background:transparent!important;border:none!important;color:var(--text)!important;width:38px!important;height:38px!important;border-radius:10px!important;display:flex!important;align-items:center!important;justify-content:center!important;padding:0!important;font-size:16px!important}
+.search-box{flex:1!important;max-width:180px!important;background:var(--bg)!important;border:2px solid var(--border)!important;border-radius:10px!important;height:38px!important}
+.search-box input::placeholder{color:var(--muted)!important}
+.search-icon{color:var(--muted)!important}
+.widgets-row,.quick-tabs,.secondary-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important}
+.top-widget,.funnel-card{background:var(--card)!important;border:2px solid var(--border)!important;border-radius:var(--radius)!important;padding:14px!important;box-shadow:0 1px 3px rgba(0,0,0,0.04)!important}
+.top-widget-title{color:var(--navy)!important;font-size:12px!important;font-weight:800!important;text-transform:uppercase!important;letter-spacing:.4px!important}
+.funnel-card{margin-top:14px!important}
+}
+
+.od-card-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 10px}
+.od-card-bar .od-btn,.od-card-bar .btn-save,.od-card-bar .btn-cancel{height:2.4em;padding:0 1em;font-size:11px}
+.od-noedit{background:#FFF7ED;border:1px solid #FED7AA;color:#9A3412;border-radius:10px;padding:8px 10px;font-size:12px;margin:0 0 10px}
+.od-noedit [data-dedupe]{margin-left:8px}
+.od-edit-items{width:100%;min-width:0!important;border-collapse:collapse;table-layout:auto}
+.od-edit-items th,.od-edit-items td{overflow:visible!important;min-width:0;padding:6px 4px;font-size:12px;vertical-align:middle;word-break:break-word;white-space:normal}
+.od-qty{display:inline-flex;align-items:center;gap:4px;flex-wrap:nowrap}
+.od-qty input{width:3.2em;min-width:0;text-align:center}
+.od-edit-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 10px;margin-top:6px}
+.od-edit-fields .full{grid-column:1/-1;min-width:0}
+.od-edit-fields .field-label{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6B7280;margin:0 0 4px}
+.od-edit-fields input,.od-edit-fields select,.od-edit-fields textarea,.od-card [data-field],.od-card [data-item-qty],.od-card [data-item-price]{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.od-edit-error{color:#B91C1C;font-size:12px;min-height:1.2em;margin:8px 0 0}
+.od-edit-pending{color:#B45309;font-size:12px;font-weight:700;margin:8px 0 0}
+.od-payments{margin-top:14px;border-top:1px solid #EEF2F7;padding-top:10px;min-width:0}
+.od-pay-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;align-items:center;font-size:12px;padding:6px 0;border-bottom:1px solid #F1F5F9;min-width:0}
+.od-received,.od-outstanding{font-size:12px;margin-top:6px}
+.od-received{font-weight:700}
+.od-manual-note{font-size:11px;color:#6B7280;margin-top:8px}
+.od-edits{margin-top:10px;font-size:11px;color:#6B7280}
+.od-edits summary{cursor:pointer;font-weight:700}
+.od-icatalog{display:block;font-size:10px;color:#6B7280}
+.od-card table{min-width:0!important;width:100%}
+#od-picker{display:none;position:fixed;left:12px;right:12px;bottom:12px;max-width:520px;margin:0 auto;background:#fff;border:1px solid #E2E8F0;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.18);z-index:1100;padding:14px;max-height:min(70vh,520px);overflow:auto;box-sizing:border-box}
+#od-picker.open{display:block}
+#od-picker-search{width:100%;box-sizing:border-box;min-width:0;margin:8px 0}
+[data-picker-item]{display:block;width:100%;text-align:left;padding:8px;border:none;background:#fff;border-bottom:1px solid #F1F5F9;cursor:pointer;border-radius:8px}
+[data-picker-item][data-inactive="1"]{opacity:.55}
+.od-picker-chosen{background:#F0FDF4}
+.od-pay-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+@media (max-width:768px){
+  .od-edit-fields,.od-pay-form{grid-template-columns:1fr}
+  .od-edit-items thead{display:none}
+  .od-edit-items,.od-edit-items tbody,.od-edit-items tr,.od-edit-items th,.od-edit-items td{display:block;width:100%;min-width:0!important}
+  #od-picker{left:8px;right:8px;max-width:none}
+  .od-card input,.od-card select,.od-card textarea{max-width:100%;min-width:0;box-sizing:border-box}
+}
+
+</style>
+<style id="orders-view-css">
+/* 2026-09-17: orders open under their row (docs/superpowers/specs/2026-09-17-crm-orders-page-design.md). A separate
+   element on purpose: the mobile block of the style element above has its braces out of order, and rules appended
+   there could be swallowed by the broken nesting. Phone overrides carry !important because crm.css's phone rules do. */
+.od-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.search-wrap input{border:1px solid #EAECF4;border-radius:8px;padding:7px 10px;font-size:12px;color:#1a1a2e;min-width:220px;outline:none;background:#fff;font-family:inherit}
+.search-wrap input:focus{border-color:#10B981;box-shadow:0 0 0 2px rgba(16,185,129,.15)}
+.filter-sel{max-width:220px}
+/* with both selects capped the head fits on one line, and the flexible title would otherwise break "Order List" in two */
+.table-head .table-title{white-space:nowrap}
+.od-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569;white-space:nowrap;cursor:pointer}
+.od-check b{background:#E2E8F0;color:#475569;border-radius:10px;padding:0 6px;font-size:10px}
+.table-head .filter-sel:focus-visible,.table-head .od-check input:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+.od-filter-note{display:flex;align-items:center;gap:10px;padding:7px 22px;background:#FFFBEB;border-bottom:1px solid #FDE68A;font-size:12px;color:#92400E}
+.od-filter-note[hidden]{display:none}
+.od-fn-clear{margin-left:auto;border:none;background:none;color:#B45309;font-weight:700;cursor:pointer;font-size:12px;padding:0}
+.stat-card[data-card]{cursor:pointer}
+.stat-card[data-card]:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+.stat-card.is-active{background:#FFFBEB;box-shadow:0 0 0 2px #F59E0B inset}
+.stat-trend b{color:#B45309}
+#orders-table{width:100%;border-collapse:collapse;table-layout:fixed}
+/* 2026-09-17 (restyle): the three columns that hold controls are sized in em, so they grow with the text — a
+   larger system font or Safari's minimum font size used to leave them behind and overflow:hidden cut the control.
+   The em here is the header cell's own font (10 px by default), which is clamped by the same font settings. */
+#orders-table .od-h-arrow{width:5.4em}
+#orders-table .od-h-order{width:20%}
+#orders-table .od-h-customer{width:17%}
+#orders-table .od-h-pay{width:12.5%}
+#orders-table .od-h-payment{width:8.8em}
+#orders-table .od-h-status{width:13.4em}
+#orders-table .od-h-act{width:9.8em}
+/* the narrow columns keep their content, not their padding (in em as well) */
+#orders-table td.od-c-arrow{padding-left:.6em;padding-right:.6em}
+#orders-table td.od-c-status,#orders-table td.od-c-payment,#orders-table td.od-c-act{padding-left:.65em;padding-right:.65em}
+#orders-table .od-r,#orders-table td.od-c-pay{text-align:right}
+#orders-table tbody tr:nth-child(even){background:transparent}
+#orders-table tbody tr.od-row > td{overflow:hidden}
+#orders-table tbody tr.od-row.is-open > td{background:#F0FDF4;border-bottom-color:transparent}
+#orders-table tbody tr.od-row.is-open > td:first-child{box-shadow:inset 3px 0 0 #10B981}
+#orders-table tbody tr.od-row.is-faded > td{opacity:.75}
+#orders-table tbody tr.od-detail > td,#orders-table tbody tr.od-detail:hover > td{background:#F0FDF4;padding:0 12px 14px;border-bottom:1px solid #D1FAE5;box-shadow:inset 3px 0 0 #10B981}
+#orders-table td.od-empty{text-align:center;padding:40px;color:#6B7280}
+#orders-table tr.od-error td{text-align:center;padding:40px;color:#B91C1C}
+.od-retry{margin-left:10px;padding:5px 12px;border-radius:7px;border:1px solid #FECACA;background:#fff;color:#B91C1C;font-weight:700;cursor:pointer}
+.od-toggle{display:inline-flex;align-items:center;justify-content:center;width:2.4em;height:2.4em;border-radius:9px;border:1px solid #E2E8F0;background:#fff;color:#5A6685;cursor:pointer;padding:0}
+.od-toggle svg{width:1.15em;height:1.15em;transition:transform .15s}
+.od-toggle:hover{border-color:#10B981;color:#059669}
+.od-toggle:focus-visible,.od-copy:focus-visible,.od-btn:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+.od-row.is-open .od-toggle{background:#10B981;border-color:#10B981;color:#fff}
+.od-row.is-open .od-toggle svg{transform:rotate(90deg)}
+/* The chips sit next to the order number; the number alone gets the ellipsis, or the chip would be the part cut off
+   (visual QA 2026-09-17: at 1280 the Duplicate chip was invisible on every long ref). */
+.od-ref{display:flex;align-items:center;font-weight:700;color:#059669;font-size:12px}
+.od-reftext{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.od-sub{font-size:11px;color:#6B7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.od-name{font-weight:600;color:#1a1a2e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.od-items,.od-items-inline{display:flex;align-items:center;min-width:0;color:#374151;font-size:12px}
+.od-items-inline{display:none;margin-top:2px}
+.od-itext{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.od-more{flex:none;display:inline-block;margin-left:4px;padding:0 6px;border-radius:10px;background:#E8ECF4;color:#5A6685;font-size:10px;font-weight:700}
+.od-amt{font-weight:800;color:#1F7A3D;font-size:13px;white-space:nowrap}
+.od-warn{color:#B45309;font-weight:600}
+.od-chip{flex:none;display:inline-block;margin-left:6px;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.od-chip-test,.od-chip-dup{background:#E2E8F0;color:#475569}
+.od-chip-signup{background:#F3F0FF;color:#7C3AED}
+.od-status{appearance:none;-webkit-appearance:none;max-width:100%;height:2.55em;border:1px solid #E2E8F0;border-radius:9px;padding:0 1.9em 0 .7em;font-size:11px;font-weight:700;line-height:1;cursor:pointer;background-color:#fff;color:#1a1a2e;font-family:inherit;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%235A6685' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .55em center;background-size:.75em auto}
+.od-status:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+.od-status option{color:#1a1a2e;background:#fff;font-weight:400}
+.od-g-unpaid{background:#FFF8E7;color:#B45309;border-color:#FDE68A}
+.od-g-toship{background:#EFF6FF;color:#2563EB;border-color:#BFDBFE}
+.od-g-shipped{background:#ECFDF5;color:#059669;border-color:#A7F3D0}
+.od-g-delivered{background:#E6F4EA;color:#1F7A3D;border-color:#C8E6C9}
+.od-g-cancelled{background:#FEF2F2;color:#DC2626;border-color:#FECACA}
+.od-g-other,.od-none{background:#F8FAFC;color:#64748B}
+.od-none{border:1px dashed #94A3B8}
+/* "No status" on a row that has no select (an order without a ref, a stored copy): the same grey dashed look as
+   the select above, instead of the amber badge the shared badge() gives everything it does not know. The border
+   carries !important because crm.css draws every .badge with a transparent border on phones. */
+.od-badge-none{background:#F8FAFC;color:#64748B;border:1px dashed #94A3B8!important}
+.od-paybadge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.od-paybadge[data-code="paid"]{background:#ECFDF5;color:#059669;border-color:#A7F3D0}
+.od-paybadge[data-code="partial"]{background:#FFFBEB;color:#B45309;border-color:#FDE68A}
+.od-paybadge[data-code="unpaid"]{background:#F8FAFC;color:#64748B;border-color:#E2E8F0}
+.od-paybadge[data-code="refunded"]{background:#EFF6FF;color:#1E3A8A;border-color:#BFDBFE}
+.od-paybadge[data-code="none"]{background:#F8FAFC;color:#64748B;border:1px dashed #94A3B8}
+.od-paybadge-sub{display:block;margin-top:2px;font-size:10px;font-weight:600;color:#6B7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.od-payments h5{display:flex;align-items:center;gap:8px}
+.od-payments h5 .od-paybadge{text-transform:none;letter-spacing:0}
+.od-card{background:#fff;border:1px solid #D1FAE5;border-radius:12px;padding:14px 16px;box-shadow:0 1px 4px rgba(16,185,129,.08);text-align:left;overflow-wrap:anywhere;cursor:default}
+.od-hint{border:1px solid;border-radius:10px;padding:8px 12px;font-size:12px;line-height:1.45;margin-bottom:8px}
+.od-hint-warn{background:#FFFBEB;border-color:#FDE68A;color:#78350F}
+.od-hint-info{background:#EFF6FF;border-color:#BFDBFE;color:#1E3A8A}
+.od-hint-muted{background:#F8FAFC;border-color:#E2E8F0;color:#334155}
+.od-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:4px}
+.od-block + .od-block{border-left:1px solid #EEF2F7;padding-left:20px}
+.od-block h5,.od-products h5,.od-payments h5{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#6B7280;margin:0 0 8px}
+.od-kv{display:grid;grid-template-columns:74px minmax(0,1fr);gap:5px 10px;font-size:12px;align-items:baseline}
+.od-k{color:#6B7280}
+.od-v{color:#1a1a2e;min-width:0}
+/* "· updated Sep 14, 2026 · 11:00" moves to the next line as a whole instead of breaking inside the date */
+.od-kv .od-muted{white-space:nowrap}
+.od-copy{display:inline-flex;align-items:center;justify-content:center;width:2.2em;height:2.2em;border-radius:8px;border:1px solid #E2E8F0;background:#fff;color:#64748B;margin-left:6px;vertical-align:-6px;cursor:pointer;padding:0}
+.od-copy svg{width:1.05em;height:1.05em}
+.od-copy:hover{border-color:#10B981;color:#059669;background:#F0FDF4}
+.od-btns{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.od-btn{display:inline-flex;align-items:center;gap:.45em;height:2.4em;padding:0 1em;border-radius:999px;border:1px solid #BFDBFE;background:#EFF6FF;color:#2563EB;font-size:11px;font-weight:700;text-decoration:none;white-space:nowrap}
+.od-btn svg{width:1.15em;height:1.15em;flex:none}
+.od-btn:hover{background:#DBEAFE;border-color:#93C5FD}
+.od-note{margin-top:10px;background:#F8FAFC;border-left:3px solid #CBD5E1;border-radius:4px;padding:6px 10px;font-size:12px;color:#334155;white-space:pre-wrap}
+.od-note b{display:block;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:#6B7280;margin-bottom:2px}
+.od-steps{display:inline-flex;align-items:center;vertical-align:middle;margin-right:8px}
+.od-steps i{display:block;width:9px;height:9px;border-radius:50%;background:#CBD5E1}
+.od-steps s{display:block;width:14px;height:2px;background:#CBD5E1}
+.od-steps .on{background:#10B981}
+.od-muted{color:#6B7280}
+.od-cancelled{color:#DC2626;font-weight:700}
+.od-products{margin-top:14px;border-top:1px solid #EEF2F7;padding-top:10px}
+.od-ihead,.od-irow{display:grid;grid-template-columns:minmax(0,1fr) 110px 50px 90px 96px;gap:8px;padding:6px 2px;font-size:12px;align-items:center}
+.od-ihead{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#6B7280;border-bottom:1px solid #E2E8F0}
+.od-irow{border-bottom:1px solid #F1F5F9}
+.od-iname{font-weight:600;color:#1a1a2e}
+.od-iqty,.od-iprice,.od-isum,.od-ihead span:nth-child(n+3){text-align:right}
+.od-dose{display:inline-block;padding:1px 8px;border-radius:10px;background:#EEF2FF;color:#4338CA;font-weight:700;font-size:11px}
+.od-totals{margin-left:auto;width:320px;max-width:100%;margin-top:10px;font-size:12px}
+.od-tline{display:flex;justify-content:space-between;gap:12px;padding:3px 0;color:#374151}
+.od-tline.od-due{border-top:1px solid #D1FAE5;margin-top:6px;padding-top:8px;font-weight:800;font-size:15px;color:#1F7A3D}
+.od-tline.od-checkout{color:#6B7280}
+.od-noitems{margin-top:10px;color:#6B7280}
+/* ── 2026-09-17 restyle: one control system for this page only ──────────────────────────────────────────────
+   Everything that carries text is sized in em (height, padding, icons), so a control and the column around it grow
+   together with the font. crm.css and the other CRM pages are untouched: the confirm dialog and the toast come from
+   crm.js and are restyled here by their own classes. */
+.new-order-btn,.export-btn,#modal-overlay .btn-save,#modal-overlay .btn-cancel,.modal-overlay [data-crm-confirm],
+.od-retry,.od-fn-clear,.btn-ship,.od-copy,.od-toggle,.od-btn,.pag-btn,.filter-sel,.search-wrap input,
+.field-input,.field-sel,.field-textarea,.od-status{transition:background-color .12s ease,border-color .12s ease,box-shadow .12s ease,transform .12s ease}
+.new-order-btn:focus-visible,.export-btn:focus-visible,#modal-overlay .btn-save:focus-visible,#modal-overlay .btn-cancel:focus-visible,
+.modal-overlay [data-crm-confirm]:focus-visible,.od-retry:focus-visible,.od-fn-clear:focus-visible,.btn-ship:focus-visible,
+.pag-btn:focus-visible,.filter-sel:focus-visible,.field-input:focus-visible,.field-sel:focus-visible,
+.field-textarea:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+/* primary: New Order, Create Order, the confirm dialog's OK, Retry */
+.new-order-btn,#modal-overlay .btn-save,.modal-overlay [data-crm-confirm="1"],.od-retry{display:inline-flex;align-items:center;justify-content:center;gap:.45em;height:2.77em;padding:0 1.35em;border:none;border-radius:10px;background:linear-gradient(135deg,#10B981,#059669);color:#fff;font-size:13px;font-weight:700;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(16,185,129,.28);font-family:inherit}
+.new-order-btn:hover,#modal-overlay .btn-save:hover,.modal-overlay [data-crm-confirm="1"]:hover,.od-retry:hover{background:linear-gradient(135deg,#0EA472,#047857);box-shadow:0 5px 14px rgba(16,185,129,.34);transform:translateY(-1px)}
+.new-order-btn:active,#modal-overlay .btn-save:active,.modal-overlay [data-crm-confirm="1"]:active,.od-retry:active{transform:translateY(0);box-shadow:0 1px 3px rgba(16,185,129,.3)}
+#modal-overlay .btn-save svg{width:1.15em;height:1.15em;flex:none}
+/* secondary: Export, Cancel, Clear filter */
+.export-btn,#modal-overlay .btn-cancel,.modal-overlay [data-crm-confirm="0"],.od-fn-clear{display:inline-flex;align-items:center;justify-content:center;gap:.45em;height:2.77em;padding:0 1.15em;border:1px solid #E2E8F0;border-radius:10px;background:#fff;color:#1B2A4A;font-size:13px;font-weight:600;line-height:1;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(15,23,42,.05)}
+.export-btn:hover,#modal-overlay .btn-cancel:hover,.modal-overlay [data-crm-confirm="0"]:hover,.od-fn-clear:hover{border-color:#10B981;color:#059669;background:#F6FFFB}
+.od-fn-clear{margin-left:auto;height:2.4em;padding:0 .9em;font-size:12px;color:#B45309;border-color:#FDE68A;background:#fff;white-space:nowrap}
+/* row action: the truck is an inline SVG — an emoji is a different width on every platform, which is what cut it off */
+.btn-ship{display:inline-flex;align-items:center;justify-content:center;gap:.4em;height:2.55em;padding:0 .75em;border-radius:9px;border:1px solid #A7F3D0;background:#ECFDF5;color:#059669;font-size:11px;font-weight:700;line-height:1;cursor:pointer;white-space:nowrap;font-family:inherit;margin:0}
+.btn-ship svg{width:1.15em;height:1.15em;flex:none}
+.btn-ship:hover{background:#D1FAE5;border-color:#6EE7B7}
+.btn-ship:active{transform:translateY(1px)}
+/* pagination */
+.pag-btn{display:inline-flex;align-items:center;justify-content:center;min-width:2.45em;height:2.45em;padding:0 .6em;border-radius:8px;border:1px solid #E2E8F0;background:#fff;color:#5A6685;font-size:13px;font-weight:600;line-height:1;cursor:pointer;font-family:inherit}
+.pag-btn:hover:not(:disabled){border-color:#10B981;color:#059669;background:#F6FFFB}
+.pag-btn.active{background:linear-gradient(135deg,#10B981,#059669);border-color:#059669;color:#fff;font-weight:700}
+.pag-btn:disabled{opacity:.45;cursor:default}
+/* selects and inputs: our own caret, so their width is ours and not the platform's */
+.filter-sel,.field-sel{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%235A6685' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .7em center;background-size:.75em auto;padding-right:2.2em}
+.filter-sel,.search-wrap input,.field-input,.field-sel{height:2.6em;border:1px solid #E2E8F0;border-radius:10px;background-color:#fff;color:#1a1a2e;font-family:inherit;font-size:13px;line-height:1;padding-left:.85em;padding-right:.85em}
+.filter-sel{max-width:220px;font-weight:600;color:#1B2A4A;cursor:pointer}
+.search-wrap input{min-width:220px;padding-top:0;padding-bottom:0}
+.filter-sel:focus,.search-wrap input:focus,.field-input:focus,.field-sel:focus,.field-textarea:focus{border-color:#10B981;box-shadow:0 0 0 3px rgba(16,185,129,.15);outline:none}
+.field-input,.field-sel{background-color:#fff}
+/* crm.css gives every .field-textarea min-height:200px, which makes this small modal all notes box */
+.field-textarea{border:1px solid #E2E8F0;border-radius:10px;background:#fff;font-family:inherit;font-size:13px;padding:.7em .85em;min-height:6.2em;height:6.2em;resize:vertical}
+.od-check input{width:1.15em;height:1.15em;accent-color:#10B981;cursor:pointer}
+.od-check input:focus-visible{outline:2px solid #10B981;outline-offset:2px}
+/* modals: the page's New Order dialog and crm.js's confirm, on this page only */
+#modal-overlay,.modal-overlay{background:rgba(15,23,42,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+#modal-overlay .modal,.modal-overlay .modal{width:min(560px,calc(100vw - 32px));max-width:none;border:none;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.18);overflow:hidden}
+#modal-overlay.open .modal,.modal-overlay.open .modal{animation:od-modal-in .16s ease-out}
+@keyframes od-modal-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+#modal-overlay .modal-header,.modal-overlay .modal-header{align-items:center;gap:12px;padding:20px 24px 14px;border-bottom:1px solid #EEF2F7}
+#modal-overlay .modal-icon,.modal-overlay .modal-icon{width:40px;height:40px;border-radius:12px;background:#ECFDF5;color:#059669;font-size:18px;flex:none}
+#modal-overlay .modal-title,.modal-overlay .modal-title{font-size:16px;font-weight:800;color:#1B2A4A;letter-spacing:-.2px}
+#modal-overlay .modal-close{width:32px;height:32px;border-radius:9px;border:1px solid #E2E8F0;background:#fff;color:#5A6685;cursor:pointer;font-size:15px}
+#modal-overlay .modal-close:hover{border-color:#CBD5E1;background:#F8FAFC;color:#1B2A4A}
+#modal-overlay .modal-body,.modal-overlay .modal-body{padding:20px 24px;gap:16px}
+#modal-overlay .field-row{gap:16px}
+#modal-overlay .field-label{font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.5px}
+#modal-overlay .modal-footer,.modal-overlay .modal-footer{padding:16px 24px;border-top:1px solid #EEF2F7;background:#FBFDFF;gap:10px;justify-content:flex-end}
+.modal-overlay .modal-footer-left{display:none}
+/* toast (crm.js) */
+#crm-toast.toast{border-radius:12px;padding:.85em 1.2em;font-size:13px;font-weight:600;box-shadow:0 12px 30px rgba(15,23,42,.18)}
+@media (prefers-reduced-motion:reduce){
+  .new-order-btn,.export-btn,#modal-overlay .btn-save,#modal-overlay .btn-cancel,.modal-overlay [data-crm-confirm],
+  .od-retry,.od-fn-clear,.btn-ship,.od-copy,.od-toggle,.od-btn,.pag-btn,.filter-sel,.search-wrap input,
+  .field-input,.field-sel,.field-textarea,.od-status,.od-toggle svg{transition:none}
+  #modal-overlay.open .modal,.modal-overlay.open .modal{animation:none}
+  .new-order-btn:hover,#modal-overlay .btn-save:hover,.modal-overlay [data-crm-confirm="1"]:hover,.od-retry:hover,.btn-ship:active{transform:none}
+}
+@media (min-width:769px) and (max-width:1100px){
+  #orders-table .od-h-items,#orders-table td.od-c-items{display:none}
+  .od-items-inline{display:flex}
+  #orders-table .od-h-order{width:27%}
+  #orders-table .od-h-customer{width:24%}
+  #orders-table .od-h-pay{width:16%}
+  #orders-table .od-h-payment{width:88px}
+  #orders-table .od-h-status{width:132px}
+  #orders-table .od-h-act{width:84px}
+  .od-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .od-grid .od-block[data-block=delivery]{grid-column:1 / -1;border-left:none;padding-left:0;border-top:1px solid #EEF2F7;padding-top:10px}
+}
+@media (max-width:768px){
+  /* crm.css clips .table-card/.table-wrap on phones; with the page's flex column they got only the leftover height
+     (a 45 px strip on the old page), so on phones the list takes its natural height and .content scrolls */
+  .table-card,.table-wrap{flex:none!important}
+  .search-wrap{flex:1 1 100%}
+  .search-wrap input{min-width:0;width:100%;font-size:14px}
+  /* min-width:0 or the product select keeps the width of its longest option name and takes the line alone */
+  .filter-sel{flex:1 1 45%;min-width:0;max-width:none}
+  .od-filter-note{padding:7px 14px}
+  #orders-table{min-width:0!important;table-layout:auto!important}
+  #orders-table tbody tr.od-row{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;column-gap:10px;row-gap:4px;align-items:center;padding:12px!important;background:#fff}
+  #orders-table tbody tr.od-row.is-open{background:#F0FDF4!important}
+  #orders-table tbody tr.od-row > td{display:block!important;padding:0!important;border:none!important;text-align:left!important;font-size:13px!important;min-width:0;box-shadow:none!important;background:transparent!important}
+  #orders-table tbody tr.od-row > td.od-c-arrow{grid-column:1;grid-row:1}
+  #orders-table tbody tr.od-row > td.od-c-order{grid-column:2;grid-row:1}
+  #orders-table tbody tr.od-row > td.od-c-pay{grid-column:3;grid-row:1;text-align:right!important}
+  #orders-table tbody tr.od-row > td.od-c-customer{grid-column:1 / -1;grid-row:2}
+  #orders-table tbody tr.od-row > td.od-c-items{grid-column:1 / -1;grid-row:3}
+  #orders-table tbody tr.od-row > td.od-c-status{grid-column:1 / 3;grid-row:4}
+  #orders-table tbody tr.od-row > td.od-c-payment{grid-column:1 / 3;grid-row:5}
+  #orders-table tbody tr.od-row > td.od-c-act{grid-column:3;grid-row:4;text-align:right!important}
+  /* on a narrow phone the chip drops under the order number instead of eating it (visual QA at 320) */
+  #orders-table .od-ref{flex-wrap:wrap}
+  #orders-table .od-c-customer .od-sub,#orders-table .od-items-inline{display:none!important}
+  #orders-table .od-toggle{width:36px;height:36px;border-radius:10px}
+  #orders-table .od-copy{min-height:26px!important;width:26px;height:26px}
+  #orders-table tbody tr.od-detail{display:block!important;padding:0!important;border-bottom:1.5px solid #E2E8F0!important}
+  #orders-table tbody tr.od-detail > td{display:block!important;text-align:left!important;padding:0 10px 12px!important;box-shadow:none!important;border:none!important;background:#F0FDF4!important}
+  body:has(#orders-table tr.od-detail) .mobile-fab{display:none!important}
+  .od-card{padding:12px}
+  .od-grid{grid-template-columns:1fr;gap:0}
+  .od-block + .od-block{border-left:none;padding-left:0;border-top:1px solid #EEF2F7;margin-top:10px;padding-top:10px}
+  .od-ihead{display:none!important}
+  .od-irow{grid-template-columns:auto auto minmax(0,1fr) auto;grid-template-areas:"n d . s" "q p . s";row-gap:2px;font-size:13px}
+  .od-iname{grid-area:n}
+  .od-idose{grid-area:d}
+  .od-iqty{grid-area:q;text-align:left;color:#6B7280}
+  .od-iprice{grid-area:p;text-align:left;color:#6B7280}
+  .od-iprice::before{content:"× "}
+  .od-isum{grid-area:s;align-self:center;font-weight:600}
+  .od-totals{width:100%}
+}
+</style>
+
+
+
+
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=dc7b9e857b"></script>
+    <script src="auth.js"></script>
+    <script src="orders-model.js?v=3123f1cc3a"></script>
+
+<div class="app-wrapper">
+<aside class="sidebar" id="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-titles">
+      <div class="topbar-title">📦 Orders</div>
+      <div class="topbar-sub" id="topbar-sub">All client orders</div>
+    </div>
+    <div class="topbar-right">
+      <button class="export-btn" onclick="exportCSV()">⬇ Export</button>
+      <button class="new-order-btn" onclick="openNewModal()">+ New Order</button>
+      <button class="topbar-icon-btn" onclick="logout()">↩</button>
+    <button class="mobile-signout-btn" onclick="logout()" title="Sign Out">⏻</button>
+</div>
+  </header>
+
+  <div class="content">
+    <div class="stats-row">
+      <div class="stat-card green" data-card="total" role="button" tabindex="0" title="Show all orders">
+        <div class="stat-label">📦 Total Orders</div>
+        <div class="stat-value" id="s-total">—</div>
+        <div class="stat-trend neutral" id="s-total-t">all time</div>
+      </div>
+      <div class="stat-card amber" data-card="pending" role="button" tabindex="0" aria-pressed="false" title="Show orders awaiting payment">
+        <div class="stat-label">⏳ Pending</div>
+        <div class="stat-value" id="s-pending">—</div>
+        <div class="stat-trend neutral" id="s-pending-t">awaiting payment</div>
+      </div>
+      <div class="stat-card blue" data-card="shipped" role="button" tabindex="0" aria-pressed="false" title="Show shipped orders">
+        <div class="stat-label">🚚 Shipped</div>
+        <div class="stat-value" id="s-shipped">—</div>
+        <div class="stat-trend neutral" id="s-shipped-t">in transit</div>
+      </div>
+      <div class="stat-card purple" data-card="revenue" role="button" tabindex="0" aria-pressed="false" title="Show paid orders">
+        <div class="stat-label">💰 Total Revenue</div>
+        <div class="stat-value" id="s-revenue">—</div>
+        <div class="stat-trend neutral" id="s-revenue-t">paid orders only</div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div class="table-head">
+        <div class="table-title">Order List</div>
+        <div class="search-wrap">
+          <input type="text" id="search-box" placeholder="Search order #, customer, e-mail, phone, address, item…" aria-label="Search orders" oninput="applyFilters()">
+        </div>
+        <select class="filter-sel" id="filter-status" aria-label="Status filter" onchange="applyFilters()">
+          <option value="">All statuses</option>
+          <optgroup label="Groups">
+            <option value="g:unpaid">Awaiting payment</option>
+            <option value="g:toship">To ship</option>
+            <option value="g:shipped">Shipped / in transit</option>
+            <option value="g:paid">Paid (all)</option>
+          </optgroup>
+          <optgroup label="Status" id="filter-status-list">
+            <option value="new">New</option><option value="pending">Pending</option><option value="paid">Paid</option>
+            <option value="payment-confirmed">Payment-confirmed</option><option value="processing">Processing</option>
+            <option value="shipped">Shipped</option><option value="in-transit">In transit</option><option value="delivered">Delivered</option><option value="cancelled">Cancelled</option>
+            <option value="none">No status</option>
+          </optgroup>
+        </select>
+        <select class="filter-sel" id="orders-payment-filter" aria-label="Payment filter" onchange="applyFilters()">
+          <option value="">All</option>
+          <option value="unpaid">Unpaid</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+          <option value="refunded">Refunded</option>
+        </select>
+        <select class="filter-sel" id="filter-product" aria-label="Product filter" onchange="applyFilters()">
+          <option value="">All Products</option>
+        </select>
+        <label class="od-check"><input type="checkbox" id="show-test" onchange="applyFilters()"> Test orders <b id="count-test">0</b></label>
+        <label class="od-check"><input type="checkbox" id="show-signups" onchange="applyFilters()"> Signups <b id="count-signups">0</b></label>
+      </div>
+      <div class="od-filter-note" id="filter-note" hidden><span class="od-fn-text"></span><button type="button" class="od-fn-clear" onclick="setStatusFilter('')">✕ Clear filter</button></div>
+
+      <div class="table-wrap">
+        <table id="orders-table">
+          <thead>
+            <tr>
+              <th scope="col" class="od-h-arrow"><span class="od-sr">Details</span></th>
+              <th scope="col" class="od-h-order">Order</th>
+              <th scope="col" class="od-h-customer">Customer</th>
+              <th scope="col" class="od-h-items">Items</th>
+              <th scope="col" class="od-h-pay od-r">To pay</th>
+              <th scope="col" class="od-h-payment">Payment</th>
+              <th scope="col" class="od-h-status">Status</th>
+              <th scope="col" class="od-h-act"><span class="od-sr">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <div class="pag-info" id="pag-info">—</div>
+        <div class="pag-btns" id="pag-btns"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW ORDER MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-icon">📦</div>
+      <div class="modal-title">New Order</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Company Name</div>
+          <input class="field-input" id="f-company" aria-label="Company name" placeholder="e.g. Clinic Warsaw">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Contact Email</div>
+          <input class="field-input" id="f-email" aria-label="Customer email" type="email" placeholder="contact@clinic.pl">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Country</div>
+          <select class="field-sel" id="f-country" aria-label="Country">
+            <option>Poland</option><option>Germany</option><option>Spain</option>
+            <option>Italy</option><option>France</option><option>Austria</option>
+            <option>Netherlands</option><option>Czech Republic</option><option>Romania</option>
+            <option>Greece</option><option>Portugal</option><option>UK</option>
+            <option>Switzerland</option><option>Israel</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Product</div>
+          <select class="field-sel" id="f-product" aria-label="Product">
+            <option>Wolverine Blend</option>
+            <option>NAD+</option>
+            <option>AOD-9604</option>
+            <option>GLOW 70</option>
+            <option>Tesamorelin/Ipamorelin</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Quantity (vials)</div>
+          <input class="field-input" id="f-qty" aria-label="Quantity" type="number" min="1" value="10">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Unit Price ($)</div>
+          <input class="field-input" id="f-price" aria-label="Unit price" type="number" min="1" value="110">
+        </div>
+      </div>
+      <div class="field-group full">
+        <div class="field-label">Notes</div>
+        <textarea class="field-textarea" id="f-notes" aria-label="Order notes" placeholder="Shipping address, special instructions..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveOrder()"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 5.2 8 2l6 3.2v5.6L8 14l-6-3.2z"/><path d="m2 5.2 6 3.2 6-3.2M8 8.4V14"/></svg>Create Order</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-wrapper -->
+
+<div id="od-picker" hidden>
+  <div class="od-card-bar">
+    <b>Add product</b>
+    <button type="button" class="btn-cancel" data-picker-close>Close</button>
+  </div>
+  <input class="field-input" id="od-picker-search" type="search" placeholder="Search catalog" autocomplete="off">
+  <div id="od-picker-list"></div>
+  <div id="od-picker-chosen" hidden>
+    <div class="od-edit-fields">
+      <div>
+        <div class="field-label">Dosage</div>
+        <select class="field-sel" data-picker-mg aria-label="Dosage"></select>
+      </div>
+      <div>
+        <div class="field-label">Qty</div>
+        <input class="field-input" data-picker-qty type="number" min="1" value="1">
+      </div>
+      <div class="full">
+        <div class="field-label">Catalog price</div>
+        <div data-picker-price class="od-muted">—</div>
+      </div>
+    </div>
+    <div class="od-card-bar" style="margin-top:10px">
+      <button type="button" class="btn-save" data-picker-add>Add to order</button>
+    </div>
+  </div>
+</div>
+
+<!-- Floating + button (mobile only) -->
+
+<script>
+renderNav('orders');
+const COUNTRY_ISO2 = {'Italy':'it','Spain':'es','Poland':'pl','Germany':'de','Austria':'at','Romania':'ro','Czech Republic':'cz','Greece':'gr','France':'fr','Netherlands':'nl','Belgium':'be','UK':'gb','Switzerland':'ch','Israel':'il','Portugal':'pt','Cyprus':'cy','Croatia':'hr'};
+function flag(c) {
+  if (!c) return '';
+  let iso = COUNTRY_ISO2[c] || COUNTRY_ISO2[c.split(/[\/,]/)[0].trim()];
+  if (!iso) return '<span style="display:inline-block;padding:1px 5px;background:#E6F4EA;border-radius:3px;font-size:10px;font-weight:700;color:#065F46">' + esc(c.substring(0,2).toUpperCase()) + '</span>';
+  return '<img src="https://flagcdn.com/24x18/' + iso + '.png" width="24" height="18" style="border-radius:2px;vertical-align:middle;margin-right:4px" alt="' + escAttr(c) + '">';
+}
+
+function badge(s) {
+  const m = {'Pending':'b-pending','New':'b-pending','Confirmed':'b-confirmed','Paid':'b-confirmed','Payment-confirmed':'b-confirmed','Processing':'b-confirmed','Shipped':'b-shipped','In-transit':'b-shipped','Delivered':'b-delivered','Cancelled':'b-cancelled','Awaiting Payment':'b-awaiting'};
+  return `<span class="badge ${escAttr(m[s]||'b-pending')}">${esc(s||'Pending')}</span>`;
+}
+
+// 2026-09-09: products-api takes exactly these on PATCH /msolpeptides-api/orders/:ref and answers 400 for anything
+// else, so the list is spelled out (in orders-model.js since 2026-09-17) instead of being collected from whatever the
+// orders file happens to hold.
+// 2026-09-17: read defensively — if orders-model.js did not load (404, a truncated copy, someone tidying /crm/), this
+// line would otherwise throw a ReferenceError and take the whole page script with it. The check at the end of the
+// script says so on screen instead; nothing between here and there runs before that check.
+const ORDER_STATUSES = typeof OrdersModel === 'undefined' ? [] : OrdersModel.API_STATUSES;
+// 2026-09-17: class names built from a record take their variable part from these fixed lists only.
+const GROUP_TONES = ['unpaid', 'toship', 'shipped', 'delivered', 'cancelled', 'other'];
+const HINT_TONES = ['warn', 'info', 'muted'];
+// A pressed card is the status filter it sets; Total only clears the filter and is never shown pressed.
+const CARD_FILTER = { pending: 'g:unpaid', shipped: 'g:shipped', revenue: 'g:paid' };   // stage 1 RET: the card counts the whole group, so it filters by the group
+const ICON_ARROW = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_COPY = '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 3.5V3A1.5 1.5 0 0 0 9 1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+const SVG_OPEN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">';
+const ICON_SHIP = SVG_OPEN + '<path d="M1.4 4h7.2v6H1.4z"/><path d="M8.6 6.2h3L14.6 9v1H8.6z"/><circle cx="4.3" cy="11.6" r="1.3"/><circle cx="11.7" cy="11.6" r="1.3"/></svg>';
+const ICON_MAIL = SVG_OPEN + '<rect x="1.5" y="3.5" width="13" height="9" rx="1.6"/><path d="m2.6 5 5.4 4 5.4-4"/></svg>';
+const ICON_PHONE = SVG_OPEN + '<path d="M5.4 1.9 7 4.7 5.5 6.2a8.6 8.6 0 0 0 4.3 4.3l1.5-1.5 2.8 1.6v2.2c0 .7-.6 1.3-1.3 1.2A12.7 12.7 0 0 1 1.9 3.2c-.1-.7.5-1.3 1.2-1.3z"/></svg>';
+const money = n => OrdersModel.formatMoney(n);
+
+function payPartialSub(p) {
+  const base = money(p.received) + ' of ' + money(p.due);
+  return p.refunded > 0 ? base + ' \u00b7 ' + money(p.refunded) + ' refunded' : base;
+}
+function payBadgeHtml(r) {
+  const p = OrdersModel.paymentStatus(r);
+  const label = p.code === 'none' ? '\u2014' : p.label;
+  const sub = p.code === 'partial' ? '<span class="od-paybadge-sub">' + esc(payPartialSub(p)) + '</span>' : '';
+  return '<span class="od-paybadge" data-code="' + escAttr(p.code) + '">' + esc(label) + '</span>' + sub;
+}
+const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's');
+
+// 2026-09-09: the row offered "Ship" and nothing else, so every other status had to be set outside the CRM.
+// 2026-09-17: only a primary order with a stored ref gets the control (products-api PATCH changes the first record with
+// that ref); signups, stored copies and orders without a ref keep the plain badge (see rowHtml).
+function statusSelect(r) {
+  const cur = ORDER_STATUSES.indexOf(r.statusRaw) >= 0 ? r.statusRaw : '';
+  // The control that writes the field back must not show a status the order does not have, or the manager sets
+  // nothing and thinks it is done (before 2026-09-17 an order without a status read as "Pending" on this page). The
+  // hint is never sent, and a status the server no longer knows (an old "confirmed") is shown as stored rather than
+  // quietly renamed.
+  const hint = cur ? '' : `<option value="" selected>${r.statusRaw ? esc('— ' + r.statusRaw + ' —') : '— no status —'}</option>`;
+  const opts = ORDER_STATUSES.map(s => `<option value="${escAttr(s)}"${s === cur ? ' selected' : ''}>${esc(s.charAt(0).toUpperCase() + s.slice(1))}</option>`).join('');
+  const tone = r.statusRaw ? 'od-g-' + (GROUP_TONES.indexOf(r.group) >= 0 ? r.group : 'other') : 'od-none';
+  // The cell is narrow: the title spells out the status the select can only show cut off ("Payment-confirmed").
+  return `<select class="od-status ${tone}" data-action="status" aria-label="Order status" title="${escAttr(r.status)}">${hint}${opts}</select>`;
+}
+
+
+// SAMPLE DATA (fallback comment only)
+/*
+const SAMPLE_ORDERS = [
+  {id:'MS-001',company:'SportMed Klinika',email:'contact@sportmed.pl',country:'Poland',product:'Wolverine Blend',qty:20,price:120,status:'Delivered',date:'2026-06-10',notes:''},
+];
+*/
+
+// 2026-09-17: normalizeOrder() removed — OrdersModel.load() (orders-model.js) reads the three shapes of orders.json now.
+
+function populateProductFilter() {
+  const sel = document.getElementById('filter-product');
+  if (!sel) return;
+  const names = [...new Set(allOrders.flatMap(o => o.items.map(i => i.name)).filter(Boolean))].sort();
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All Products</option>' + names.map(n => `<option value="${escAttr(n)}"${n === current ? ' selected' : ''}>${esc(n)}</option>`).join('');
+}
+
+// 2026-09-17: statuses products-api no longer accepts (an old "Confirmed") get an option each after every load; the
+// chosen value stays chosen while it still exists.
+function populateStatusOptions() {
+  const sel = document.getElementById('filter-status');
+  const group = document.getElementById('filter-status-list');
+  if (!sel || !group) return;
+  const current = sel.value;
+  Array.prototype.forEach.call(group.querySelectorAll('option[data-old]'), o => o.remove());
+  group.insertAdjacentHTML('beforeend', OrdersModel.statusOptions(allOrders)
+    .map(o => `<option value="${escAttr(o.value)}" data-old="1">${esc(o.label)}</option>`).join(''));
+  sel.value = current;
+  if (sel.value !== current) sel.value = '';
+}
+
+let allOrders = [], filteredOrders = [], currentPage = 1, loadFailed = false, loadedOnce = false;
+const PER_PAGE = 20;
+// 2026-09-17: open cards are remembered by row key, so they survive redraws, paging and reloads.
+const openKeys = new Set();
+// Refs whose PATCH is on its way: one write per row at a time (spec "One write at a time").
+const writing = new Set();
+
+let editingKey = '';
+let editDraft = null;
+let editPending = false;
+let editError = '';
+let editBusy = false;
+let editConflictOrder = null;
+let payFormKey = '';
+let catalogCache = null;
+let pickerState = { q: '', slug: '', mg: '', qty: 1 };
+
+
+// Phase 4 (2026-09-05): through api() from crm.js — Bearer header, JSON parsing, the 401 redirect and the error toast
+// are all in one place now. Phase 3 note kept: there is no localStorage copy of the orders any more.
+// 2026-09-17: a reload that fails keeps the list, the open cards and the page (the toast from api() says why); only
+// with no list to keep does the table show the error row with Retry. Returns true when the list was read.
+async function loadOrders(keepPage) {
+  let d;
+  try {
+    d = await api('/msolpeptides-api/orders');
+  } catch (e) {
+    if (loadedOnce) { renderTable(); return false; }
+    loadFailed = true;
+    applyFilters();
+    return false;
+  }
+  allOrders = OrdersModel.load(Array.isArray(d) ? d : ((d && d.orders) || []));
+  loadFailed = false;
+  loadedOnce = true;
+  populateProductFilter();
+  populateStatusOptions();
+  applyFilters({ keepPage: !!keepPage });
+  return true;
+}
+
+function currentFilter() {
+  const value = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const ticked = id => { const el = document.getElementById(id); return !!(el && el.checked); };
+  return { search: value('search-box'), status: value('filter-status'), payment: value('orders-payment-filter'), product: value('filter-product'),
+    showTest: ticked('show-test'), showSignups: ticked('show-signups') };
+}
+
+// Search, filters and boxes go back to page 1; a reload after a status change or Ship keeps the page (clamped).
+function applyFilters(opts) {
+  const f = currentFilter();
+  filteredOrders = OrdersModel.sortNewestFirst(OrdersModel.filter(allOrders, f));
+  const pages = Math.max(1, Math.ceil(filteredOrders.length / PER_PAGE));
+  currentPage = opts && opts.keepPage ? Math.min(currentPage, pages) : 1;
+  renderTable();
+  renderStats(f);
+  renderFilterNote(f);
+  renderSubline(f);
+}
+
+function renderSubline(f) {
+  const sub = document.getElementById('topbar-sub');
+  if (!sub || loadFailed) return;
+  const orders = filteredOrders.filter(r => r.kind === 'order').length;
+  const signups = filteredOrders.length - orders;
+  const filtered = !!(f.search.trim() || f.status || f.payment || f.product);
+  sub.textContent = plural(orders, 'order') + (signups ? ' · ' + plural(signups, 'signup') : '') + (filtered ? ' (filtered)' : '');
+}
+
+// 2026-09-17: the cards count primary orders that are not test orders (OrdersModel.stats); search and filters do not
+// change them, and Revenue adds up only what was paid.
+function renderStats(f) {
+  const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+  if (loadFailed) {
+    ['s-total', 's-pending', 's-shipped', 's-revenue', 's-total-t', 's-pending-t', 's-shipped-t', 's-revenue-t'].forEach(id => set(id, '—'));
+  } else {
+    const s = OrdersModel.stats(allOrders);
+    const parts = [];
+    if (s.cancelled) parts.push(s.cancelled + ' cancelled');
+    if (s.testCount) parts.push(s.testCount + (f.showTest ? ' test not counted' : ' test hidden'));
+    if (s.duplicateCount) parts.push(s.duplicateCount + (s.duplicateCount === 1 ? ' duplicate' : ' duplicates') + ' not counted');
+    set('s-total', s.total);
+    set('s-total-t', parts.length ? parts.join(' · ') : 'all time');
+    set('s-pending', s.pending);
+    const pendingT = document.getElementById('s-pending-t');
+    if (pendingT) pendingT.innerHTML = '<b>' + esc(money(s.pendingAmount)) + '</b> awaiting payment';
+    set('s-shipped', s.shipped);
+    set('s-shipped-t', 'in transit' + (s.delivered ? ' · ' + s.delivered + ' delivered' : ''));
+    set('s-revenue', money(s.revenue));
+    set('s-revenue-t', 'paid orders only');
+    set('count-test', s.testCount);
+    set('count-signups', s.signupCount);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.stat-card[data-card]'), card => {
+    const value = CARD_FILTER[card.getAttribute('data-card')];
+    if (!value) return;
+    const on = f.status === value;
+    card.classList.toggle('is-active', on);
+    card.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+function renderFilterNote(f) {
+  const note = document.getElementById('filter-note');
+  if (!note) return;
+  const sel = document.getElementById('filter-status');
+  const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+  const pay = document.getElementById('orders-payment-filter');
+  const payOpt = pay && pay.selectedIndex >= 0 ? pay.options[pay.selectedIndex] : null;
+  // Names every active filter (status, payment) so the count reads as their intersection; ✕ clears both.
+  const parts = [];
+  if (f.status && opt) parts.push(opt.textContent.trim());
+  if (f.payment && payOpt) parts.push('Payment: ' + payOpt.textContent.trim());
+  if (!parts.length || loadFailed) { note.hidden = true; return; }
+  note.querySelector('.od-fn-text').textContent = 'Showing ' + plural(filteredOrders.length, 'order') + ' — ' + parts.join(' · ');
+  note.hidden = false;
+}
+
+// A press on the card that is already on (or ✕ in the strip) clears the status filter.
+function setStatusFilter(value) {
+  const sel = document.getElementById('filter-status');
+  if (!sel) return;
+  sel.value = value && sel.value === value ? '' : value;
+  if (!sel.value) {
+    const pay = document.getElementById('orders-payment-filter');
+    if (pay) pay.value = '';
+  }
+  applyFilters();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('orders-tbody');
+  if (!tbody) return;
+  const start = (currentPage-1)*PER_PAGE;
+  const page = loadFailed ? [] : filteredOrders.slice(start, start+PER_PAGE);
+
+  if (!page.length) {
+    if (loadFailed) {
+      tbody.innerHTML = '<tr class="od-error"><td colspan="8">Could not load orders.<button type="button" class="od-retry" data-action="retry">Retry</button></td></tr>';
+    } else {
+      // An empty list with the Test box off says how many test orders it hides (all of them in the file).
+      const m = OrdersModel.stats(allOrders).testCount;
+      const text = m > 0 && !currentFilter().showTest ? 'No orders to show — ' + plural(m, 'test order') + ' hidden' : 'No orders found';
+      tbody.innerHTML = '<tr><td class="od-empty" colspan="8">' + esc(text) + '</td></tr>';
+    }
+    if (document.getElementById('pag-info')) document.getElementById('pag-info').textContent = '0 results';
+    if (document.getElementById('pag-btns')) document.getElementById('pag-btns').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = page.map(r => rowHtml(r) + (openKeys.has(r.rowKey) ? detailHtml(r) : '')).join('');
+  renderPagination();
+}
+
+// The handlers take the index in allOrders from data-idx; the row key finds the same order again after a reload.
+function rowHtml(r) {
+  const idx = allOrders.indexOf(r);
+  const open = openKeys.has(r.rowKey);
+  const isOrder = r.kind === 'order';
+  const cls = ['od-row', open && 'is-open', (r.isTest || r.duplicateOf || r.group === 'cancelled') && 'is-faded',
+    r.isTest && 'is-test', r.duplicateOf && 'is-duplicate', r.kind === 'signup' && 'is-signup'].filter(Boolean).join(' ');
+  const chips = (r.isTest ? '<span class="od-chip od-chip-test">Test</span>' : '')
+    + (r.duplicateOf ? '<span class="od-chip od-chip-dup">Duplicate</span>' : '')
+    + (r.kind === 'signup' ? '<span class="od-chip od-chip-signup">Signup</span>' : '');
+  const items = `<span class="od-itext">${esc(r.itemsShort)}</span>` + (r.itemsMore > 0 ? `<span class="od-more">+${esc(r.itemsMore)}</span>` : '');
+  const discount = OrdersModel.discountLabels(r).row;
+  const sub = r.priceMismatch ? '<div class="od-sub od-warn">⚠ price check</div>' : (discount ? `<div class="od-sub">${esc(discount)}</div>` : '');
+  const pay = isOrder ? `<div class="od-amt">${esc(money(r.toPay))}</div>${sub}` : '<span class="od-muted">—</span>';
+  const status = isOrder && r.ref && !r.duplicateOf ? statusSelect(r)
+    : (isOrder && !r.statusRaw ? `<span class="badge od-badge-none">${esc(r.status)}</span>` : badge(r.status));
+  const ship = OrdersModel.canShip(r) ? '<button type="button" class="action-btn btn-ship" data-action="ship" title="Mark as shipped">' + ICON_SHIP + 'Ship</button>' : '';
+  return `<tr class="${cls}" id="od-r-${idx}" data-idx="${idx}" data-key="${escAttr(r.rowKey)}">`
+    + `<td class="od-c-arrow"><button type="button" class="od-toggle" data-action="toggle" aria-expanded="${open}" aria-controls="od-d-${idx}" aria-label="${escAttr(arrowLabel(r, open))}">${ICON_ARROW}</button></td>`
+    + `<td class="od-c-order"><div class="od-ref"><span class="od-reftext">${esc(r.id || '—')}</span>${chips}</div><div class="od-sub">${esc(OrdersModel.formatWhen(r.createdAt) || '—')}</div></td>`
+    + `<td class="od-c-customer"><div class="od-name">${esc(r.name || '—')}</div>${r.email ? `<div class="od-sub">${esc(r.email)}</div>` : ''}<div class="od-items-inline">${items}</div></td>`
+    + `<td class="od-c-items"><div class="od-items" title="${escAttr(r.itemsText)}">${items}</div></td>`
+    + `<td class="od-c-pay">${pay}</td>`
+    + `<td class="od-c-payment">${payBadgeHtml(r)}</td>`
+    + `<td class="od-c-status">${status}</td>`
+    + `<td class="od-c-act">${ship}</td>`
+    + '</tr>';
+}
+
+// "Show details of order BF-…"; an order without a number and a signup are named by the customer instead.
+function arrowLabel(r, open) {
+  const who = r.id || r.email || r.name;
+  return (open ? 'Hide' : 'Show') + ' details of ' + (r.kind === 'signup' ? 'signup' : 'order') + (who ? ' ' + who : '');
+}
+
+function detailHtml(r) {
+  const idx = allOrders.indexOf(r);
+  const editing = editingKey === r.rowKey;
+  return `<tr class="od-detail" id="od-d-${idx}" data-idx="${idx}"><td colspan="8"><div class="od-card${editing ? ' od-editing' : ''}">`
+    + (r.kind === 'signup' ? signupCardHtml(r) : orderCardHtml(r)) + '</div></td></tr>';
+}
+
+// Everything needed to invoice, pack and ship: hints first, then order / customer / delivery, products and totals.
+function orderCardHtml(r) {
+  const st = OrdersModel.statusStep(r);
+  let steps = '';
+  for (let i = 1; st.step > 0 && i <= 5; i++) {
+    steps += (i > 1 ? `<s${i <= st.step ? ' class="on"' : ''}></s>` : '') + `<i${i <= st.step ? ' class="on"' : ''}></i>`;
+  }
+  const updated = OrdersModel.formatWhen(r.updatedAt, { long: true });
+  const status = (st.cancelled ? `<span class="od-cancelled">${esc(st.label)}</span>`
+    : (steps ? `<span class="od-steps" aria-hidden="true">${steps}</span>` : '') + esc(st.label))
+    + (updated ? `<span class="od-muted"> · updated ${esc(updated)}</span>` : '');
+  const orderRows = kv('Order #', r.id ? esc(r.id) + copyBtn('ref', 'order number') : '')
+    + kv('Created', esc(OrdersModel.formatWhen(r.createdAt, { long: true })))
+    + kv('Status', status)
+    + kv('Payment', r.paymentMethod ? `<span title="${escAttr(r.paymentMethod)}">${esc(r.paymentLabel)}</span>` : '')
+    + kv('Charge check', typeof OrdersModel.chargeCheckText === 'function' && OrdersModel.chargeCheckText(r) ? '<span class="od-warn">' + esc(OrdersModel.chargeCheckText(r)) + '</span>' : '')
+    + kv('Letters sent', typeof OrdersModel.lettersLabel === 'function' ? esc(OrdersModel.lettersLabel(r.letters)) : '')
+    + kv('Coupon', esc(r.coupon));
+
+  // tel: keeps digits and "+" only, and the button shows only when a digit is left.
+  const digits = r.phone.replace(/[^\d+]/g, '');
+  const contact = (r.email ? `<a class="od-btn" data-contact="email" href="${escAttr(mailHref(r))}">${ICON_MAIL}Email</a>` : '')
+    + (/\d/.test(digits) ? `<a class="od-btn" data-contact="call" href="${escAttr(safeUrl('tel:' + digits))}">${ICON_PHONE}Call</a>` : '');
+  const customerRows = kv('Name', esc(r.name || '—'))
+    + kv('Company', r.company && r.company !== r.name ? esc(r.company) : '')
+    + kv('E-mail', r.email ? esc(r.email) + copyBtn('email', 'e-mail') : '')
+    + kv('Phone', r.phone ? esc(r.phone) + copyBtn('phone', 'phone') : '');
+
+  const lines = OrdersModel.addressLines(r);
+  const shipTo = lines.length ? lines.map((l, i) => `<div>${esc(l)}${i === 0 ? copyBtn('address', 'address') : ''}</div>`).join('')
+    : (r.country ? esc('Country: ' + r.country) : '<span class="od-muted">No delivery details</span>');
+  const method = [r.shipLabel, r.shipCost === null ? '' : (r.shipCost === 0 ? 'Free' : money(r.shipCost))].filter(Boolean).join(' · ');
+  const editing = editingKey === r.rowKey && editDraft;
+  const d = editing ? editDraft : null;
+  const busy = writing.has(r.ref) || (editBusy && editingKey === r.rowKey);
+  const can = OrdersModel.canEdit(r);
+  const bar = editing
+    ? ('<div class="od-card-bar">'
+      + '<button type="button" class="btn-save" data-edit="save"' + (busy ? ' disabled' : '') + '>Save changes</button>'
+      + '<button type="button" class="btn-cancel" data-edit="cancel"' + (busy ? ' disabled' : '') + '>Cancel</button>'
+      + '</div>')
+    : (can
+      ? '<div class="od-card-bar"><button type="button" class="od-btn" data-edit="start">Edit</button></div>'
+      : noeditHtml(r));
+
+  return hintsHtml(r)
+    + bar
+    + '<div class="od-grid">'
+    + `<section class="od-block" data-block="order"><h5>Order</h5><div class="od-kv">${orderRows}</div>`
+    + (editing ? carrierBlock(d.carrier) + fieldBlock('Tracking', 'trackingNumber', d.trackingNumber) + fieldBlock('Manager note', 'managerNote', d.managerNote, true)
+      : ((r.trackingNumber ? kv('Tracking', esc((r.carrier ? r.carrier + ' ' : '') + r.trackingNumber)) : '') + (r.managerNote ? `<div class="od-note"><b>Manager note</b>${esc(r.managerNote)}</div>` : '')))
+    + '</section>'
+    + `<section class="od-block" data-block="customer"><h5>Customer</h5>`
+    + (editing ? customerEditHtml(d) : `<div class="od-kv">${customerRows}</div>`)
+    + (contact ? `<div class="od-btns">${contact}</div>` : '')
+    + (r.notes ? `<div class="od-note"><b>Customer note</b>${esc(r.notes)}</div>` : '')
+    + '</section>'
+    + `<section class="od-block" data-block="delivery"><h5>Delivery</h5>`
+    + (editing ? shippingEditHtml(d) : `<div class="od-kv">${kv('Ship to', shipTo)}${kv('Method', esc(method))}</div>`)
+    + '</section>'
+    + '</div>'
+    + (editing ? productsEditHtml(d, busy) : productsHtml(r))
+    + totalsHtml(r)
+    + (editing ? `<div class="od-edit-error">${esc(editError || '')}${editConflictOrder ? ' <button type="button" class="od-btn" data-edit="reload-conflict">перечитать и потерять правки</button>' : ''}</div>` : '')
+    + paymentsHtml(r)
+    + editsHtml(r);
+}
+
+// The subject names the order; the address keeps a readable "@" (encodeURIComponent writes it as %40).
+function mailHref(r) {
+  return safeUrl('mailto:' + encodeURIComponent(r.email).replace(/%40/g, '@')
+    + (r.kind === 'order' ? '?subject=' + encodeURIComponent('Your order' + (r.id ? ' ' + r.id : '') + ' — BioLabs Research') : ''));
+}
+
+function signupCardHtml(r) {
+  const rows = kv('Name', esc(r.name || '—'))
+    + kv('E-mail', r.email ? esc(r.email) + copyBtn('email', 'e-mail') : '')
+    + kv('Coupon', esc(r.coupon))
+    + kv('Date', esc(OrdersModel.formatWhen(r.createdAt, { long: true })));
+  const mail = r.email ? `<div class="od-btns"><a class="od-btn" data-contact="email" href="${escAttr(mailHref(r))}">${ICON_MAIL}Email</a></div>` : '';
+  return `<div class="od-grid"><section class="od-block" data-block="signup"><h5>Insider signup</h5><div class="od-kv">${rows}</div>${mail}</section></div>`
+    + '<div class="od-noitems">No items — insider signup</div>';
+}
+
+function hintsHtml(r) {
+  return OrdersModel.hints(r).map(h => `<div class="od-hint od-hint-${HINT_TONES.indexOf(h.tone) >= 0 ? h.tone : 'muted'}"><b>${esc(h.title)}</b> ${esc(h.text)}</div>`).join('');
+}
+
+// A line whose amount does not print is left out: a forged record can carry a figure formatMoney refuses to print.
+function totalsHtml(r) {
+  const t = OrdersModel.totals(r);
+  const line = (labelHtml, value, cls) => value
+    ? `<div class="od-tline${cls ? ' ' + cls : ''}"><span>${labelHtml}</span><span>${esc(value)}</span></div>` : '';
+  const editing = editingKey === r.rowKey;
+  return '<div class="od-totals">'
+    + t.lines.map(l => line(esc(l.label) + (l.note ? ` <span class="od-muted">${esc(l.note)}</span>` : ''), l.free ? 'Free' : money(l.value))).join('')
+    + line('To pay', money(t.toPay), 'od-due')
+    + (t.checkoutTotal !== null ? line('Checkout total', money(t.checkoutTotal), 'od-checkout') : '')
+    + ((editing && editPending) ? '<div class="od-edit-pending">Server will recalculate the total</div>' : '')
+    + '</div>';
+}
+
+function productsHtml(r) {
+  const rows = r.items.map(i => '<div class="od-irow">'
+    + `<span class="od-iname">${esc(i.name)}</span>`
+    + `<span class="od-idose">${i.mg ? `<span class="od-dose">${esc(i.mg)}</span>` : ''}</span>`
+    + `<span class="od-iqty">${esc(i.qty)}</span>`
+    + `<span class="od-iprice">${esc(money(i.price))}</span>`
+    + `<span class="od-isum">${esc(money(i.sum))}</span>`
+    + (i.priceManual ? `<span class="od-icatalog" data-item-catalog>catalog ${i.catalogPrice == null ? '—' : esc(money(i.catalogPrice))}</span>` : '')
+    + '</div>').join('');
+  return `<div class="od-products"><h5>Products (${r.items.length})</h5>`
+    + (r.manualPricing ? '<div class="od-manual-note">This order has quoted (manual) prices</div>' : '')
+    + (rows ? '<div class="od-ihead"><span>Product</span><span>Dosage</span><span>Qty</span><span>Price</span><span>Sum</span></div>' + rows
+      : '<div class="od-noitems">No items</div>')
+    + '</div>';
+}
+
+function noeditHtml(r) {
+  if (r.kind !== 'order') return '';
+  let msg = 'This order cannot be edited here.';
+  let extra = '';
+  if (!r.ref) msg = 'No order number — editing is not available.';
+  else if (r.duplicateOf || r.hasCopies) {
+    msg = r.duplicateOf
+      ? 'This is a duplicate record. Remove extra copies to edit the order.'
+      : 'This order number is stored more than once. Remove extra copies to edit.';
+    extra = ' <button type="button" class="od-btn" data-dedupe>Remove copies</button>';
+  }
+  return '<div class="od-noedit">' + esc(msg) + extra + '</div>';
+}
+// Stage 1 RET: the Carrier select of the card's edit mode, next to the tracking number (read by readDraftFields, sent by patchBodyFromDraft).
+function carrierBlock(value) {
+  const opts = ['<option value=""' + (value ? '' : ' selected') + '>Not set</option>'].concat((OrdersModel.CARRIERS || []).map(function (c) {
+    return '<option value="' + escAttr(c) + '"' + (c === value ? ' selected' : '') + '>' + esc(c) + '</option>';
+  })).join('');
+  return '<div class="full"><div class="field-label">Carrier</div><select class="field-input" data-field="carrier">' + opts + '</select></div>';
+}
+
+function fieldBlock(label, name, value, area) {
+  const tag = area
+    ? '<textarea class="field-textarea" data-field="' + escAttr(name) + '" rows="3">' + esc(value || '') + '</textarea>'
+    : '<input class="field-input" data-field="' + escAttr(name) + '" value="' + escAttr(value || '') + '">';
+  return '<div class="full"><div class="field-label">' + esc(label) + '</div>' + tag + '</div>';
+}
+function customerEditHtml(d) {
+  const inp = (label, name, val, extra) => '<div><div class="field-label">' + esc(label) + '</div><input class="field-input" data-field="' + escAttr(name) + '" value="' + escAttr(val || '') + '"' + (extra || '') + '></div>';
+  return '<div class="od-edit-fields">'
+    + inp('First name', 'customer.firstName', d.firstName)
+    + inp('Last name', 'customer.lastName', d.lastName)
+    + inp('Phone', 'customer.phone', d.phone)
+    + inp('Company', 'customer.company', d.company)
+    + '<div class="full"><div class="field-label">E-mail</div><input class="field-input" data-field="customer.email" value="' + escAttr(d.email || '') + '" disabled title="Cannot be changed here — it is tied to the marketing profile"><div class="od-muted">Cannot be changed here — it is tied to the marketing profile</div></div>'
+    + '</div>';
+}
+function shippingEditHtml(d) {
+  const inp = (label, name, val, extra, cls) => '<div' + (cls ? ' class="' + cls + '"' : '') + '><div class="field-label">' + esc(label) + '</div><input class="field-input" data-field="' + escAttr(name) + '" value="' + escAttr(val == null ? '' : val) + '"' + (extra || '') + '></div>';
+  return '<div class="od-edit-fields">'
+    + inp('Address', 'shipping.address1', d.address1, '', 'full')
+    + inp('Address 2', 'shipping.address2', d.address2, '', 'full')
+    + inp('City', 'shipping.city', d.city)
+    + inp('State', 'shipping.state', d.state)
+    + inp('ZIP', 'shipping.zip', d.zip)
+    + inp('Country', 'shipping.country', d.country)
+    + inp('Method', 'shipping.method', d.method)
+    + inp('Shipping cost', 'shipping.cost', d.cost, ' type="number" min="0" step="0.01"')
+    + '</div>';
+}
+function productsEditHtml(d, busy) {
+  const dis = busy ? ' disabled' : '';
+  const rows = (d.items || []).map((i, idx) => {
+    const manual = !!i.priceManual;
+    return '<tr data-item-row data-item-index="' + idx + '">'
+      + '<td>' + esc(i.name) + (i.mg ? ' <span class="od-dose">' + esc(i.mg) + '</span>' : '')
+      + (manual ? '<span class="od-icatalog" data-item-catalog>catalog ' + (i.catalogPrice == null ? '—' : esc(money(i.catalogPrice))) + '</span>' : '')
+      + '</td>'
+      + '<td><div class="od-qty">'
+      + '<button type="button" data-item-qty-dec' + dis + '>\u2212</button>'
+      + '<input class="field-input" data-item-qty type="number" min="1" step="1" value="' + escAttr(i.qty) + '"' + dis + '>'
+      + '<button type="button" data-item-qty-inc' + dis + '>+</button>'
+      + '</div></td>'
+      + '<td><input class="field-input" data-item-price type="number" min="0" step="0.01" value="' + escAttr(i.price) + '"' + ((!manual || busy) ? ' disabled' : '') + '></td>'
+      + '<td><label class="od-check"><input type="checkbox" data-item-manual' + (manual ? ' checked' : '') + dis + '> Quoted</label></td>'
+      + '<td><button type="button" class="od-copy" data-item-remove title="Remove" aria-label="Remove"' + dis + '>\u00d7</button></td>'
+      + '</tr>';
+  }).join('');
+  return '<div class="od-products"><h5>Products (' + (d.items || []).length + ')</h5>'
+    + '<table class="od-edit-items"><thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Quoted</th><th></th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="5" class="od-muted">No items</td></tr>')
+    + '</tbody></table>'
+    + '<div class="od-card-bar"><button type="button" class="od-btn" data-edit="add-product"' + dis + '>+ Add product</button></div>'
+    + '</div>';
+}
+function paymentsHtml(r) {
+  if (r.kind !== 'order') return '';
+  const rec = OrdersModel.received(r);
+  const out = OrdersModel.outstanding(r);
+  const rows = (r.payments || []).map(p => {
+    const when = OrdersModel.formatWhen(p.at, { long: true }) || p.at || '';
+    const bits = [when, p.method, money(p.amount), p.note, p.by].filter(Boolean).join(' \u00b7 ');
+    return '<div class="od-pay-row" data-pay-row data-pay-id="' + escAttr(p.id) + '" data-pay-kind="' + escAttr(p.kind) + '">'
+      + '<span>' + esc(bits) + '</span><span>' + esc(p.kind) + '</span>'
+      + '<button type="button" class="od-copy" data-pay-remove title="Remove payment" aria-label="Remove payment">\u00d7</button>'
+      + '</div>';
+  }).join('');
+  const mark = (r.group === 'unpaid' && r.toPay && rec + 1e-9 >= r.toPay)
+    ? '<button type="button" class="btn-save" data-mark-paid>Mark as paid</button>' : '';
+  const form = payFormKey === r.rowKey ? (
+    '<div class="od-pay-form">'
+    + '<div><div class="field-label">Amount</div><input class="field-input" data-pay-amount type="number" min="0.01" step="0.01"></div>'
+    + '<div><div class="field-label">Method</div><select class="field-sel" data-pay-method><option>Zelle</option><option>Bank transfer</option><option>Crypto</option><option>Card</option><option>Other</option></select></div>'
+    + '<div><div class="field-label">Date</div><input class="field-input" data-pay-at type="date" value="' + escAttr(OrdersModel.dateInputValue()) + '"></div>'
+    + '<div class="full"><div class="field-label">Note</div><input class="field-input" data-pay-note></div>'
+    + '<div class="full"><button type="button" class="btn-save" data-pay-submit>Save payment</button></div>'
+    + '</div>'
+  ) : '';
+  return '<div class="od-payments"><h5>Payments ' + payBadgeHtml(r) + '</h5>'
+    + (rows || '<div class="od-muted">No payments recorded</div>')
+    + '<div class="od-received">Received ' + esc(money(rec)) + '</div>'
+    + '<div class="od-outstanding">Outstanding ' + esc(money(out)) + '</div>'
+    + '<div class="od-card-bar"><button type="button" class="od-btn" data-pay-add>+ Add payment</button>' + mark + '</div>'
+    + form
+    + '</div>';
+}
+function editsHtml(r) {
+  const list = r.edits || [];
+  if (!list.length) return '';
+  const rows = list.map(e => {
+    const when = OrdersModel.formatWhen(e.at, { long: true }) || e.at || '';
+    const fields = (e.fields || []).join(', ');
+    return '<div>' + esc(when) + ' \u00b7 ' + esc(e.by || 'unknown') + (fields ? ' \u00b7 ' + esc(fields) : '') + '</div>';
+  }).join('');
+  return '<details class="od-edits"><summary>Edit history (' + list.length + ')</summary>' + rows + '</details>';
+}
+
+// label/value pair of a card block; nothing at all when the value is empty
+function kv(label, html) {
+  return html ? `<div class="od-k">${esc(label)}</div><div class="od-v">${html}</div>` : '';
+}
+
+function copyBtn(what, label) {
+  return `<button type="button" class="od-copy" data-action="copy" data-copy="${what}" title="Copy ${label}" aria-label="Copy ${label}">${ICON_COPY}</button>`;
+}
+
+function renderPagination() {
+  const total = filteredOrders.length;
+  const pages = Math.ceil(total/PER_PAGE);
+  const start = (currentPage-1)*PER_PAGE+1;
+  const end   = Math.min(currentPage*PER_PAGE, total);
+  if (document.getElementById('pag-info')) document.getElementById('pag-info').textContent = `Showing ${start}-${end} of ${total}`;
+
+  let html = `<button class="pag-btn" onclick="goPage(${currentPage-1})" ${currentPage===1?'disabled':''}>‹</button>`;
+  for (let p = Math.max(1,currentPage-2); p <= Math.min(pages,currentPage+2); p++)
+    html += `<button class="pag-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p}</button>`;
+  html += `<button class="pag-btn" onclick="goPage(${currentPage+1})" ${currentPage>=pages?'disabled':''}>›</button>`;
+  if (document.getElementById('pag-btns')) document.getElementById('pag-btns').innerHTML = html;
+}
+
+function goPage(p) {
+  const pages = Math.ceil(filteredOrders.length/PER_PAGE);
+  if (p<1||p>pages) return;
+  currentPage = p;
+  renderTable();
+}
+
+// Phase 3 (2026-09-05): the status is saved on the server (PATCH /msolpeptides-api/orders/:ref) and the list is reloaded;
+// before, "Ship" only changed a copy in this browser's localStorage.
+// 2026-09-17: the record and its ref are read before the first await (a reload replaces allOrders); the reload keeps
+// the page and the open cards.
+async function markShipped(idx) {
+  const r = allOrders[idx];
+  if (!r || !OrdersModel.canShip(r)) return;
+  const ref = r.ref;
+  if (writing.has(ref)) return;          // a double-click must not send a second PATCH
+  writing.add(ref);
+  try {
+    try {
+      // Stage 1 RET: no tracking number or carrier on the order yet: ask, then one PATCH with status, number and carrier.
+      let track = null;
+      if (typeof OrdersModel.needsTrackingDialog === 'function' && OrdersModel.needsTrackingDialog(r, 'shipped')) {
+        track = await trackingDialog(ref, 'shipped', r);
+        if (!track) return;
+      }
+      await api('/msolpeptides-api/orders/' + encodeURIComponent(ref), { method: 'PATCH', body: typeof OrdersModel.statusPatchBody === 'function' ? OrdersModel.statusPatchBody('shipped', track) : { status: 'shipped' } });
+    } catch (e) { return; }              // api() has already shown the toast
+    showToast('Order ' + ref + ' marked as Shipped', 'success');
+    // The write did happen: if the reload after it failed, the kept list still has to show the new status.
+    if (!(await loadOrders(true))) { applyWrittenStatus(r, 'shipped'); renderTable(); }
+  } finally {
+    writing.delete(ref);                 // held until the reload is done, or a click during it writes again
+  }
+}
+
+// Stage 1 RET (2026-09-30): the carrier and the tracking number for a shipped / in-transit order, asked before the status is
+// written, so that one PATCH carries all three and the buyer's letter has what it needs. Resolves {trackingNumber, carrier},
+// or null when the manager cancels; rec (the order) pre-fills what it already has. Built on the crm.css modal classes; the order number goes in as text, never as markup.
+function trackingDialog(ref, status, rec) {
+  return new Promise(function (resolve) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = '<div class="modal" style="width:420px" role="dialog" aria-modal="true">'
+      + '<div class="modal-header"><div class="modal-info"><div class="modal-title" data-td="title"></div></div></div>'
+      + '<div class="modal-body">'
+      + '<div><div class="field-label">Carrier</div><select class="field-input" data-td="carrier"></select></div>'
+      + '<div><div class="field-label">Tracking number</div><input class="field-input" data-td="number" maxlength="100" autocomplete="off"></div>'
+      + '<div class="od-muted">Saved on the order together with the status.</div>'
+      + '<div class="od-edit-error" data-td="error"></div>'
+      + '</div>'
+      + '<div class="modal-footer"><div class="modal-footer-left"></div><div class="modal-footer-right">'
+      + '<button type="button" class="btn-cancel" data-td="cancel">Cancel</button>'
+      + '<button type="button" class="btn btn-primary" data-td="ok">Save</button>'
+      + '</div></div></div>';
+    const q = function (n) { return overlay.querySelector('[data-td="' + n + '"]'); };
+    q('title').textContent = 'Order ' + ref + ' to "' + status + '": tracking';
+    const sel = q('carrier');
+    const first = document.createElement('option');
+    first.value = ''; first.textContent = 'Choose a carrier'; sel.appendChild(first);
+    (OrdersModel.CARRIERS || []).forEach(function (c) { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+    if (rec && rec.carrier) sel.value = rec.carrier;                         // what the order already has is offered, not asked again
+    if (rec && rec.trackingNumber) q('number').value = rec.trackingNumber;
+    function close(value) {
+      document.removeEventListener('keydown', onKey, true);
+      if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      resolve(value);
+    }
+    function submit() {
+      const number = q('number').value.trim(), carrier = sel.value;
+      if (!carrier || !number) { q('error').textContent = 'Choose a carrier and enter the tracking number.'; return; }
+      close({ trackingNumber: number, carrier: carrier });
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+      else if (e.key === 'Enter' && e.target && e.target.getAttribute && e.target.getAttribute('data-td') === 'number') { e.preventDefault(); submit(); }
+    }
+    overlay.addEventListener('click', function (e) {
+      const btn = e.target.closest ? e.target.closest('[data-td]') : null;
+      const k = btn ? btn.getAttribute('data-td') : '';
+      if (k === 'ok') submit();
+      else if (k === 'cancel' || e.target === overlay) close(null);
+    });
+    document.addEventListener('keydown', onKey, true);
+    (document.body || document.documentElement).appendChild(overlay);
+    sel.focus();
+  });
+}
+
+// 2026-09-09: any status products-api accepts can be set from the row; "Ship" above stays as the one-click shortcut
+// for the move that happens most. The confirm step is deliberate — a select fires on a stray scroll or arrow key, and
+// this writes the field the Customer.io journeys branch on. Nothing is stored locally: a success reloads the list, a
+// refusal redraws the table, which puts the stored value back into the control.
+// 2026-09-17: the record, its ref and its row key are read before the dialog; afterwards the focus goes back to this
+// order's select, found by row key (the redraw made it a new element).
+async function changeStatus(idx, status) {
+  const r = allOrders[idx];
+  if (!r || r.kind !== 'order' || !r.ref || r.duplicateOf) { renderTable(); return; }
+  const ref = r.ref, key = r.rowKey;
+  if (ORDER_STATUSES.indexOf(status) < 0) { renderTable(); focusStatus(key); return; }   // the hint line is not a status
+  // One write per row: a second dialog (Shift+Tab reaches the control behind this one) would send a second PATCH.
+  if (writing.has(ref)) { renderTable(); focusStatus(key); return; }
+  writing.add(ref);
+  try {
+    // Stage 1 RET: shipped / in-transit on an order with no tracking number or no carrier ask first; one PATCH carries all of it.
+    let track = null;
+    if (typeof OrdersModel.needsTrackingDialog === 'function' && OrdersModel.needsTrackingDialog(r, status)) {
+      track = await trackingDialog(ref, status, r);
+      if (!track) { renderTable(); focusStatus(key); return; }
+    } else if (!(await confirmDialog('Set order ' + ref + ' to "' + status + '"?', { ok: 'Set status' }))) { renderTable(); focusStatus(key); return; }
+    try {
+      await api('/msolpeptides-api/orders/' + encodeURIComponent(ref), { method: 'PATCH', body: typeof OrdersModel.statusPatchBody === 'function' ? OrdersModel.statusPatchBody(status, track) : { status: status } });
+    } catch (e) { renderTable(); focusStatus(key); return; }   // api() has already shown the toast
+    showToast('Order ' + ref + ' set to ' + status, 'success');
+    // The write did happen: if the reload after it failed, the kept list still has to show the new status.
+    if (!(await loadOrders(true))) { applyWrittenStatus(r, status); renderTable(); }
+    focusStatus(key);
+  } finally {
+    writing.delete(ref);
+  }
+}
+
+// 2026-09-17: the server took the status but the reload did not come back — the row is updated from what was written.
+// The rules stay in the model: a throwaway record says what this status means (label and group).
+function applyWrittenStatus(r, status) {
+  const written = OrdersModel.normalize({ ref: r.ref, status: status });
+  r.statusRaw = written.statusRaw;
+  r.status = written.status;
+  r.group = written.group;
+}
+
+function focusStatus(key) {
+  // CSS.escape is missing in older browsers; inside a quoted attribute value only " and \ need escaping.
+  const quoted = (window.CSS && CSS.escape) ? CSS.escape(key) : key.replace(/["\\]/g, '\\$&');
+  const sel = document.querySelector('#orders-tbody tr[data-key="' + quoted + '"] select.od-status');
+  if (sel) sel.focus();
+}
+
+// 2026-09-17: discountNote() removed — the discount label comes from OrdersModel.discountLabels() (row and card).
+
+// 2026-09-17: the card opens under its row in place — no redraw, so the focus stays on the arrow; any number of
+// rows can be open.
+function toggleRow(idx, btn) {
+  const r = allOrders[idx];
+  const tr = document.getElementById('od-r-' + idx);
+  if (!r || !tr) return;
+  const open = !openKeys.has(r.rowKey);
+  const old = document.getElementById('od-d-' + idx);
+  if (old) old.remove();
+  if (open) { openKeys.add(r.rowKey); tr.insertAdjacentHTML('afterend', detailHtml(r)); }
+  else {
+    openKeys.delete(r.rowKey);
+    if (editingKey === r.rowKey) { editingKey = ''; editDraft = null; editPending = false; editError = ''; editConflictOrder = null; closePicker(); }
+  }
+  tr.classList.toggle('is-open', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.setAttribute('aria-label', arrowLabel(r, open));
+}
+
+// Copies come from the record, not from the screen text (the address as a label-ready block).
+async function copyField(idx, what) {
+  const r = allOrders[idx];
+  if (!r) return;
+  const value = what === 'ref' ? r.id : what === 'email' ? r.email : what === 'phone' ? r.phone
+    : what === 'address' ? OrdersModel.addressText(r) : '';
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast('Copied', 'success');
+  } catch (e) {
+    showToast('Copy failed', 'error');
+  }
+}
+
+// Without orders-model.js there is nothing to render: the same row as a failed load, and Retry reloads the page
+// (the file is fetched again with it). The four cards keep the "—" they are rendered with.
+function showModelMissing() {
+  const tbody = document.getElementById('orders-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr class="od-error"><td colspan="8">Could not load orders.<button type="button" class="od-retry" data-action="retry">Retry</button></td></tr>';
+  const retry = tbody.querySelector('button[data-action="retry"]');
+  if (retry) retry.addEventListener('click', () => location.reload());
+}
+
+// 2026-09-17: one listener per kind of event instead of inline handlers in the rows; the handlers get the numeric
+// index from data-idx.
+function recordByIdx(idx) { return allOrders[idx]; }
+function recordByKey(key) { return allOrders.find(o => o.rowKey === key); }
+function refreshOpenCard(r) {
+  if (!r) return;
+  const idx = allOrders.indexOf(r);
+  const det = document.getElementById('od-d-' + idx);
+  if (!det) { renderTable(); return; }
+  const wrap = det.querySelector('.od-card');
+  if (!wrap) return;
+  wrap.className = 'od-card' + (editingKey === r.rowKey ? ' od-editing' : '');
+  wrap.innerHTML = r.kind === 'signup' ? signupCardHtml(r) : orderCardHtml(r);
+}
+function markPending() {
+  editPending = true;
+  const r = recordByKey(editingKey);
+  if (r) refreshOpenCard(r);
+}
+function copyDraftFrom(r) {
+  return {
+    items: (r.items || []).map(i => ({ name: i.name, slug: i.slug, mg: i.mg, qty: i.qty, price: i.price, priceManual: !!i.priceManual, catalogPrice: i.catalogPrice, sum: i.sum })),
+    firstName: r.firstName, lastName: r.lastName, phone: r.phone, company: r.company, email: r.email,
+    address1: r.ship.address1, address2: r.ship.address2, city: r.ship.city, state: r.ship.state, zip: r.ship.zip,
+    country: r.country || r.ship.country, method: r.shipLabel, cost: r.shipCost,
+    managerNote: r.managerNote, trackingNumber: r.trackingNumber, carrier: r.carrier,
+    expectedUpdatedAt: r.updatedAt || ''
+  };
+}
+function startEdit(r) {
+  if (!OrdersModel.canEdit(r)) return;
+  editingKey = r.rowKey;
+  editDraft = copyDraftFrom(r);
+  editPending = false;
+  editError = '';
+  editBusy = false;
+  editConflictOrder = null;
+  refreshOpenCard(r);
+  loadCatalog();
+}
+function cancelEdit(r) {
+  editingKey = '';
+  editDraft = null;
+  editPending = false;
+  editError = '';
+  editBusy = false;
+  editConflictOrder = null;
+  closePicker();
+  if (r) refreshOpenCard(r);
+}
+function lineOf(el) {
+  const tr = el.closest('[data-item-row]');
+  if (!tr || !editDraft) return null;
+  const i = Number(tr.getAttribute('data-item-index'));
+  return editDraft.items[i] || null;
+}
+function setQty(line, q) {
+  q = parseInt(q, 10);
+  if (!Number.isFinite(q) || q < 1) q = 1;
+  if (q > 999) q = 999;
+  line.qty = q;
+  markPending();
+}
+function normMg(mg) { return String(mg || '').trim().toLowerCase(); }
+function catalogProduct(slug) {
+  return (catalogCache || []).find(p => p && p.slug === slug) || null;
+}
+function catalogUnit(p, mg, qty) {
+  if (!p) return null;
+  let u = Number(p.price);
+  const sp = p.strength_prices;
+  if (sp && mg && sp[mg] != null && Number.isFinite(Number(sp[mg]))) u = Number(sp[mg]);
+  const by = p.pack_tiers_by_strength;
+  const tiers = (by && mg && by[mg]) || p.pack_tiers;
+  if (Array.isArray(tiers) && qty) {
+    tiers.forEach(t => {
+      const q = Number(t && (t.qty || t.min || t.from));
+      const price = Number(t && (t.price || t.unit || t.unit_price));
+      if (Number.isFinite(q) && q <= qty && Number.isFinite(price)) u = price;
+    });
+  }
+  return Number.isFinite(u) ? u : null;
+}
+async function loadCatalog() {
+  if (catalogCache) return catalogCache;
+  try {
+    const d = await api('/msolpeptides-api/products');
+    catalogCache = Array.isArray(d) ? d : ((d && d.products) || []);
+  } catch (e) { catalogCache = []; }
+  return catalogCache;
+}
+function closePicker() {
+  const el = document.getElementById('od-picker');
+  if (!el) return;
+  el.classList.remove('open');
+  el.hidden = true;
+  pickerState.slug = '';
+}
+function strengthsOf(p) {
+  if (!p) return [];
+  if (Array.isArray(p.strengths) && p.strengths.length) return p.strengths.map(String);
+  if (p.strength_prices && typeof p.strength_prices === 'object') return Object.keys(p.strength_prices);
+  return [];
+}
+function renderPicker() {
+  const box = document.getElementById('od-picker');
+  const list = document.getElementById('od-picker-list');
+  const chosen = document.getElementById('od-picker-chosen');
+  if (!box || !list) return;
+  const q = (pickerState.q || '').trim().toLowerCase();
+  const items = (catalogCache || []).filter(p => {
+    if (!p || !p.slug) return false;
+    if (!q) return true;
+    return [p.name, p.slug, p.category].join(' ').toLowerCase().indexOf(q) >= 0;
+  });
+  list.innerHTML = items.map(p => {
+    const inactive = p.is_active === false || p.active === false;
+    return '<button type="button" data-picker-item data-slug="' + escAttr(p.slug) + '"'
+      + (inactive ? ' data-inactive="1"' : '')
+      + (p.slug === pickerState.slug ? ' class="od-picker-chosen"' : '') + '>'
+      + esc(p.name || p.slug) + (inactive ? ' <span class="od-muted">inactive</span>' : '') + '</button>';
+  }).join('') || '<div class="od-muted">No products</div>';
+  const p = catalogProduct(pickerState.slug);
+  if (!p) { if (chosen) chosen.hidden = true; return; }
+  if (chosen) chosen.hidden = false;
+  const mgs = strengthsOf(p);
+  const mgSel = box.querySelector('[data-picker-mg]');
+  if (mgSel) {
+    if (!pickerState.mg && mgs.length) pickerState.mg = mgs[0];
+    mgSel.innerHTML = mgs.length
+      ? mgs.map(m => '<option value="' + escAttr(m) + '"' + (m === pickerState.mg ? ' selected' : '') + '>' + esc(m) + '</option>').join('')
+      : '<option value=""></option>';
+  }
+  const qtyEl = box.querySelector('[data-picker-qty]');
+  if (qtyEl) qtyEl.value = pickerState.qty;
+  const priceEl = box.querySelector('[data-picker-price]');
+  if (priceEl) {
+    const u = catalogUnit(p, pickerState.mg, pickerState.qty);
+    priceEl.textContent = u == null ? '—' : money(u);
+  }
+}
+async function openPicker() {
+  wirePicker();
+  await loadCatalog();
+  pickerState.q = '';
+  pickerState.slug = '';
+  pickerState.mg = '';
+  pickerState.qty = 1;
+  const el = document.getElementById('od-picker');
+  const search = document.getElementById('od-picker-search');
+  if (search) search.value = '';
+  if (el) { el.hidden = false; el.classList.add('open'); }
+  renderPicker();
+}
+function addPickedProduct() {
+  if (!editDraft) return;
+  const p = catalogProduct(pickerState.slug);
+  if (!p) return;
+  const mg = pickerState.mg || '';
+  const qty = Math.max(1, parseInt(pickerState.qty, 10) || 1);
+  const unit = catalogUnit(p, mg, qty);
+  const hit = editDraft.items.find(i => i.slug === p.slug && normMg(i.mg) === normMg(mg));
+  if (hit) hit.qty += qty;
+  else editDraft.items.push({ name: p.name || p.slug, slug: p.slug, mg: mg, qty: qty, price: unit == null ? 0 : unit, priceManual: false, catalogPrice: unit, sum: 0 });
+  editPending = true;
+  closePicker();
+  refreshOpenCard(recordByKey(editingKey));
+}
+function readDraftFields(el) {
+  if (!editDraft) return;
+  const field = el.getAttribute('data-field');
+  if (!field) return;
+  const v = el.value;
+  const map = {
+    'customer.firstName': 'firstName', 'customer.lastName': 'lastName', 'customer.phone': 'phone', 'customer.company': 'company',
+    'shipping.address1': 'address1', 'shipping.address2': 'address2', 'shipping.city': 'city', 'shipping.state': 'state',
+    'shipping.zip': 'zip', 'shipping.country': 'country', 'shipping.method': 'method', 'shipping.cost': 'cost',
+    managerNote: 'managerNote', trackingNumber: 'trackingNumber', carrier: 'carrier'
+  };
+  if (field === 'customer.email') return;
+  const key = map[field];
+  if (!key) return;
+  if (key === 'cost') { editDraft.cost = v === '' ? null : v; markPending(); return; }
+  editDraft[key] = v;
+}
+function patchBodyFromDraft() {
+  const d = editDraft;
+  const shipping = {
+    address1: d.address1, address2: d.address2, city: d.city, state: d.state, zip: d.zip,
+    country: d.country, method: d.method
+  };
+  const cost = d.cost === '' || d.cost === null || d.cost === undefined ? null : Number(d.cost);
+  if (cost !== null && Number.isFinite(cost) && cost >= 0) shipping.cost = cost;
+  return {
+    items: d.items.map(i => {
+      const line = { slug: i.slug, name: i.name, mg: i.mg, qty: i.qty };
+      if (i.priceManual) { line.price_manual = true; line.price = Number(i.price); }
+      return line;
+    }),
+    customer: { firstName: d.firstName, lastName: d.lastName, phone: d.phone, company: d.company },
+    shipping: shipping,
+    managerNote: d.managerNote,
+    trackingNumber: d.trackingNumber,
+    carrier: d.carrier,
+    expectedUpdatedAt: d.expectedUpdatedAt
+  };
+}
+async function saveEdit(r) {
+  if (!editDraft || !r || !r.ref) return;
+  const local = OrdersModel.draftError(editDraft.items);
+  if (local) { editError = local; refreshOpenCard(r); return; }
+  if (writing.has(r.ref) || editBusy) return;
+  editBusy = true;
+  writing.add(r.ref);
+  editError = '';
+  editConflictOrder = null;
+  refreshOpenCard(r);
+  let conflict = null;
+  const origFetch = window.fetch;
+  window.fetch = async function () {
+    const res = await origFetch.apply(this, arguments);
+    if (res.status === 409) {
+      try {
+        const d = JSON.parse(await res.clone().text());
+        if (d && d.order) conflict = d.order;
+      } catch (err) {}
+    }
+    return res;
+  };
+  try {
+    await api('/msolpeptides-api/orders/' + encodeURIComponent(r.ref), { method: 'PATCH', body: patchBodyFromDraft(), toast: false });
+    editingKey = '';
+    editDraft = null;
+    editPending = false;
+    editError = '';
+    editConflictOrder = null;
+    openKeys.add(r.rowKey);
+    closePicker();
+    if (!(await loadOrders(true))) renderTable();
+  } catch (e) {
+    editError = (e && e.message) ? e.message : 'Could not save';
+    editConflictOrder = (e && e.status === 409 && conflict) ? conflict : null;
+    refreshOpenCard(r);
+  } finally {
+    window.fetch = origFetch;
+    editBusy = false;
+    writing.delete(r.ref);
+    const cur = recordByKey(r.rowKey);
+    if (editingKey === r.rowKey && cur) refreshOpenCard(cur);
+  }
+}
+async function addPayment(r, amount, method, note, at) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) { showToast('Enter an amount', 'error'); return; }
+  if (writing.has(r.ref)) return;
+  writing.add(r.ref);
+  const body = { kind: 'payment', amount: n, method: method || 'Zelle', note: note || '' };
+  const iso = OrdersModel.isoFromDateInput(at);
+  if (iso) body.at = iso;
+  try {
+    await api('/msolpeptides-api/orders/' + encodeURIComponent(r.ref) + '/payments', {
+      method: 'POST', body: body
+    });
+    payFormKey = '';
+    openKeys.add(r.rowKey);
+    if (editingKey) {
+      const keep = { key: editingKey, draft: editDraft, pending: editPending, err: editError };
+      await loadOrders(true);
+      editingKey = keep.key; editDraft = keep.draft; editPending = keep.pending; editError = keep.err;
+      renderTable();
+    } else {
+      await loadOrders(true);
+    }
+  } catch (e) {
+  } finally { writing.delete(r.ref); }
+}
+function reloadConflict(r) {
+  const raw = editConflictOrder;
+  if (!raw || !r) return;
+  const next = OrdersModel.normalize(raw);
+  if (!next) return;
+  next.rowKey = r.rowKey;
+  next.duplicateOf = r.duplicateOf;
+  next.hasCopies = r.hasCopies;
+  const idx = allOrders.indexOf(r);
+  if (idx >= 0) allOrders[idx] = next;
+  cancelEdit(next);
+  applyFilters({ keepPage: true });
+}
+async function removePayment(r, id) {
+  if (!id) return;
+  if (writing.has(r.ref)) return;
+  if (!(await confirmDialog('Remove this payment? This cannot be undone.', { ok: 'Remove' }))) return;
+  writing.add(r.ref);
+  try {
+    await api('/msolpeptides-api/orders/' + encodeURIComponent(r.ref) + '/payments/' + encodeURIComponent(id), { method: 'DELETE' });
+    openKeys.add(r.rowKey);
+    await loadOrders(true);
+  } catch (e) {
+  } finally { writing.delete(r.ref); }
+}
+async function markPaid(r) {
+  if (!r.ref || writing.has(r.ref)) return;
+  if (!(await confirmDialog('Set order ' + r.ref + ' to "paid"?', { ok: 'Mark as paid' }))) return;
+  writing.add(r.ref);
+  try {
+    await api('/msolpeptides-api/orders/' + encodeURIComponent(r.ref), { method: 'PATCH', body: { status: 'paid' } });
+    openKeys.add(r.rowKey);
+    await loadOrders(true);
+  } catch (e) {
+  } finally { writing.delete(r.ref); }
+}
+async function dedupeOrder(r) {
+  if (!r.ref || writing.has(r.ref)) return;
+  if (!(await confirmDialog('Remove duplicate copies of ' + r.ref + '? This cannot be undone.', { ok: 'Remove copies' }))) return;
+  writing.add(r.ref);
+  try {
+    await api('/msolpeptides-api/orders/' + encodeURIComponent(r.ref) + '/dedupe', { method: 'POST', body: {} });
+    openKeys.add(r.rowKey);
+    await loadOrders(true);
+  } catch (e) {
+  } finally { writing.delete(r.ref); }
+}
+function wirePicker() {
+  const box = document.getElementById('od-picker');
+  if (!box || box._wired) return;
+  box._wired = true;
+  box.addEventListener('input', e => {
+    if (e.target.id === 'od-picker-search') { pickerState.q = e.target.value; renderPicker(); }
+    else if (e.target.matches('[data-picker-qty]')) { pickerState.qty = e.target.value; renderPicker(); }
+  });
+  box.addEventListener('change', e => {
+    if (e.target.matches('[data-picker-mg]')) { pickerState.mg = e.target.value; renderPicker(); }
+    else if (e.target.matches('[data-picker-qty]')) { pickerState.qty = e.target.value; renderPicker(); }
+  });
+  box.addEventListener('click', e => {
+    const item = e.target.closest('[data-picker-item]');
+    if (item) {
+      pickerState.slug = item.getAttribute('data-slug') || '';
+      const p = catalogProduct(pickerState.slug);
+      const mgs = strengthsOf(p);
+      pickerState.mg = mgs[0] || '';
+      pickerState.qty = 1;
+      renderPicker();
+      return;
+    }
+    if (e.target.closest('[data-picker-close]')) closePicker();
+    else if (e.target.closest('[data-picker-add]')) addPickedProduct();
+  });
+}
+
+function wireOrdersPage() {
+  const tbody = document.getElementById('orders-tbody');
+  const cards = document.querySelector('.stats-row');
+  if (!tbody || !cards) return;
+  tbody.addEventListener('click', e => {
+    const editEl = e.target.closest('[data-edit],[data-item-qty-inc],[data-item-qty-dec],[data-item-remove],[data-item-manual],[data-pay-add],[data-pay-remove],[data-pay-submit],[data-mark-paid],[data-dedupe]');
+    if (editEl && tbody.contains(editEl)) {
+      const tr = editEl.closest('tr[data-idx]');
+      const r = tr ? recordByIdx(Number(tr.getAttribute('data-idx'))) : null;
+      if (!r) return;
+      if (editEl.matches('[data-edit="start"]')) startEdit(r);
+      else if (editEl.matches('[data-edit="cancel"]')) cancelEdit(r);
+      else if (editEl.matches('[data-edit="save"]')) saveEdit(r);
+      else if (editEl.matches('[data-edit="reload-conflict"]')) reloadConflict(r);
+      else if (editEl.matches('[data-edit="add-product"]')) openPicker();
+      else if (editEl.matches('[data-item-qty-inc]')) { const line = lineOf(editEl); if (line) setQty(line, line.qty + 1); }
+      else if (editEl.matches('[data-item-qty-dec]')) { const line = lineOf(editEl); if (line) setQty(line, line.qty - 1); }
+      else if (editEl.matches('[data-item-remove]')) {
+        const trI = editEl.closest('[data-item-row]');
+        if (trI && editDraft) { editDraft.items.splice(Number(trI.getAttribute('data-item-index')), 1); markPending(); }
+      }
+      else if (editEl.matches('[data-item-manual]')) {
+        const line = lineOf(editEl);
+        if (line) {
+          line.priceManual = !!editEl.checked;
+          if (!line.priceManual) {
+            const u = catalogUnit(catalogProduct(line.slug), line.mg, line.qty);
+            if (u != null) line.price = u;
+            else if (line.catalogPrice != null) line.price = line.catalogPrice;
+          }
+          markPending();
+        }
+      }
+      else if (editEl.matches('[data-pay-add]')) { payFormKey = r.rowKey; refreshOpenCard(r); }
+      else if (editEl.matches('[data-pay-submit]')) {
+        const card = editEl.closest('.od-card');
+        const amount = card && card.querySelector('[data-pay-amount]');
+        const method = card && card.querySelector('[data-pay-method]');
+        const note = card && card.querySelector('[data-pay-note]');
+        const at = card && card.querySelector('[data-pay-at]');
+        addPayment(r, amount && amount.value, method && method.value, note && note.value, at && at.value);
+      }
+      else if (editEl.matches('[data-pay-remove]')) {
+        const row = editEl.closest('[data-pay-row]');
+        removePayment(r, row && row.getAttribute('data-pay-id'));
+      }
+      else if (editEl.matches('[data-mark-paid]')) markPaid(r);
+      else if (editEl.matches('[data-dedupe]')) dedupeOrder(r);
+      return;
+    }
+    const el = e.target.closest('[data-action]');
+    if (!el || !tbody.contains(el)) return;
+    const action = el.getAttribute('data-action');
+    if (action === 'retry') { loadOrders(); return; }
+    const tr = el.closest('tr[data-idx]');
+    if (!tr) return;
+    const idx = Number(tr.getAttribute('data-idx'));
+    if (action === 'toggle') toggleRow(idx, el);
+    else if (action === 'ship') markShipped(idx);
+    else if (action === 'copy') copyField(idx, el.getAttribute('data-copy'));
+  });
+  tbody.addEventListener('input', e => {
+    const el = e.target;
+    if (el.matches('[data-item-qty]')) { const line = lineOf(el); if (line) setQty(line, el.value); }
+    else if (el.matches('[data-item-price]')) { const line = lineOf(el); if (line) { line.price = el.value; markPending(); } }
+    else if (el.matches('[data-field]')) readDraftFields(el);
+  });
+  tbody.addEventListener('change', e => {
+    const el = e.target;
+    if (el.matches('select[data-action="status"]')) {
+      const tr = el.closest('tr[data-idx]');
+      if (tr) changeStatus(Number(tr.getAttribute('data-idx')), el.value);
+      return;
+    }
+    if (el.matches('[data-item-qty]')) { const line = lineOf(el); if (line) setQty(line, el.value); }
+    else if (el.matches('[data-item-price]')) { const line = lineOf(el); if (line) { line.price = el.value; markPending(); } }
+    else if (el.matches('[data-field]')) readDraftFields(el);
+    else if (el.matches('[data-item-manual]')) {
+      const line = lineOf(el);
+      if (line) {
+        line.priceManual = !!el.checked;
+        if (!line.priceManual) {
+          const u = catalogUnit(catalogProduct(line.slug), line.mg, line.qty);
+          if (u != null) line.price = u;
+          else if (line.catalogPrice != null) line.price = line.catalogPrice;
+        }
+        markPending();
+      }
+    }
+  });
+  const press = card => {
+    const name = card.getAttribute('data-card');
+    setStatusFilter(name === 'total' ? '' : (CARD_FILTER[name] || ''));
+  };
+  cards.addEventListener('click', e => {
+    const card = e.target.closest('.stat-card[data-card]');
+    if (card) press(card);
+  });
+  cards.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.stat-card[data-card]');
+    if (!card) return;
+    e.preventDefault();   // Space would scroll the page
+    press(card);
+  });
+}
+
+// 2026-09-17: viewOrder() and its modal removed — an order opens under its row now (toggleRow, orderCardHtml).
+
+function openNewModal() { document.getElementById('modal-overlay').classList.add('open'); }
+function closeModal(e) {
+  if (!e || e.target===document.getElementById('modal-overlay'))
+    document.getElementById('modal-overlay').classList.remove('open');
+}
+
+async function saveOrder() {
+  const company = document.getElementById('f-company').value.trim();
+  const email   = document.getElementById('f-email').value.trim();
+  const country = document.getElementById('f-country').value;
+  const product = document.getElementById('f-product').value;
+  const qty     = parseInt(document.getElementById('f-qty').value) || 0;
+  const price   = parseInt(document.getElementById('f-price').value) || 0;
+  const notes   = document.getElementById('f-notes').value.trim();
+  if (!company) { showToast('Company name required', 'error'); return; }
+  const today = new Date().toISOString().split('T')[0];
+  // Phase 4 (2026-09-05): the ref is issued by the server and comes back in the answer; this page used to number the
+  // orders itself from a counter that always restarted at 0. Status stays lowercase, the way PATCH stores it.
+  const slug = String(product || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'custom';
+  const newOrder = {company,email,country,product,qty,price,status:'pending',date:today,notes,
+    customer: { company: company, email: email },
+    items: [{ name: product, slug: slug, qty: qty, price: price, price_manual: true }]};
+
+  // Review P: the page sends no ref, so the server cannot recognise a re-click — one request in flight at a time.
+  if (saveOrder.busy) return;
+  saveOrder.busy = true;
+  const saveBtn = document.querySelector('#modal-overlay .btn-save');
+  if (saveBtn) saveBtn.disabled = true;
+  let d;
+  try {
+    d = await api('/msolpeptides-api/orders', { method: 'POST', body: newOrder });
+  } catch (err) {
+    return;                              // api() has already shown the toast
+  } finally {
+    saveOrder.busy = false;
+    if (saveBtn) saveBtn.disabled = false;
+  }
+  const id = (d && d.id) || '';
+  // 2026-09-17: the list is read back from the server instead of adding a copy here — the server stamps created_at
+  // and appends the record, so the reloaded list sorts the new order first. Page 1 is where it shows.
+  closeModal();
+  document.getElementById('f-company').value='';
+  document.getElementById('f-email').value='';
+  document.getElementById('f-notes').value='';
+  await loadOrders();
+  const rec = allOrders.find(o => o.kind === 'order' && o.id === id);
+  let note = '';
+  if (rec && rec.isTest && !document.getElementById('show-test').checked) note = ' — looks like a test order; tick Test orders to see it';
+  else if (rec && filteredOrders.indexOf(rec) < 0) note = ' — hidden by the current filters';
+  showToast('Order ' + id + ' created' + note, 'success');
+}
+
+function exportCSV() {
+  const header = 'Order#,Customer,Email,Phone,Ship to,Shipping,Items,Qty,Total,Server total,Discount,Due after discount,Price mismatch,Status,Payment status,Date,Payment,Coupon,Notes,Received,Outstanding,Manager note,Tracking';
+  const rows = filteredOrders.map(o => OrdersModel.csvRow(o).map(v=>`"${(v === undefined || v === null ? '' : v).toString().replace(/"/g,'""')}"`).join(','));
+  const blob = new Blob([header+'\n'+rows.join('\n')],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='mastersol-orders.csv'; a.click();
+}
+
+
+if (!localStorage.getItem('crm_token')) window.location.href='/crm/login.html';
+localStorage.removeItem('mastersol_orders'); localStorage.removeItem('crm_orders'); // phase 3: the browser copy of the orders is gone
+// 2026-09-17: orders-model.js holds every rule this page shows; without it the list says so and offers a reload
+// instead of throwing into an empty page.
+if (typeof OrdersModel === 'undefined') showModelMissing();
+else {
+  // Telegram alerts (2026-09-30) link here as orders.html#q=<order number>: the number goes into the search box first.
+  try { const q = decodeURIComponent((location.hash.match(/^#q=([^&]*)/) || [])[1] || '').trim(); if (q) document.getElementById('search-box').value = q.slice(0, 64); } catch (e) { /* a broken link just opens the full list */ }
+  wireOrdersPage(); wirePicker(); loadOrders();
+}
+</script>
+
+
+
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

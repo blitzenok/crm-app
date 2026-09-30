@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* reports-only styling; everything shared lives in crm.css */
+.logo-text-box{}
+.stats-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.report-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:20px 22px; margin-bottom:16px; }
+.report-card h3{ font-size:14px; font-weight:700; margin-bottom:14px; color:#1B2A4A; }
+thead th{ text-align:left; padding:10px 0; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:10px 0; font-size:13px; border-bottom:1px solid #F0F2FA; }
+.bar-container{ height:8px; background:#E8ECF4; border-radius:4px; overflow:hidden; }
+.bar-fill{ height:100%; background:linear-gradient(90deg,#1F7A3D,#2E7D32); border-radius:4px; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-green{ background:#E8F5E9; color:#2E7D32; }
+.badge-orange{ background:#FFF3E0; color:#E65100; }
+.badge-red{ background:#FFEBEE; color:#C62828; }
+.badge-gray{ background:#E8ECF4; color:#5A6685; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.stats-grid{grid-template-columns:1fr 1fr!important;gap:10px!important}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar"><button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display:none;background:none;border:none;font-size:24px;cursor:pointer;padding:0 10px;" aria-label="Toggle menu">☰</button>
+      <div class="topbar-title">Leads Reports <span>— Campaign & Business Performance</span></div>
+      <button class="btn btn-secondary" onclick="window.print()">📄 Export</button>
+    </div>
+    <div class="content">
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Total Outreach</div><div class="stat-value" id="statOutreach">721</div><div class="stat-sub">Emails sent</div></div>
+        <div class="stat-card"><div class="stat-label">Total Leads</div><div class="stat-value" id="statLeads">—</div><div class="stat-sub">Prospects</div></div>
+        <div class="stat-card"><div class="stat-label">Response Rate</div><div class="stat-value" id="statCVR">27%</div><div class="stat-sub">Replied / Sent</div></div>
+        <div class="stat-card"><div class="stat-label">Store Revenue</div><div class="stat-value" id="statRevenue" style="color:#2E7D32;">—</div><div class="stat-sub">Gross USD</div></div>
+      </div>
+
+      
+      <div class="report-card" id="deliverability-card">
+        <h3>Deliverability</h3>
+        <div id="deliv-note" class="stat-sub" style="margin-bottom:12px">Customer.io not connected</div>
+        <div id="deliv-banner" style="display:none;background:#FEF2F2;color:#C62828;border:1px solid #FECACA;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:600;margin-bottom:12px"></div>
+        <div class="stats-grid" style="margin-bottom:0">
+          <div class="stat-card"><div class="stat-label">Sends</div><div class="stat-value" id="deliv-sends">—</div></div>
+          <div class="stat-card"><div class="stat-label">Delivery</div><div class="stat-value" id="deliv-delivery">—</div></div>
+          <div class="stat-card"><div class="stat-label">Open</div><div class="stat-value" id="deliv-open">—</div></div>
+          <div class="stat-card"><div class="stat-label">Click</div><div class="stat-value" id="deliv-click">—</div></div>
+          <div class="stat-card"><div class="stat-label">Unsub</div><div class="stat-value" id="deliv-unsub">—</div></div>
+          <div class="stat-card"><div class="stat-label">Spam complaint</div><div class="stat-value" id="deliv-complaint">—</div></div>
+        </div>
+      </div>
+
+      <div class="report-card">
+        <h3>Campaign Performance</h3>
+        <table>
+          <thead><tr><th>Campaign</th><th>Leads</th><th>Sent</th><th>Replied</th><th>CVR</th><th>Bar</th></tr></thead>
+          <tbody id="campaignTable">
+            <tr><td style="font-weight:600;">Spain</td><td>186</td><td>186</td><td>0</td><td><span class="badge badge-gray">0%</span></td><td><div class="bar-container"><div class="bar-fill" style="width:100%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Germany</td><td>80</td><td>80</td><td>0</td><td><span class="badge badge-gray">0%</span></td><td><div class="bar-container"><div class="bar-fill" style="width:43%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Slovenia</td><td>59</td><td>59</td><td>0</td><td><span class="badge badge-gray">0%</span></td><td><div class="bar-container"><div class="bar-fill" style="width:32%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">CEE</td><td>52</td><td>46</td><td>0</td><td><span class="badge badge-gray">0%</span></td><td><div class="bar-container"><div class="bar-fill" style="width:25%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">EU Sellers</td><td>24</td><td>24</td><td>0</td><td><span class="badge badge-gray">0%</span></td><td><div class="bar-container"><div class="bar-fill" style="width:13%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Italy</td><td>222</td><td><span class="badge badge-red">STOPPED</span></td><td>—</td><td>—</td><td><div class="bar-container"><div class="bar-fill" style="width:0%"></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="report-card">
+        <h3>Lead Status Breakdown</h3>
+        <table>
+          <thead><tr><th>Status</th><th>Count</th><th>% of Total</th><th>Bar</th></tr></thead>
+          <tbody id="statusTable">
+            <tr><td style="font-weight:600;">Sent</td><td id="statSent">721</td><td>66%</td><td><div class="bar-container"><div class="bar-fill" style="width:66%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Not Contacted</td><td id="statNotContacted">374</td><td>34%</td><td><div class="bar-container"><div class="bar-fill" style="width:34%;background:linear-gradient(90deg,#F39C12,#E65100);"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Replied</td><td id="statRepliedCount">197</td><td>18%</td><td><div class="bar-container"><div class="bar-fill" style="width:18%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Qualified</td><td id="statQualified">77</td><td>7%</td><td><div class="bar-container"><div class="bar-fill" style="width:7%"></div></div></td></tr>
+            <tr><td style="font-weight:600;">Closed</td><td id="statClosed">22</td><td>2%</td><td><div class="bar-container"><div class="bar-fill" style="width:2%;background:linear-gradient(90deg,#E53935,#C62828);"></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="report-card">
+        <h3>Top Markets</h3>
+        <table>
+          <thead><tr><th>#</th><th>Country</th><th>Leads</th><th>% of Total</th><th>Bar</th></tr></thead>
+          <tbody id="countryTable">
+            <tr><td>1</td><td style="font-weight:600;">Poland</td><td>347</td><td>25%</td><td><div class="bar-container"><div class="bar-fill" style="width:25%"></div></div></td></tr>
+            <tr><td>2</td><td style="font-weight:600;">Italy</td><td>303</td><td>21%</td><td><div class="bar-container"><div class="bar-fill" style="width:21%"></div></div></td></tr>
+            <tr><td>3</td><td style="font-weight:600;">Spain</td><td>186</td><td>13%</td><td><div class="bar-container"><div class="bar-fill" style="width:13%"></div></div></td></tr>
+            <tr><td>4</td><td style="font-weight:600;">Germany</td><td>80</td><td>6%</td><td><div class="bar-container"><div class="bar-fill" style="width:6%"></div></div></td></tr>
+            <tr><td>5</td><td style="font-weight:600;">Slovenia</td><td>59</td><td>4%</td><td><div class="bar-container"><div class="bar-fill" style="width:4%"></div></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="report-card">
+        <h3>Store Performance</h3>
+        <table>
+          <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Active</th></tr></thead>
+          <tbody id="storeTable">
+            <tr><td colspan="4" style="text-align:center;color:#5A6685;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('reports');
+const API_SHOP='/msolpeptides-api';
+const API_CRM='/api';
+
+
+async function loadData(){
+  // Leads count from JSON store
+  try{
+    const d=await api(API_CRM+'/leads');
+    document.getElementById('statLeads').textContent=(d.count|| (d.leads||[]).length || 0).toLocaleString();
+  }catch(e){}
+
+  // Deliverability strip — never error if CIO is missing
+  try{
+    // {toast:false}: the card says "Customer.io not connected" itself - a toast would repeat it
+    const d=await api(API_CRM+'/cio/deliverability',{toast:false});
+    const m=d.metrics||{};
+    const set=(id,v)=>{const el=document.getElementById(id); if(el) el.textContent=(v==null?'—':v);};
+    set('deliv-sends', m.sends);
+    set('deliv-delivery', m.delivery);
+    set('deliv-open', m.open);
+    set('deliv-click', m.click);
+    set('deliv-unsub', m.unsub);
+    set('deliv-complaint', m.complaint);
+    const note=document.getElementById('deliv-note');
+    if(!d.configured){ if(note) note.textContent='Customer.io not connected'; }
+    else { if(note) note.textContent=d.note||'Live from Customer.io';
+      const sends=Number(m.sends||0);
+      if(sends>0){
+        const bounce=(Number(m.bounce||0)/sends)*100;
+        const unsub=(Number(m.unsub||0)/sends)*100;
+        const complaint=(Number(m.complaint||0)/sends)*100;
+        const flags=[];
+        if(bounce>3) flags.push('bounce '+bounce.toFixed(2)+'%');
+        if(unsub>0.5) flags.push('unsub '+unsub.toFixed(2)+'%');
+        if(complaint>0.1) flags.push('complaint '+complaint.toFixed(2)+'%');
+        const ban=document.getElementById('deliv-banner');
+        if(flags.length && ban){ ban.style.display='block'; ban.textContent='Deliverability alert: '+flags.join(' · '); }
+      }
+    }
+  }catch(e){}
+
+  // Store products + revenue
+  try{
+    const products=await api(API_SHOP+'/products');
+    document.getElementById('storeTable').innerHTML=products.map(p=>`<tr><td style="font-weight:600;">${esc(p.name||'')}</td><td>$${esc(p.price||0)}</td><td><span class="badge ${p.stock_status==='In Stock'?'badge-green':'badge-orange'}">${esc(p.stock_status||'—')}</span></td><td>${p.is_active?'✅':'❌'}</td></tr>`).join('');
+  }catch(e){}
+
+  try{
+    const orders=await api(API_SHOP+'/orders');
+    const rev=orders.reduce((s,o)=>s+(parseFloat(o.total)||0),0);
+    document.getElementById('statRevenue').textContent='$'+rev.toLocaleString(undefined,{maximumFractionDigits:0});
+  }catch(e){}
+}
+
+
+async function updateMsgBadge(){
+  try{
+    const msgs=await api(API_SHOP+'/messages',{toast:false}); // background badge poll: no toast, like the other pages
+    const unread=msgs.filter(m=>m.status==='unread').length;
+    const b=document.getElementById('msgBadgeNav');
+    if(unread>0){b.textContent=unread;b.style.display='inline-block';}else{b.style.display='none';}
+  }catch(e){}
+}
+
+loadData();
+updateMsgBadge();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research - Damaged Items</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* damaged-items-only styling; everything shared lives in crm.css */
+.info-banner{ background:#1B2A4A; color:#fff; border-radius:14px; padding:18px 20px; margin-bottom:14px; }
+.info-banner h3{ font-size:14px; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.info-banner p{ font-size:12.5px; color:#C9D2E8; line-height:1.5; margin-bottom:10px; }
+.info-example{ background:rgba(255,255,255,0.08); border-radius:10px; padding:10px 14px; font-size:12px; color:#E8ECF4; line-height:1.5; }
+.warning-banner{ background:#FFF8E1; border:1px solid #FFE082; border-radius:12px; padding:12px 16px; margin-bottom:20px; font-size:12.5px; color:#8A6D00; line-height:1.5; }
+.warning-banner b{ color:#D32F2F; }
+.card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:20px; margin-bottom:20px; }
+.card-title{ font-size:14px; font-weight:700; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+.form-group{ margin-bottom:16px; }
+.form-group label{ display:block; font-size:13px; font-weight:700; color:#1a1a2e; margin-bottom:2px; }
+.form-group .hint{ display:block; font-size:11.5px; color:#5A6685; margin-bottom:8px; }
+.form-group select, .form-group input, .form-group textarea{ width:100%; padding:12px 14px; border:1px solid #E0E4EE; border-radius:10px; font-size:13.5px; background:#FAFBFD; }
+.form-group select:focus, .form-group input:focus, .form-group textarea:focus{ outline:none; border-color:#1F7A3D; }
+.reason-grid{ display:flex; flex-direction:column; gap:10px; }
+.reason-option{ display:flex; align-items:center; gap:12px; padding:14px; border:1.5px solid #E8ECF4; border-radius:12px; cursor:pointer; transition:all 0.15s; }
+.reason-option:hover{ border-color:#C9D2E8; }
+.reason-option.selected{ border-color:#1F7A3D; background:#F0F9F1; }
+.reason-icon{ width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.reason-icon.damaged{ background:#FFEBEE; }
+.reason-icon.expired{ background:#FFF3E0; }
+.reason-icon.lost{ background:#ECEFF1; }
+.reason-icon.stolen{ background:#F3E5F5; }
+.reason-icon.sample{ background:#E3F2FD; }
+.reason-text b{ display:block; font-size:13.5px; color:#1a1a2e; }
+.reason-text span{ font-size:11.5px; color:#5A6685; }
+.btn-writeoff{ width:100%; padding:15px; background:#E53935; color:#fff; border:none; border-radius:12px; font-size:14.5px; font-weight:700; cursor:pointer; margin-top:6px; }
+.btn-writeoff:hover{ background:#C62828; }
+.btn-writeoff:disabled{ background:#E0A8A6; cursor:not-allowed; }
+.empty-state{ text-align:center; padding:40px 20px; color:#5A6685; }
+.empty-state .empty-icon{ font-size:36px; margin-bottom:12px; }
+.loss-row{ display:flex; align-items:center; gap:14px; padding:14px 0; border-bottom:1px solid #F0F2FA; }
+.loss-row:last-child{ border-bottom:none; }
+.loss-icon{ width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+.loss-info{ flex:1; min-width:0; }
+.loss-info b{ font-size:13.5px; color:#1a1a2e; display:block; }
+.loss-info span{ font-size:11.5px; color:#5A6685; }
+.loss-qty{ font-size:14px; font-weight:700; color:#E53935; }
+.loss-date{ font-size:11px; color:#5A6685; text-align:right; min-width:80px; }
+.btn-del{ background:none; border:none; color:#C62828; cursor:pointer; font-size:16px; padding:4px 8px; }
+:root{--navy:#1B2A4A;--green:#1F7A3D;--bg:#F8FAFC;--border:#CBD5E1;--text:#0F172A;--muted:#475569;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Damaged Items</div>
+    </div>
+    <div class="content">
+      <div class="info-banner">
+        <h3>📉 What is this page?</h3>
+        <p>Use this page when stock <b style="color:#fff;">leaves your shop without being sold</b> — because it broke, expired, went missing, or was given away.</p>
+        <div class="info-example"><b>Example:</b> you bought 24 bottles and 3 fell and broke. You did not sell those 3, but they are gone. Record them here and your stock drops from 24 to 21 — with a reason saved, so you know later why the number changed.</div>
+      </div>
+      <div class="warning-banner">💡 <b>Not for sales or returns.</b> If a customer bought it, record a sale. If a customer brought it back, use Sales Return. Use this page only for stock you lost.</div>
+
+      <div class="card">
+        <div class="card-title">➕ Record a loss</div>
+        <div class="form-group">
+          <label>Product</label>
+          <span class="hint">Which item did you lose?</span>
+          <select id="woProduct"><option value="">Choose Product...</option></select>
+        </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <span class="hint">How many units were affected?</span>
+          <input type="number" id="woQty" min="1" placeholder="e.g. 3">
+        </div>
+        <div class="form-group">
+          <label>Reason</label>
+          <span class="hint">Why is the stock gone? This is saved so you can review losses later.</span>
+          <div class="reason-grid" id="reasonGrid">
+            <div class="reason-option" data-reason="damaged" onclick="selectReason('damaged')">
+              <div class="reason-icon damaged">💔</div>
+              <div class="reason-text"><b>Damaged / Broken</b><span>Dropped, crushed, torn or otherwise unsellable</span></div>
+            </div>
+            <div class="reason-option" data-reason="expired" onclick="selectReason('expired')">
+              <div class="reason-icon expired">⏰</div>
+              <div class="reason-text"><b>Expired / Spoiled</b><span>Passed its expiry date or went bad</span></div>
+            </div>
+            <div class="reason-option" data-reason="lost" onclick="selectReason('lost')">
+              <div class="reason-icon lost">❓</div>
+              <div class="reason-text"><b>Lost / Missing</b><span>Cannot be found during a stock count</span></div>
+            </div>
+            <div class="reason-option" data-reason="stolen" onclick="selectReason('stolen')">
+              <div class="reason-icon stolen">🥷</div>
+              <div class="reason-text"><b>Stolen</b><span>Taken from the shop</span></div>
+            </div>
+            <div class="reason-option" data-reason="sample" onclick="selectReason('sample')">
+              <div class="reason-icon sample">🎁</div>
+              <div class="reason-text"><b>Sample / Giveaway</b><span>Given away free, used for display or testing</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="woDate">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <span class="hint">Optional — anything you want to remember about this loss.</span>
+          <input type="text" id="woNotes" placeholder="e.g. dropped while unloading the van">
+        </div>
+        <button class="btn-writeoff" id="submitBtn" onclick="submitWriteoff()">Write Off Stock</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📋 Recorded Losses</div>
+        <div id="lossesList"><div class="empty-state"><div class="empty-icon">🗑️</div>Loading...</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('damaged-items');
+const API='/msolpeptides-api';
+// Phase 5 (2026-09-05): every call goes through api() from crm.js — Bearer header, JSON in/out, the 401 redirect and
+// the error toast are all in one place now; the native alert and confirm boxes are toast and confirmDialog.
+let selectedReason='damaged';let PRODUCTS=[];
+const REASON_META={
+  damaged:{icon:'💔',cls:'damaged',label:'Damaged / Broken'},
+  expired:{icon:'⏰',cls:'expired',label:'Expired / Spoiled'},
+  lost:{icon:'❓',cls:'lost',label:'Lost / Missing'},
+  stolen:{icon:'🥷',cls:'stolen',label:'Stolen'},
+  sample:{icon:'🎁',cls:'sample',label:'Sample / Giveaway'}
+};
+function selectReason(r){selectedReason=r;document.querySelectorAll('.reason-option').forEach(el=>el.classList.toggle('selected',el.dataset.reason===r));}
+selectReason('damaged');
+document.getElementById('woDate').value=new Date().toISOString().slice(0,10);
+
+async function loadProducts(){try{PRODUCTS=await api(API+'/products');const sel=document.getElementById('woProduct');sel.innerHTML='<option value="">Choose Product...</option>'+PRODUCTS.filter(p=>p.is_active!==false).map(p=>`<option value="${escAttr(p.id)}">${esc(p.name)} (${esc(p.stock_qty ?? 0)} in stock)</option>`).join('');}catch(e){console.error(e);}}
+
+async function loadLosses(){try{const list=await api(API+'/stock-writeoffs');const el=document.getElementById('lossesList');
+if(!list.length){el.innerHTML='<div class="empty-state"><div class="empty-icon">🗑️</div>Nothing recorded yet — that\'s a good thing!<br>When stock breaks, expires or goes missing, record it above so your stock count stays honest.</div>';return;}
+el.innerHTML=list.map(w=>{const meta=REASON_META[w.reason]||REASON_META.damaged;return `<div class="loss-row"><div class="loss-icon ${escAttr(meta.cls)}">${esc(meta.icon)}</div><div class="loss-info"><b>${esc(w.product_name)}</b><span>${esc(meta.label)}${esc(w.notes?' · '+w.notes:'')}</span></div><div class="loss-qty">-${esc(w.quantity)}</div><div class="loss-date">${new Date(w.date).toLocaleDateString()}</div><button class="btn-del" onclick="deleteLoss('${safeId(w.id)}')" title="Undo / restore stock">↩️</button></div>`;}).join('');
+}catch(e){console.error(e);}}
+
+async function submitWriteoff(){
+  const productId=document.getElementById('woProduct').value;
+  const qty=Number(document.getElementById('woQty').value);
+  const date=document.getElementById('woDate').value;
+  const notes=document.getElementById('woNotes').value;
+  if(!productId){toast('Choose a product.','error');return;}
+  if(!qty||qty<=0){toast('Enter a valid quantity.','error');return;}
+  const btn=document.getElementById('submitBtn');btn.disabled=true;btn.textContent='Saving...';
+  const user=(window.CRM_CURRENT_USER&&window.CRM_CURRENT_USER.name)||'unknown';
+  try{
+    await api(API+'/stock-writeoffs',{method:'POST',body:{product_id:productId,quantity:qty,reason:selectedReason,date,notes,user}});
+    document.getElementById('woQty').value='';document.getElementById('woNotes').value='';
+    await loadProducts();await loadLosses();
+  }catch(e){/* api() has already shown the toast */}
+  btn.disabled=false;btn.textContent='Write Off Stock';
+}
+
+async function deleteLoss(id){if(!(await confirmDialog('Undo this write-off? Stock will be restored.',{ok:'Undo'})))return;try{await api(API+'/stock-writeoffs/'+id,{method:'DELETE'});await loadProducts();await loadLosses();}catch(e){/* api() has already shown the toast */}}
+
+loadProducts();loadLosses();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

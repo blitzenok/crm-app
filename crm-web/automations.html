@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* automations-only styling; everything shared lives in crm.css */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
+.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
+.empty{text-align:center;padding:48px 20px;color:#5A6685;}
+.empty-icon{font-size:36px;margin-bottom:10px;opacity:.6;}
+.empty-title{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
+thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
+tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:#E8F5E9;color:#2E7D32;}
+.badge-gray{background:#E8ECF4;color:#5A6685;}
+.badge-amber{background:#FFF8EC;color:#D97706;}
+.badge-red{background:#FEF2F2;color:#C62828;}
+.health{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.health.green{background:#0E9F6E;}
+.health.yellow{background:#F59E0B;}
+.health.red{background:#E02424;}
+.grid-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+.auto-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;}
+.auto-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.auto-name{font-size:14px;font-weight:700;color:#1a1a2e;}
+.auto-desc{font-size:12px;color:#5A6685;line-height:1.5;margin:8px 0 14px;}
+.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.rule-row{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:8px;align-items:center;}
+.seg-list{display:flex;flex-direction:column;gap:8px;}
+.seg-item{border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
+.note{font-size:12px;color:#5A6685;margin-top:8px;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
+.coming-soon{ background:#FFF4E5; border:1px solid #F5C26B; color:#7A4B00; padding:10px 14px; border-radius:8px; margin:0 0 16px; font-size:13px; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.grid-cards{grid-template-columns:1fr;}
+.rule-row{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">⚡ Automations <span>Behavioral flows</span></div>
+  </header>
+  <div class="content">
+    <div class="coming-soon">Coming soon — this section is a preview and is not connected yet.</div>
+
+<div id="cio-empty" class="card empty" style="display:none">
+  <div class="empty-icon">⚡</div>
+  <div class="empty-title">Connect Customer.io to see automations.</div>
+  <div>Behavioral flows and pause/resume controls will appear here after Customer.io is connected.</div>
+</div>
+<div id="cio-ready" style="display:none">
+  <div class="grid-cards" id="auto-grid"></div>
+</div>
+
+  </div>
+</div>
+</div>
+<script>
+renderNav('automations');
+const API='/api';
+async function cioStatus(){
+  try{
+    // {toast:false}: a missing Customer.io is not an error here - the page shows its own "Connect Customer.io" card
+    const d=await api(API+'/cio/status',{toast:false});
+    return d || {configured:false};
+  }catch(e){ return {configured:false}; }
+}
+
+const FLOWS = [
+  {id:'welcome', name:'Welcome series', desc:'New lead nurture — research-use-only intro sequence.', health:'green'},
+  {id:'reengage', name:'Re-engagement', desc:'Quiet leads who have not opened in 30 days.', health:'yellow'},
+  {id:'post-order', name:'Post-order follow-up', desc:'After first PO — documentation and reorder timing.', health:'green'},
+  {id:'bounce-watch', name:'Bounce / suppress watch', desc:'Flags hard bounces and unsubscribes.', health:'red'}
+];
+function isAdmin(){
+  try{ const u=JSON.parse(localStorage.getItem('crm_user')||'{}'); return u.role==='admin'; }catch{return false;}
+}
+(async function(){
+  const st = await cioStatus();
+  if(!st.configured){ document.getElementById('cio-empty').style.display='block'; return; }
+  document.getElementById('cio-ready').style.display='block';
+  const admin = isAdmin();
+  document.getElementById('auto-grid').innerHTML = FLOWS.map(f=>`
+    <div class="auto-card">
+      <div class="auto-top">
+        <div class="auto-name">${esc(f.name)}</div>
+        <span class="health ${escAttr(f.health)}" title="${escAttr(f.health)}"></span>
+      </div>
+      <div class="auto-desc">${esc(f.desc)}</div>
+      <div>
+        <button class="btn btn-secondary" ${admin?'':'disabled'} onclick="showToast('Pause queued — Customer.io will apply this when live')">Pause</button>
+        <button class="btn btn-primary" ${admin?'':'disabled'} onclick="showToast('Resume queued — Customer.io will apply this when live')">Resume</button>
+      </div>
+    </div>`).join('');
+})();
+
+</script>
+</body>
+</html>

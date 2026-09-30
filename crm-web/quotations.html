@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research - Quotations</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* quotations-only styling; everything shared lives in crm.css */
+.topbar-title{ font-size:15px; font-weight:700; color:#1a1a2e; flex:1; display:flex; align-items:center; gap:8px; }
+.topbar-title span{ color:#5A6685; font-weight:400; font-size:13px; }
+.search-box{flex:1;max-width:320px;}
+.search-box input{width:100%;padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.btn{ padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; gap:6px; justify-content:center; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+.btn-secondary{ background:#E8ECF4; color:#1B2A4A; }
+.btn-secondary:hover{ background:#DCE2EE; }
+.btn-small{padding:5px 10px;font-size:11px;border-radius:6px;background:#E8ECF4;color:#1B2A4A;font-weight:600;border:none;cursor:pointer;transition:all 0.15s;}
+.btn-small:hover{background:#E6F4EA;color:#1F7A3D;}
+.btn-danger{background:#FFF0F0;color:#E53935;border:none;}
+.btn-danger:hover{background:#FFE0E0;}
+.btn-success{background:#E6F4EA;color:#1F7A3D;border:none;}
+.btn-success:hover{background:#C8E6C9;}
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,0.02); }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; gap:12px; flex-wrap:wrap; }
+.table-header h3{ font-size:14px; font-weight:700; }
+.filter-tabs{ display:flex; gap:6px; overflow-x:auto; }
+.filter-tab{ padding:6px 12px; border-radius:8px; font-size:12px; font-weight:600; color:#5A6685; background:#F8FAFF; border:1px solid #E8ECF4; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.filter-tab.active{ background:#1B2A4A; color:#fff; border-color:#1B2A4A; }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; background:#FAFCFF; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; vertical-align:middle; }
+tbody tr:hover{ background:#F8FAFF; }
+.badge{ padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; display:inline-block; }
+.badge-draft{ background:#F1F5F9; color:#475569; border:1px solid #CBD5E1; }
+.badge-sent{ background:#EBF8FF; color:#2B6CB0; border:1px solid #BEE3F8; }
+.badge-accepted{ background:#E6F4EA; color:#1F7A3D; border:1px solid #C6F6D5; }
+.badge-rejected{ background:#FFF0F0; color:#E53935; border:1px solid #FED7D7; }
+.badge-expired{ background:#FFF3E0; color:#E65100; border:1px solid #FFE0B2; }
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2000;align-items:center;justify-content:center;padding:16px;}
+.modal-card{background:#fff;border-radius:16px;padding:22px;width:640px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 10px 25px rgba(0,0,0,0.15);}
+.modal-card h3{margin-bottom:16px;font-size:16px;font-weight:700;color:#1a1a2e;display:flex;align-items:center;justify-content:space-between;}
+.form-group{margin-bottom:14px;}
+.form-group label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;}
+.form-group input, .form-group select, .form-group textarea{width:100%;padding:10px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;}
+.form-row{display:flex;gap:12px;}
+.form-row .form-group{flex:1;}
+.items-table{width:100%;border-collapse:collapse;margin-top:10px;margin-bottom:14px;}
+.items-table th{font-size:11px;color:#5A6685;text-transform:uppercase;padding:8px 6px;text-align:left;border-bottom:1px solid #E8ECF4;}
+.items-table td{padding:8px 6px;border-bottom:1px solid #E8ECF4;vertical-align:middle;}
+.modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end;}
+.empty-state{text-align:center;color:#5A6685;padding:40px;font-size:13px;}
+.actions-cell{display:flex;gap:6px;align-items:center;}
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.modal-card,.picker-card,.drawer,.modal{max-width:95vw!important;width:95vw!important}
+.modal-overlay,.overlay{padding:10px!important}
+.table-card{overflow-x:auto!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Quotations <span id="quoteCount">(0)</span></div>
+      <div class="search-box"><input type="text" id="searchInput" placeholder="Search by customer name or quote #..." oninput="renderQuotations()"></div>
+    </div>
+    <div class="content">
+      <div class="table-card">
+        <div class="table-header">
+          <div class="filter-tabs">
+            <button class="filter-tab active" onclick="setFilter('all', this)">All</button>
+            <button class="filter-tab" onclick="setFilter('draft', this)">Draft</button>
+            <button class="filter-tab" onclick="setFilter('sent', this)">Sent</button>
+            <button class="filter-tab" onclick="setFilter('accepted', this)">Accepted</button>
+            <button class="filter-tab" onclick="setFilter('rejected', this)">Rejected</button>
+            <button class="filter-tab" onclick="setFilter('expired', this)">Expired</button>
+          </div>
+          <button class="btn btn-primary" onclick="openNewModal()">+ New Quotation</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Quote #</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Valid Until</th>
+                <th>Items</th>
+                <th>Total ($)</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="quotationsTableBody">
+              <tr><td colspan="8" class="empty-state">Loading quotations...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- New/Edit Quotation Modal -->
+<div class="modal-overlay" id="quoteModal">
+  <div class="modal-card">
+    <h3 id="modalTitle"><span>New Quotation</span> <button class="btn-small" onclick="closeQuoteModal()">✕</button></h3>
+    <form onsubmit="event.preventDefault(); saveQuotation();">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Customer</label>
+          <select id="fCustomer" required>
+            <option value="">Select Customer...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="fStatus">
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="accepted">Accepted</option>
+            <option value="rejected">Rejected</option>
+            <option value="expired">Expired</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quote Date</label>
+          <input type="date" id="fDate" required>
+        </div>
+        <div class="form-group">
+          <label>Valid Until Date</label>
+          <input type="date" id="fValidUntil" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Line Items</label>
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th style="width:45%;">Product</th>
+              <th style="width:20%;">Qty</th>
+              <th style="width:20%;">Unit Price ($)</th>
+              <th style="width:15%;">Total</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="lineItemsBody"></tbody>
+        </table>
+        <button type="button" class="btn btn-secondary" style="font-size:11px;padding:5px 10px;" onclick="addLineItem()">+ Add Item</button>
+      </div>
+
+      <div style="text-align:right;font-size:15px;font-weight:700;margin-bottom:14px;color:#1B2A4A;">
+        Grand Total: <span id="grandTotalDisplay">$0.00</span>
+      </div>
+
+      <div class="form-group">
+        <label>Notes / Terms</label>
+        <textarea id="fNotes" rows="3" placeholder="Payment terms, delivery schedule, or notes for the customer..."></textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" onclick="closeQuoteModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveQuoteBtn">Save Quotation</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- View Quotation Modal -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal-card">
+    <h3><span>Quotation Details</span> <button class="btn-small" onclick="closeViewModal()">✕</button></h3>
+    <div id="viewModalContent">Loading...</div>
+    <div class="modal-actions" id="viewModalActions">
+      <button class="btn btn-secondary" onclick="closeViewModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('quotations');
+const API = '/msolpeptides-api';
+
+
+let QUOTATIONS = [];
+let CUSTOMERS = [];
+let PRODUCTS = [];
+let currentFilter = 'all';
+let lineItems = [];
+
+
+
+async function init() {
+  await Promise.all([loadCustomers(), loadProducts(), loadQuotations()]);
+}
+
+// Phase 4 (2026-09-05): calls go through api() from crm.js (Bearer, JSON, 401 -> login, errors -> toast),
+// alert boxes -> toast, native confirm -> confirmDialog. A failed load leaves the previous list in place, as before.
+async function loadCustomers() {
+  try {
+    CUSTOMERS = await api(API + '/customers') || [];
+  } catch(e) {
+    console.warn('Error loading customers', e);
+  }
+  populateCustomerDropdown();
+}
+
+async function loadProducts() {
+  try {
+    PRODUCTS = await api(API + '/products') || [];
+  } catch(e) {
+    console.warn('Error loading products', e);
+  }
+}
+
+function populateCustomerDropdown() {
+  const sel = document.getElementById('fCustomer');
+  sel.innerHTML = '<option value="">Select Customer...</option>';
+  CUSTOMERS.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name + (c.phone ? ' (' + c.phone + ')' : '');
+    sel.appendChild(opt);
+  });
+}
+
+async function loadQuotations() {
+  try {
+    QUOTATIONS = await api(API + '/quotations') || [];
+  } catch(e) {
+    console.warn('Failed to fetch quotations from API', e);
+    QUOTATIONS = [];
+  }
+  renderQuotations();
+}
+
+function setFilter(status, btn) {
+  currentFilter = status;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderQuotations();
+}
+
+function renderQuotations() {
+  const q = (document.getElementById('searchInput').value || '').toLowerCase();
+  let filtered = QUOTATIONS.filter(item => {
+    const matchesSearch = (item.quote_number || '').toLowerCase().includes(q) ||
+                          (item.customer_name || '').toLowerCase().includes(q) ||
+                          (item.notes || '').toLowerCase().includes(q);
+    const matchesFilter = currentFilter === 'all' || (item.status || 'draft').toLowerCase() === currentFilter;
+    return matchesSearch && matchesFilter;
+  });
+
+  document.getElementById('quoteCount').textContent = '(' + filtered.length + ')';
+  const tbody = document.getElementById('quotationsTableBody');
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No quotations found. Click "+ New Quotation" to create one.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(quote => {
+    const status = (quote.status || 'draft').toLowerCase();
+    const badgeClass = 'badge badge-' + status;
+    const itemCount = quote.line_items ? quote.line_items.length : (quote.items_count || 0);
+
+    return `
+      <tr>
+        <td><strong>${esc(quote.quote_number || quote.id)}</strong></td>
+        <td>${esc(quote.customer_name || 'Unknown')}</td>
+        <td>${esc(quote.date ? quote.date.split('T')[0] : 'N/A')}</td>
+        <td>${esc(quote.valid_until ? quote.valid_until.split('T')[0] : 'N/A')}</td>
+        <td>${esc(itemCount)} item(s)</td>
+        <td><strong>${fmtMoney(quote.total)}</strong></td>
+        <td><span class="${escAttr(badgeClass)}">${esc(status.toUpperCase())}</span></td>
+        <td>
+          <div class="actions-cell">
+            <button class="btn-small" onclick="viewQuotation('${safeId(quote.id)}')">👁️ View</button>
+            ${status !== 'accepted' ? `<button class="btn-small btn-success" onclick="convertToSale('${safeId(quote.id)}')">🔄 Convert to Sale</button>` : ''}
+            <button class="btn-small btn-danger" onclick="deleteQuotation('${safeId(quote.id)}')">🗑️</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openNewModal() {
+  document.getElementById('modalTitle').firstElementChild.textContent = 'New Quotation';
+  document.getElementById('fCustomer').value = '';
+  document.getElementById('fStatus').value = 'draft';
+
+  const today = new Date().toISOString().split('T')[0];
+  const validUntil = new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0];
+  document.getElementById('fDate').value = today;
+  document.getElementById('fValidUntil').value = validUntil;
+  document.getElementById('fNotes').value = '';
+
+  lineItems = [];
+  addLineItem();
+  document.getElementById('quoteModal').classList.add('open');
+}
+
+function closeQuoteModal() {
+  document.getElementById('quoteModal').classList.remove('open');
+}
+
+function addLineItem(prodId = '', qty = 1, price = 0) {
+  lineItems.push({ product_id: prodId, qty: Number(qty), unit_price: Number(price) });
+  renderLineItems();
+}
+
+function removeLineItem(index) {
+  lineItems.splice(index, 1);
+  renderLineItems();
+}
+
+function renderLineItems() {
+  const tbody = document.getElementById('lineItemsBody');
+  tbody.innerHTML = '';
+
+  lineItems.forEach((item, index) => {
+    const tr = document.createElement('tr');
+
+    let prodOptions = '<option value="">Select product...</option>';
+    PRODUCTS.forEach(p => {
+      const sel = p.id === item.product_id ? 'selected' : '';
+      prodOptions += `<option value="${escAttr(p.id)}" ${sel}>${esc(p.name)} ($${Number(p.price||0).toFixed(2)})</option>`;
+    });
+
+    tr.innerHTML = `
+      <td>
+        <select style="font-size:12px;padding:6px;" onchange="updateLineProduct(${index}, this.value)">
+          ${prodOptions}
+        </select>
+      </td>
+      <td>
+        <input type="number" min="1" value="${escAttr(item.qty)}" style="font-size:12px;padding:6px;width:100%;" oninput="updateLineQty(${index}, this.value)">
+      </td>
+      <td>
+        <input type="number" step="0.01" min="0" value="${escAttr(item.unit_price)}" style="font-size:12px;padding:6px;width:100%;" oninput="updateLinePrice(${index}, this.value)">
+      </td>
+      <td style="font-weight:600;font-size:12px;">
+        ${fmtMoney(item.qty * item.unit_price)}
+      </td>
+      <td style="text-align:center;">
+        <button type="button" class="btn-small btn-danger" style="padding:2px 6px;" onclick="removeLineItem(${index})">✕</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  calcGrandTotal();
+}
+
+function updateLineProduct(index, prodId) {
+  lineItems[index].product_id = prodId;
+  const prod = PRODUCTS.find(p => p.id === prodId);
+  if (prod) {
+    lineItems[index].unit_price = Number(prod.price || 0);
+  }
+  renderLineItems();
+}
+
+function updateLineQty(index, qty) {
+  lineItems[index].qty = Math.max(1, Number(qty) || 1);
+  renderLineItems();
+}
+
+function updateLinePrice(index, price) {
+  lineItems[index].unit_price = Number(price) || 0;
+  renderLineItems();
+}
+
+function calcGrandTotal() {
+  const total = lineItems.reduce((sum, li) => sum + (li.qty * li.unit_price), 0);
+  document.getElementById('grandTotalDisplay').textContent = fmtMoney(total);
+  return total;
+}
+
+async function saveQuotation() {
+  const custId = document.getElementById('fCustomer').value;
+  if (!custId) { toast('Please select a customer.', 'error'); return; }
+  if (lineItems.length === 0) { toast('Please add at least one line item.', 'error'); return; }
+
+  const cust = CUSTOMERS.find(c => c.id === custId);
+  const total = calcGrandTotal();
+
+  const payload = {
+    customer_id: custId,
+    customer_name: cust ? cust.name : 'Customer',
+    date: document.getElementById('fDate').value,
+    valid_until: document.getElementById('fValidUntil').value,
+    status: document.getElementById('fStatus').value,
+    line_items: lineItems,
+    total: total,
+    notes: document.getElementById('fNotes').value
+  };
+
+  try {
+    await api(API + '/quotations', { method: 'POST', body: payload });
+    toast('Quotation saved successfully!', 'success');
+    closeQuoteModal();
+    loadQuotations();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+function viewQuotation(id) {
+  const quote = QUOTATIONS.find(q => q.id === id);
+  if (!quote) return;
+
+  const content = document.getElementById('viewModalContent');
+  const items = quote.line_items || [];
+
+  content.innerHTML = `
+    <div style="background:#F8FAFF;padding:16px;border-radius:10px;margin-bottom:16px;border:1px solid #E8ECF4;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <div><strong>Quote #:</strong> ${esc(quote.quote_number || quote.id)}</div>
+        <div><span class="badge badge-${escAttr((quote.status||'draft').toLowerCase())}">${esc((quote.status||'draft').toUpperCase())}</span></div>
+      </div>
+      <div><strong>Customer:</strong> ${esc(quote.customer_name || 'N/A')}</div>
+      <div><strong>Date:</strong> ${esc(quote.date ? quote.date.split('T')[0] : 'N/A')}</div>
+      <div><strong>Valid Until:</strong> ${esc(quote.valid_until ? quote.valid_until.split('T')[0] : 'N/A')}</div>
+    </div>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Item / Product</th>
+          <th>Qty</th>
+          <th>Unit Price</th>
+          <th>Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(li => {
+          const prod = PRODUCTS.find(p => p.id === li.product_id);
+          const name = prod ? prod.name : (li.product_name || li.product_id || 'Item');
+          return `
+            <tr>
+              <td>${esc(name)}</td>
+              <td>${esc(li.qty)}</td>
+              <td>${fmtMoney(li.unit_price)}</td>
+              <td><strong>${fmtMoney(li.qty * li.unit_price)}</strong></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div style="text-align:right;font-size:16px;font-weight:800;margin-top:12px;color:#1B2A4A;">
+      Total: ${fmtMoney(quote.total)}
+    </div>
+
+    ${quote.notes ? `<div style="margin-top:14px;padding:10px;background:#FAFCFF;border-radius:8px;font-size:12px;color:#5A6685;"><strong>Notes:</strong> ${esc(quote.notes)}</div>` : ''}
+  `;
+
+  const actions = document.getElementById('viewModalActions');
+  actions.innerHTML = `
+    <button class="btn btn-secondary" onclick="closeViewModal()">Close</button>
+    ${quote.status !== 'accepted' ? `<button class="btn btn-primary" onclick="closeViewModal(); convertToSale('${safeId(quote.id)}');">🔄 Convert to Sale</button>` : ''}
+  `;
+
+  document.getElementById('viewModal').classList.add('open');
+}
+
+function closeViewModal() {
+  document.getElementById('viewModal').classList.remove('open');
+}
+
+async function convertToSale(id) {
+  if (!(await confirmDialog('Convert this quotation into an active Sale?', { ok: 'Convert' }))) return;
+  try {
+    await api(API + '/quotations/' + id + '/convert', { method: 'POST' });
+    toast('Quotation converted to sale successfully!', 'success');
+    loadQuotations();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+async function deleteQuotation(id) {
+  if (!(await confirmDialog('Are you sure you want to delete this quotation?', { ok: 'Delete' }))) return;
+  try {
+    await api(API + '/quotations/' + id, { method: 'DELETE' });
+    toast('Quotation deleted.', 'success');
+    loadQuotations();
+  } catch(e) { /* api() already showed the error toast */ }
+}
+
+init();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

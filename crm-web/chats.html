@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* chats-only styling; everything shared lives in crm.css */
+.bot-bar{ display:flex; flex-wrap:wrap; align-items:center; gap:12px; background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:12px 16px; margin-bottom:10px; font-size:13px; }
+.bot-bar label{ display:flex; align-items:center; gap:6px; }
+.bot-bar input[type=number]{ width:90px; padding:6px 8px; border:1px solid #CBD5E1; border-radius:8px; }
+.bot-bar select{ padding:6px 8px; border:1px solid #CBD5E1; border-radius:8px; }
+.bot-spent{ color:#5A6685; }
+.bot-note{ color:#5A6685; font-size:12px; }
+.kb-btn{ margin-left:auto; }
+.kb-panel{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:12px 18px; margin-bottom:10px; font-size:13px; max-height:60vh; overflow-y:auto; }
+.kb-panel h4{ margin:12px 0 4px; font-size:13px; color:#1a1a2e; }
+.kb-panel ul{ margin:0; padding-left:18px; }
+.kb-panel li{ margin:2px 0; }
+.set-log{ font-size:12px; color:#5A6685; margin-bottom:14px; }
+.set-log summary{ cursor:pointer; }
+.set-log li{ margin:2px 0; }
+.chat-wrap{ display:grid; grid-template-columns:340px 1fr; gap:14px; min-height:60vh; }
+.chat-filters{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.chat-filters .btn.on{ background:#1B2A4A; color:#fff; }
+.card-list{ display:flex; flex-direction:column; gap:8px; max-height:70vh; overflow-y:auto; }
+.chat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:12px 14px; cursor:pointer; }
+.chat-card.active{ border-color:#1B2A4A; box-shadow:0 0 0 2px #1B2A4A inset; }
+.chat-card.waiting{ border-left:4px solid #C62828; }
+.card-top{ display:flex; justify-content:space-between; gap:8px; font-size:12px; }
+.card-who{ font-weight:700; color:#1a1a2e; word-break:break-all; }
+.card-time{ color:#5A6685; white-space:nowrap; }
+.card-last{ color:#334155; font-size:12px; margin:4px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card-meta{ display:flex; flex-wrap:wrap; gap:4px; font-size:10px; color:#5A6685; }
+.chip{ display:inline-block; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; background:#E8ECF4; color:#5A6685; min-height:0!important; }
+.chip.st-waiting{ background:#FEE2E2; color:#991B1B; }
+.chip.st-human{ background:#E6F4EA; color:#145C2C; }
+.chip.st-closed{ background:#F1F5F9; color:#64748B; }
+.chip.flag{ background:#FEF3C7; color:#92400E; }
+.pane{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; display:flex; flex-direction:column; min-height:60vh; }
+.pane-head{ display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:12px 16px; border-bottom:1px solid #E8ECF4; font-size:13px; }
+.pane-msgs{ flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:8px; max-height:60vh; background:#F8FAFC; }
+.m{ max-width:80%; padding:8px 12px; border-radius:12px; font-size:13px; white-space:pre-wrap; word-wrap:break-word; }
+.m-visitor{ align-self:flex-start; background:#fff; border:1px solid #E8ECF4; }
+.m-ai{ align-self:flex-end; background:#EEF2FF; }
+.m-operator{ align-self:flex-end; background:#E6F4EA; }
+.m-system{ align-self:center; font-size:11px; color:#5A6685; background:none; }
+.m-by{ display:block; font-size:10px; color:#5A6685; margin-top:3px; }
+.m-sending{ opacity:.6; }
+.m-failed{ border:1px solid #C62828; }
+.pane-reply{ display:flex; gap:8px; padding:12px 16px; border-top:1px solid #E8ECF4; }
+.pane-reply textarea{ flex:1; min-height:60px; padding:8px 10px; border:1px solid #CBD5E1; border-radius:8px; font:inherit; font-size:13px; }
+.pane-empty{ margin:auto; color:#5A6685; }
+.offline{ color:#C62828; font-weight:700; margin-left:8px; }
+@media(max-width:900px){ .chat-wrap{ grid-template-columns:1fr; } }
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Chats <span>— Mia, the shop chat</span><span class="offline" id="offline" hidden>offline</span></div>
+    </div>
+    <div class="content">
+      <div class="bot-bar" id="botBar">
+        <label><input type="checkbox" id="setEnabled" disabled> Bot on</label>
+        <label>Model <select id="setModel" disabled></select></label>
+        <label>Daily limit $ <input type="number" id="setBudget" min="0" max="1000" step="1" disabled></label>
+        <button class="btn btn-primary" id="setSave" disabled>Save</button>
+        <span class="bot-spent" id="spent">Spent today: —</span>
+        <span class="bot-note" id="setNote"></span>
+        <button class="btn btn-secondary kb-btn" id="kbBtn" aria-expanded="false" aria-controls="kbPanel">What Mia knows</button>
+      </div>
+      <div class="kb-panel" id="kbPanel" hidden></div>
+      <details class="set-log"><summary>Recent settings changes</summary><ul id="setLog"></ul></details>
+      <div class="chat-wrap">
+        <div>
+          <div class="chat-filters" id="filters">
+            <button class="btn btn-secondary on" data-filter="all">All</button>
+            <button class="btn btn-secondary" data-filter="waiting">Waiting</button>
+            <button class="btn btn-secondary" data-filter="human">Human</button>
+            <button class="btn btn-secondary" data-filter="ai">AI</button>
+            <button class="btn btn-secondary" data-filter="flagged">Flagged</button>
+          </div>
+          <div class="card-list" id="cards"><div class="empty-state">Loading...</div></div>
+        </div>
+        <div class="pane" id="pane"><div class="pane-empty">Pick a conversation</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('chats');
+const DESK = '/chat-desk';
+const FLAG_LABELS = { offTopic: 'off_topic', injection: 'injection', priceCheck: 'priceCheck', humanUse: 'human_use' };
+// Every string from a conversation is visitor-controlled: it reaches the page only through esc()/escAttr().
+let filter = 'all';
+let cards = [];
+let activeCid = '';
+let active = null;          // the open conversation
+let gen = 0;                // request generation: an answer for a conversation we already left is dropped (Radar W15)
+let failures = 0;
+let ticking = false;        // a refresh still in flight: the next tick is a miss and sends nothing
+let settingsDirty = false;  // unsaved bot settings: a refresh must not put the server's values back into the form
+let settingsWrites = 0;     // successful PUTs; a GET that started earlier must not paint over them
+let sending = {};           // clientMsgId -> {text, failed}: shown as "sending…" until the server has it
+
+function when(iso) {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : d.toLocaleString();
+}
+function who(c) { return c.email ? c.email : 'Visitor #' + String(c.cid).slice(0, 4); }
+function newId() { return 'op' + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); }
+
+function markOnline(ok) {
+  failures = ok ? 0 : failures + 1;
+  document.getElementById('offline').hidden = failures < 3;
+}
+
+/* ---------- cards ---------- */
+
+async function loadCards() {
+  const f = filter;
+  try {
+    const data = await api(DESK + '/conversations?filter=' + encodeURIComponent(f), { toast: false });
+    if (f !== filter) return true;
+    cards = data.conversations || [];
+    renderCards();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function renderCards() {
+  const box = document.getElementById('cards');
+  if (!cards.length) { box.innerHTML = '<div class="empty-state">No conversations</div>'; return; }
+  box.innerHTML = cards.map(c => {
+    const flags = Object.keys(FLAG_LABELS).filter(k => c.flags && c.flags[k])
+      .map(k => '<span class="chip flag">' + esc(FLAG_LABELS[k]) + '</span>').join('');
+    return '<div class="chat-card' + (c.cid === activeCid ? ' active' : '') + (c.state === 'waiting' ? ' waiting' : '') + '" data-cid="' + escAttr(c.cid) + '">' +
+      '<div class="card-top"><span class="card-who">' + esc(who(c)) + '</span><span class="card-time">' + esc(when(c.lastAt)) + '</span></div>' +
+      '<div class="card-last">' + esc(c.lastText) + '</div>' +
+      '<div class="card-meta"><span class="chip st-' + escAttr(c.state) + '">' + esc(c.state) + '</span>' +
+      (c.page ? '<span>' + esc(c.page) + '</span>' : '') +
+      '<span class="bot-note">$' + esc(Number(c.costUsd || 0).toFixed(4)) + '</span>' + flags + '</div></div>';
+  }).join('');
+}
+
+document.getElementById('cards').addEventListener('click', e => {
+  const card = e.target.closest('.chat-card');
+  if (card) openConv(card.getAttribute('data-cid'));
+});
+
+document.getElementById('filters').addEventListener('click', e => {
+  const b = e.target.closest('button[data-filter]');
+  if (!b) return;
+  filter = b.getAttribute('data-filter');
+  document.querySelectorAll('#filters button').forEach(x => x.classList.toggle('on', x === b));
+  loadCards();
+});
+
+/* ---------- one conversation ---------- */
+
+async function openConv(cid) {
+  if (!/^[a-f0-9]{32}$/.test(cid)) return false;
+  if (cid !== activeCid) { activeCid = cid; active = null; sending = {}; renderPane(); renderCards(); }
+  if (location.hash !== '#' + cid) history.replaceState(null, '', '#' + cid);
+  const my = ++gen;
+  try {
+    const data = await api(DESK + '/conversations/' + cid, { toast: false });
+    if (my !== gen || cid !== activeCid) return true;
+    active = data.conversation;
+    renderPane();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function msgHtml(m) {
+  if (m.role === 'system') {
+    return '<div class="m m-system">' + esc(m.text) + (m.reason ? ' (' + esc(m.reason) + (m.by ? ', ' + esc(m.by) : '') + ')' : '') + '</div>';
+  }
+  let meta = esc(when(m.at));
+  if (m.role === 'operator') meta = esc(m.by || '') + ' · ' + meta;
+  if (m.role === 'ai' && m.usage && typeof m.usage.costUsd === 'number') meta += ' · $' + esc(m.usage.costUsd.toFixed(4));
+  if (m.role === 'ai' && m.canned) meta += ' · ' + esc(m.canned);
+  const links = (m.links || []).map(l => esc(l.label) + ' (' + esc(l.href) + ')').join(', ');
+  return '<div class="m m-' + escAttr(m.role) + '">' + esc(m.text) + (links ? '<span class="m-by">links: ' + links + '</span>' : '') +
+    '<span class="m-by">' + meta + '</span></div>';
+}
+
+// The reply box is built once per conversation: the 10-second refresh must not take the caret away from an
+// operator who is typing. Head and messages are redrawn only when something in them changed.
+function paneSkeleton(pane) {
+  pane.innerHTML = '<div class="pane-head" id="paneHead"></div><div class="pane-msgs" id="msgs"></div>' +
+    '<div class="pane-reply"><textarea id="replyText" maxlength="2000" placeholder="Reply as Mia"></textarea>' +
+    '<button class="btn btn-primary" id="replySend">Send</button></div>';
+  pane.dataset.cid = activeCid;
+  document.getElementById('replySend').onclick = () => {
+    const t = document.getElementById('replyText');
+    const text = t.value.trim();
+    if (!text) return;
+    t.value = '';
+    sendReply(newId(), text);
+  };
+  document.getElementById('msgs').addEventListener('click', e => {
+    const a = e.target.closest('a[data-retry]');
+    if (!a) return;
+    e.preventDefault();
+    const id = a.getAttribute('data-retry');
+    if (sending[id]) sendReply(id, sending[id].text);
+  });
+  document.getElementById('paneHead').addEventListener('click', e => {
+    const b = e.target.closest('button[data-state]');
+    if (b) setState(b.getAttribute('data-state'));
+  });
+}
+
+function renderPane() {
+  const pane = document.getElementById('pane');
+  if (!activeCid || !active) {
+    pane.dataset.cid = '';
+    pane.innerHTML = '<div class="pane-empty">' + (activeCid ? 'Loading...' : 'Pick a conversation') + '</div>';
+    return;
+  }
+  if (pane.dataset.cid !== activeCid || !document.getElementById('msgs')) paneSkeleton(pane);
+  document.getElementById('paneHead').innerHTML =
+    '<div><b>' + esc(who(active)) + '</b> <span class="chip st-' + escAttr(active.state) + '">' + esc(active.state) + '</span>' +
+      (active.page && active.page.path ? ' <span class="bot-note">' + esc(active.page.path) + '</span>' : '') +
+      ' <span class="bot-note">$' + esc(Number(active.costUsd || 0).toFixed(4)) + '</span></div>' +
+    '<div><button class="btn btn-secondary" data-state="ai"' + (active.state === 'ai' ? ' disabled' : '') + '>Return to AI</button> ' +
+    '<button class="btn btn-danger" data-state="closed"' + (active.state === 'closed' ? ' disabled' : '') + '>Close</button></div>';
+  const msgs = document.getElementById('msgs');
+  const sig = active.messages.length + '|' + active.lastAt + '|' + JSON.stringify(sending);
+  if (msgs.dataset.sig === sig) return;
+  msgs.dataset.sig = sig;
+  const pendingHtml = Object.keys(sending).map(id => '<div class="m m-operator ' + (sending[id].failed ? 'm-failed' : 'm-sending') + '">' +
+    esc(sending[id].text) + '<span class="m-by">' + (sending[id].failed ? 'not sent — <a href="#" data-retry="' + escAttr(id) + '">retry</a>' : 'sending…') + '</span></div>').join('');
+  msgs.innerHTML = active.messages.map(msgHtml).join('') + pendingHtml;
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// Shown at once as "sending…"; a retry keeps the clientMsgId, so the server never records the reply twice.
+async function sendReply(id, text) {
+  const cid = activeCid;
+  sending[id] = { text, failed: false };
+  renderPane();
+  try {
+    await api(DESK + '/conversations/' + cid + '/reply', { method: 'POST', body: { text, clientMsgId: id } });
+    if (cid !== activeCid) return;
+    delete sending[id];
+    await openConv(cid);
+    loadCards();
+  } catch (e) {
+    if (cid !== activeCid || !sending[id]) return;
+    sending[id].failed = true;
+    renderPane();
+  }
+}
+
+async function setState(state) {
+  const cid = activeCid;
+  try {
+    await api(DESK + '/conversations/' + cid + '/state', { method: 'POST', body: { state } });
+    await openConv(cid);
+    loadCards();
+  } catch (e) { /* api() showed the toast */ }
+}
+
+/* ---------- bot settings: admin changes, everyone sees ---------- */
+
+function renderSettings(s) {
+  const canEdit = s.canEdit === true;
+  const en = document.getElementById('setEnabled');
+  const model = document.getElementById('setModel');
+  const budget = document.getElementById('setBudget');
+  // First load, a clean form, and the response to Save all share settingsDirty === false.
+  if (!settingsDirty) {
+    en.checked = s.settings.enabled;
+    model.innerHTML = s.models.map(m => '<option value="' + escAttr(m) + '">' + esc(m) + '</option>').join('');
+    model.value = s.settings.model;
+    budget.value = s.settings.dailyBudgetUsd;
+  }
+  [en, model, budget, document.getElementById('setSave')].forEach(x => { x.disabled = !canEdit; });
+  document.getElementById('setNote').textContent = canEdit ? '' : 'Only an admin can change these.';
+  document.getElementById('spent').textContent = 'Spent today: $' + Number(s.spentTodayUsd || 0).toFixed(2) + ' / $' + Number(s.settings.dailyBudgetUsd).toFixed(2);
+  document.getElementById('setLog').innerHTML = (s.log || []).map(l =>
+    '<li>' + esc(when(l.at)) + ' — ' + esc(l.by) + ': ' + esc(l.field) + ' ' + esc(JSON.stringify(l.from)) + ' → ' + esc(JSON.stringify(l.to)) + '</li>').join('') ||
+    '<li>No changes yet</li>';
+}
+
+async function loadSettings() {
+  const seen = settingsWrites;
+  try {
+    const data = await api(DESK + '/settings', { toast: false });
+    if (seen !== settingsWrites) return true;
+    renderSettings(data);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+['setEnabled', 'setModel', 'setBudget'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('input', () => { settingsDirty = true; });
+  el.addEventListener('change', () => { settingsDirty = true; });
+});
+
+document.getElementById('setSave').addEventListener('click', async () => {
+  const budgetRaw = document.getElementById('setBudget').value;
+  if (budgetRaw.trim() === '') {
+    toast('Enter a daily limit.', 'error');
+    return;
+  }
+  const body = {
+    enabled: document.getElementById('setEnabled').checked,
+    model: document.getElementById('setModel').value,
+    dailyBudgetUsd: Number(budgetRaw)
+  };
+  try {
+    const saved = await api(DESK + '/settings', { method: 'PUT', body });
+    settingsWrites++;
+    settingsDirty = false;
+    renderSettings(saved);
+    toast('Saved', 'success');
+  } catch (e) { /* api() showed the toast */ }
+});
+
+/* ---------- what Mia knows: the facts of the current build, read-only ---------- */
+
+function addEl(parent, tag, text, cls) {
+  const el = document.createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  if (cls) el.className = cls;
+  parent.appendChild(el);
+  return el;
+}
+
+// facts.md is ours, but it still goes in as text only: "## heading" and "- item" become h4/li, nothing is read as HTML.
+function renderFacts(panel, k) {
+  panel.replaceChildren();
+  addEl(panel, 'div', 'Mia answers shop questions only from this text and from the live catalog (' + k.products +
+    ' products: prices and descriptions, as in Products). In use since ' + when(k.builtAt) +
+    '. Read-only: to change it, message Alejandro.', 'bot-note');
+  let list = null;
+  for (const raw of String(k.facts).split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('- ')) list = null;
+    if (!line || line.startsWith('# ')) continue;
+    if (line.startsWith('## ')) addEl(panel, 'h4', line.slice(3));
+    else if (line.startsWith('- ')) addEl(list || (list = addEl(panel, 'ul')), 'li', line.slice(2));
+    else addEl(panel, 'p', line);
+  }
+}
+
+document.getElementById('kbBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('kbBtn');
+  const panel = document.getElementById('kbPanel');
+  const open = panel.hidden;
+  panel.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  panel.replaceChildren();
+  addEl(panel, 'div', 'Loading...', 'bot-note');
+  try {
+    renderFacts(panel, await api(DESK + '/knowledge', { toast: false }));
+  } catch (e) {
+    panel.replaceChildren();
+    addEl(panel, 'div', 'Could not load it. Try again in a minute.', 'bot-note');
+  }
+});
+
+/* ---------- refresh: every 10 s while the tab is visible, at once when it comes back ---------- */
+
+// Only the 10-second ticks count a miss: coming back to the tab during a slow refresh just waits for it.
+async function tick(fromVisibility) {
+  if (document.hidden) return;
+  if (ticking) { if (!fromVisibility) markOnline(false); return; }
+  ticking = true;
+  try {
+    const jobs = [loadCards(), loadSettings()];
+    if (activeCid) jobs.push(openConv(activeCid));
+    const oks = await Promise.all(jobs);
+    // One miss per refresh. The counter clears only when every request in that refresh succeeded.
+    markOnline(oks.every(Boolean));
+  } finally {
+    ticking = false;
+  }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(true); });
+setInterval(() => tick(false), 10000);
+tick();
+if (/^#[a-f0-9]{32}$/.test(location.hash)) openConv(location.hash.slice(1));   // link from the Telegram signal
+</script>
+</body>
+</html>

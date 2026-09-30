@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>PSP Clearing — BioLabs CRM</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+.table-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;font-size:11px;color:#5A6685;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #E8ECF4}
+td{padding:10px 12px;border-bottom:1px solid #F0F2FA;vertical-align:top}
+.muted{color:#5A6685;font-size:12px;margin:8px 0 16px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.hard{color:#C62828;font-weight:700}
+.soft{color:#E65100;font-weight:700}
+.ok{color:#2E7D32;font-weight:700}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=05fa5a1bda-umg"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar"><div id="crm-nav" class="crm-nav"></div></div>
+  <div class="main">
+    <div class="topbar"><div class="topbar-title">PSP Clearing <span>— beside the order, CRM only</span></div></div>
+    <div class="content">
+      <p class="muted">This is sidecar clearing (/api/store-orders), not shop fulfillment. Leave store-orders.html (3001 /api/orders) alone.</p>
+      <div class="btns">
+        <button class="btn btn-secondary" type="button" data-dry="soft">Dry-run soft → next</button>
+        <button class="btn btn-secondary" type="button" data-dry="hard">Dry-run hard stop</button>
+        <button class="btn btn-secondary" type="button" data-dry="approved">Dry-run UMG approved</button>
+        <button class="btn btn-primary" type="button" id="pollBtn">Poll pending</button>
+      </div>
+      <div class="table-card"><table>
+        <thead><tr><th>Order</th><th>Status</th><th>Amount</th><th>PSP</th><th>Attempts</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+      <div id="panel"></div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('psp-clearing');
+let orders = [];
+
+function money(a, c) {
+  return (Number(a) || 0).toLocaleString('en-US', { style: 'currency', currency: c || 'USD' });
+}
+
+function show(o) {
+  const attempts = (o.attempts || []).map(function (a, i) {
+    return '<tr><td>' + (i + 1) + '</td><td>' + a.processor + '</td><td>' + (a.processorStatus || '') + '</td>' +
+      '<td class="' + (a.declineClass || '') + '">' + (a.declineClass || '—') + '</td><td>' + (a.cascadeAction || '') + '</td>' +
+      '<td>' + (a.processorTxnId || '—') + '</td><td>' + [a.informationCode, a.informationData].filter(Boolean).join(' · ') + '</td>' +
+      '<td>' + (a.descriptor || '—') + '</td><td>' + (a.cardLast4 || '—') + '</td></tr>';
+  }).join('');
+  document.getElementById('panel').innerHTML =
+    '<div class="table-card" style="margin-top:16px"><table><thead><tr>' +
+    '<th>#</th><th>PSP</th><th>Status</th><th>Class</th><th>Cascade</th><th>Txn</th><th>Info</th><th>Descriptor</th><th>Last4</th>' +
+    '</tr></thead><tbody>' + (attempts || '<tr><td colspan="9">No attempts</td></tr>') + '</tbody></table></div>';
+}
+
+async function reload() {
+  const data = await api('/api/store-orders', { toast: false });
+  orders = data.orders || [];
+  document.getElementById('rows').innerHTML = orders.map(function (o) {
+    return '<tr data-id="' + o.id + '"><td>' + o.id + '</td><td>' + (o.status || '') + '</td><td>' +
+      money(o.amount, o.currency) + '</td><td>' + (o.winningProcessor || o.lastProcessor || '—') +
+      '</td><td>' + (o.attempts || []).length + '</td><td><button class="btn btn-secondary" type="button">Clearing</button></td></tr>';
+  }).join('') || '<tr><td colspan="6">No sidecar clearing rows yet</td></tr>';
+}
+
+document.getElementById('rows').onclick = function (e) {
+  const tr = e.target.closest('tr[data-id]');
+  if (!tr) return;
+  const o = orders.find(function (x) { return x.id === tr.getAttribute('data-id'); });
+  if (o) show(o);
+};
+
+document.querySelectorAll('[data-dry]').forEach(function (btn) {
+  btn.onclick = async function () {
+    const out = await api('/api/psp/dry-run', { method: 'POST', body: { scenario: btn.getAttribute('data-dry') } });
+    await reload();
+    if (out.order) show(out.order);
+  };
+});
+document.getElementById('pollBtn').onclick = async function () {
+  await api('/api/store-orders/poll', { method: 'POST' });
+  await reload();
+};
+
+reload().catch(function () {
+  document.getElementById('rows').innerHTML = '<tr><td colspan="6">Cannot reach /api/store-orders — check crm-umg + nginx prefix</td></tr>';
+});
+</script>
+</body>
+</html>

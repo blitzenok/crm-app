@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Crypto payments — BioLabs CRM</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+.table-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;font-size:11px;color:#5A6685;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #E8ECF4}
+td{padding:10px 12px;border-bottom:1px solid #F0F2FA;vertical-align:top}
+.muted{color:#5A6685;font-size:12px;margin:8px 0 16px}
+.warn{color:#B45309;font-weight:700}
+.ok{color:#145C2C;font-weight:700}
+.row{cursor:pointer}
+.detail{background:#F8FAFC;padding:14px 16px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+input.tx{padding:8px 10px;border:1px solid #E8ECF4;border-radius:8px;min-width:280px}
+.search{display:flex;gap:8px;margin-bottom:14px}
+.search input{padding:8px 10px;border:1px solid #E8ECF4;border-radius:8px;min-width:260px}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=05fa5a1bda-umg"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar"><div id="crm-nav" class="crm-nav"></div></div>
+  <div class="main">
+    <div class="topbar"><div class="topbar-title">Crypto payments <span>— verified on-chain automatically, ship blocked until verified</span></div></div>
+    <div class="content">
+      <p class="muted">The sidecar checks the blockchain every ~90 s (read-only). An order is released only when a matching USDT transfer to our wallet has enough confirmations and the sender passed sanctions screening. Each order has a unique amount (cents offset) so payments can be matched. Unpaid orders are cancelled 60 minutes after checkout (+60 min if the customer pressed "I've sent the payment"). Refunds are manual: send from the wallet yourself, then record the refund tx here. The system never sends crypto.</p>
+      <div id="health" class="muted"></div>
+      <form class="search" id="searchForm">
+        <select id="st" class="tx" style="min-width:180px"><option value="">All payment statuses</option><option>awaiting_payment</option><option>confirming</option><option>paid</option><option>payment_review</option><option>sanctions_review</option><option>screening_hold</option><option>cancelled</option></select>
+        <input id="q" placeholder="Filter by order ref, email, tx hash" />
+        <button class="btn btn-primary" type="submit">Refresh</button>
+        <button class="btn btn-secondary" type="button" id="verifyNow">Check chain now</button>
+      </form>
+      <div class="table-card"><table>
+        <thead><tr><th>Order ref</th><th>Payment</th><th>Exact amount</th><th>Received</th><th>Conf.</th><th>Customer</th><th>Fulfillment</th><th>Cancel at</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table></div>
+      <h3 style="margin-top:22px">Unmatched incoming transfers</h3>
+      <div class="table-card"><table><thead><tr><th>Seen</th><th>Network</th><th>Amount</th><th>From</th><th>Tx</th></tr></thead><tbody id="unmatched"></tbody></table></div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('crypto-orders');
+let orders = [];
+const BASE = '/api/psp/crypto';
+const REVIEW = { payment_review: 1, sanctions_review: 1, screening_hold: 1 };
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (ch) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+  });
+}
+function when(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+function link(url, text) {
+  if (!url || !/^https:\/\//.test(url)) return esc(text);
+  return '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + esc(text) + '</a>';
+}
+function short(h) { h = String(h || ''); return h.length > 18 ? h.slice(0, 10) + '…' + h.slice(-6) : h; }
+function cls(st) { return st === 'paid' ? 'ok' : 'warn'; }
+
+function detailHtml(o) {
+  const tx = (o.transfers || []).map(function (t) {
+    return '<div>' + link(t.explorerUrl, short(t.txHash)) + ' · ' + esc(t.amount) + ' ' + esc(t.token) + ' ' + esc(t.network) +
+      ' · from ' + link(t.fromUrl, short(t.from)) + ' · ' + esc(t.confirmations) + '/' + esc(t.required) + ' conf' +
+      (t.success === false ? ' · <span class="warn">FAILED</span>' : '') + (t.wrongNetwork ? ' · <span class="warn">wrong network</span>' : '') +
+      ' · matched by ' + esc(t.matchedBy || '?') + '</div>';
+  }).join('') || '<div class="muted">No transfer seen on-chain yet.</div>';
+  const hints = (o.txHints || []).map(function (h) { return link(h.explorerUrl, short(h.hash)) + ' (' + esc(h.source || '') + ')'; }).join(', ');
+  const sc = o.sanctions ? (o.sanctions.status + (o.sanctions.source ? ' via ' + o.sanctions.source : '')) : '—';
+  const refunds = (o.refunds || []).map(function (r) { return link(r.explorerUrl, short(r.txHash)) + ' ' + esc(r.amount) + ' by ' + esc(r.actor) + ' ' + esc(when(r.at)); }).join('<br>');
+  const hist = (o.staffActions || []).map(function (a) { return esc(when(a.at)) + ' ' + esc(a.action) + ' by ' + esc(a.actor) + (a.note ? ' — ' + esc(a.note) : ''); }).join('<br>');
+  const acts = o.actions || [];
+  const id = esc(o.id);
+  let btns = '<div class="btns"><input class="tx" data-note="' + id + '" placeholder="Note (required to release)" />';
+  if (acts.indexOf('release') >= 0) btns += '<button class="btn btn-primary" type="button" data-act="release" data-id="' + id + '">Release after review</button>';
+  btns += '<button class="btn btn-secondary" type="button" data-act="mark_reviewed" data-id="' + id + '">Mark reviewed</button>';
+  if (acts.indexOf('cancel') >= 0) btns += '<button class="btn btn-secondary" type="button" data-act="cancel" data-id="' + id + '">Cancel order</button>';
+  btns += '</div><div class="btns"><input class="tx" data-addtx="' + id + '" placeholder="Attach tx hash (re-checked on-chain)" />' +
+    '<button class="btn btn-secondary" type="button" data-act="add_tx" data-id="' + id + '">Attach tx</button></div>' +
+    '<div class="btns"><input class="tx" data-rtx="' + id + '" placeholder="Refund tx hash (sent manually)" /><input class="tx" style="min-width:120px" data-ramt="' + id + '" placeholder="USDT amount" />' +
+    '<button class="btn btn-secondary" type="button" data-act="record_refund" data-id="' + id + '">Record refund</button></div>';
+  let ship = '';
+  if (o.paymentStatus === 'paid' && o.fulfillment !== 'shipped') {
+    ship = '<div class="btns"><span class="ok">Verified on-chain ' + esc(when(o.verifiedAt)) + ' (' + esc(o.verifiedVia || '') + ').</span>' +
+      '<select class="tx" data-carrier="' + id + '"><option>USPS</option><option>UPS</option><option>FedEx</option><option>DHL</option><option>Other</option></select>' +
+      '<input class="tx" data-trk="' + id + '" placeholder="Tracking number" />' +
+      '<button class="btn btn-secondary" type="button" data-ship="' + id + '">Mark shipped</button></div>';
+  }
+  return '<tr class="detail-row"><td colspan="8" class="detail">' + (o.test ? '<div class="warn">TEST ORDER</div>' : '') +
+    '<div><strong>' + id + '</strong> · ' + esc(o.orderRef) + ' · ' + esc(o.customer && o.customer.name) + ' ' + esc(o.customer && o.customer.email) + '</div>' +
+    '<div>Due <strong>' + esc(o.payAmount) + ' ' + esc(o.token) + '</strong> (' + esc(o.network) + ') to ' + link(o.walletUrl, short(o.wallet)) +
+    ' · received ' + esc(o.receivedAmount) + ' (Δ ' + esc(o.amountDelta) + ') · order total $' + esc(o.amountUsd) + '</div>' +
+    '<div>Customer pressed "I\'ve sent the payment": ' + (o.customerConfirmed ? '<span class="ok">yes</span> ' + esc(when(o.customerConfirmedAt)) : 'no') + (hints ? ' · tx hints: ' + hints : '') + '</div>' +
+    '<div>Sanctions: ' + esc(sc) + ' · last checked ' + esc(when(o.lastCheckedAt)) + (o.latePayment ? ' · <span class="warn">late payment</span>' : '') + '</div>' +
+    (o.reviewReasons && o.reviewReasons.length ? '<div class="warn">Review: ' + esc(o.reviewReasons.join('; ')) + '</div>' : '') +
+    (o.cancelledAt ? '<div>Cancelled ' + esc(when(o.cancelledAt)) + ' (' + esc(o.cancelReason) + ') · email ' + esc(o.cancelEmail && o.cancelEmail.status) + '</div>' : '') +
+    tx + (refunds ? '<div>Refunds:<br>' + refunds + '</div>' : '') + ship + btns + (hist ? '<div class="muted">' + hist + '</div>' : '') + '</td></tr>';
+}
+
+function draw() {
+  const q = document.getElementById('q').value.trim().toLowerCase();
+  const list = orders.filter(function (o) {
+    if (!q) return true;
+    const hay = [o.id, o.orderRef, o.customer && o.customer.email].concat((o.transfers || []).map(function (t) { return t.txHash; }), (o.txHints || []).map(function (h) { return h.hash; })).join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+  document.getElementById('rows').innerHTML = list.map(function (o) {
+    return '<tr class="row" data-id="' + esc(o.id) + '"><td>' + esc(o.orderRef || o.id) + (o.test ? ' <span class="warn">TEST</span>' : '') + '</td><td class="' + cls(o.paymentStatus) + '">' +
+      esc(o.paymentStatus) + (o.customerConfirmed ? ' · customer says sent' : '') + '</td><td>' + esc(o.payAmount) + ' ' + esc(o.token) + ' ' + esc(o.network || '') + '</td><td>' +
+      esc(o.receivedAmount) + '</td><td>' + esc(o.confirmations) + '/' + esc(o.requiredConfirmations) + '</td><td>' + esc((o.customer && o.customer.email) || '—') + '</td><td>' +
+      esc(o.fulfillment || 'blocked') + '</td><td>' + esc(REVIEW[o.paymentStatus] || o.paymentStatus === 'paid' || o.paymentStatus === 'cancelled' ? '—' : when(o.cancelAt)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="8">No crypto orders.</td></tr>';
+}
+
+async function reload() {
+  const st = document.getElementById('st').value;
+  const data = await api(BASE + '/orders' + (st ? '?paymentStatus=' + encodeURIComponent(st) : ''), { toast: false });
+  orders = (data.orders || []).sort(function (a, b) { return String(b.createdAt).localeCompare(String(a.createdAt)); });
+  const v = data.verifier || {};
+  document.getElementById('health').textContent = 'Verifier ' + (v.enabled ? 'on' : 'OFF') + ' · alerts ' + (data.alerts || 0) + ' · unmatched transfers ' + (data.unmatched || 0);
+  draw();
+  const um = await api(BASE + '/unmatched', { toast: false }).catch(function () { return {}; });
+  document.getElementById('unmatched').innerHTML = (um.unmatched || []).map(function (u) {
+    return '<tr><td>' + esc(when(u.seenAt || u.at)) + '</td><td>' + esc(u.network) + '</td><td>' + esc(u.amount) + ' ' + esc(u.token || '') + '</td><td>' + esc(short(u.from)) + '</td><td>' + link(u.explorerUrl, short(u.txHash)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="5">None.</td></tr>';
+}
+
+document.getElementById('searchForm').onsubmit = function (e) { e.preventDefault(); reload(); };
+document.getElementById('verifyNow').onclick = async function () { await api(BASE + '/verify-now', { method: 'POST', body: {} }); await reload(); };
+
+document.getElementById('rows').onclick = async function (e) {
+  function val(attr, id) {
+    const el = document.querySelector('[' + attr + '="' + id + '"]');
+    return el ? el.value.trim() : '';
+  }
+  const act = e.target.closest('[data-act]');
+  const shipBtn = e.target.closest('[data-ship]');
+  if (act) {
+    const id = act.getAttribute('data-id');
+    const a = act.getAttribute('data-act');
+    const body = { action: a, note: val('data-note', id) };
+    if (a === 'release' && !body.note) { alert('Write a review note first.'); return; }
+    if (a === 'add_tx') { body.txHash = val('data-addtx', id); if (!body.txHash) { alert('Enter a tx hash.'); return; } }
+    if (a === 'record_refund') {
+      body.refundTxHash = val('data-rtx', id); body.amount = val('data-ramt', id);
+      if (!body.refundTxHash || !body.amount) { alert('Refund tx hash and amount are required. Send the refund from the wallet yourself first.'); return; }
+    }
+    if ((a === 'cancel' || a === 'release') && !confirm(a === 'cancel' ? 'Cancel this order?' : 'Release this order for shipping? The chain and sanctions are re-checked first.')) return;
+    await api(BASE + '/orders/' + encodeURIComponent(id) + '/action', { method: 'POST', body: body });
+    await reload();
+    return;
+  }
+  if (shipBtn) {
+    const id = shipBtn.getAttribute('data-ship');
+    const body = { carrier: val('data-carrier', id), trackingNumber: val('data-trk', id) };
+    if (!body.trackingNumber && !confirm('Ship without a tracking number?')) return;
+    await api('/api/store-orders/' + encodeURIComponent(id) + '/ship', { method: 'POST', body: body });
+    await reload();
+    return;
+  }
+  const tr = e.target.closest('tr[data-id]');
+  if (!tr) return;
+  const id = tr.getAttribute('data-id');
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('detail-row')) { next.remove(); return; }
+  document.querySelectorAll('.detail-row').forEach(function (n) { n.remove(); });
+  const o = orders.find(function (x) { return x.id === id; });
+  if (o) tr.insertAdjacentHTML('afterend', detailHtml(o));
+};
+
+reload().catch(function () {
+  document.getElementById('rows').innerHTML = '<tr><td colspan="8">Cannot reach /api/psp/crypto/orders — check crm-umg is running the crypto-verify build</td></tr>';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=15a8f6da73">
+<style>
+.report-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; padding:20px 22px; margin-bottom:16px; min-width:0; }
+.report-card h3{ font-size:14px; font-weight:700; margin-bottom:14px; color:#1B2A4A; }
+.main{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:24px 28px;max-width:100%;}
+.dash-panel{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;}
+.dash-panel select,.dash-panel button{border:1px solid #EAECF4;border-radius:8px;padding:7px 12px;font-size:12px;background:#fff;cursor:pointer;}
+#dash-summary{font-size:13px;color:#5A6685;margin-bottom:8px;line-height:1.5;}
+.dash-caption{display:block;margin:0 0 16px;font-size:12px;color:#5A6685;line-height:1.45;}
+.dash-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px;}
+.dash-tiles [data-tile]{background:#F8FAFC;border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;min-width:0;}
+.tile-label{font-size:10px;font-weight:700;color:#6B7280;letter-spacing:0.6px;text-transform:uppercase;}
+.tile-value{font-size:22px;font-weight:800;color:#1a1a2e;margin-top:6px;letter-spacing:-0.5px;word-break:break-word;}
+.tile-sub{font-size:11px;color:#5A6685;margin-top:4px;line-height:1.35;}
+.dash-grid{display:grid;grid-template-columns:1fr;gap:0;align-items:start;}
+.dash-chart{margin:8px 0 14px;max-width:100%;}
+.dash-chart svg{max-width:100%;height:auto;display:block;}
+.dash-table-wrap{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;}
+.report-card table{width:100%;border-collapse:collapse;min-width:440px;}
+.report-card table[data-table="recent"]{min-width:520px;}
+.report-card thead th{ text-align:left; padding:10px 8px 10px 0; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+.report-card tbody td{ padding:10px 8px 10px 0; font-size:13px; border-bottom:1px solid #F0F2FA; vertical-align:top; word-break:break-word; }
+.dash-note{font-size:12px;color:#5A6685;margin-top:12px;line-height:1.4;}
+.dash-loading,.dash-empty,.dash-error{padding:18px 4px;font-size:13px;color:#5A6685;}
+.dash-error{color:#C62828;}
+.dash-all-orders{display:inline-block;margin-top:12px;font-size:13px;font-weight:600;color:#1B2A4A;text-decoration:none;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+.b-pending{background:#FFF8E7;color:#D97706;border:1px solid #FDE68A;}
+.b-confirmed{background:#EFF6FF;color:#3B82F6;border:1px solid #BFDBFE;}
+.b-shipped{background:#ECFDF5;color:#059669;border:1px solid #A7F3D0;}
+.b-delivered{background:#E6F4EA;color:#1F7A3D;border:1px solid #C8E6C9;}
+.b-cancelled{background:#FEF2F2;color:#DC2626;border:1px solid #FECACA;}
+.od-paybadge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+.od-paybadge[data-code="paid"]{background:#ECFDF5;color:#059669;border-color:#A7F3D0}
+.od-paybadge[data-code="partial"]{background:#FFFBEB;color:#B45309;border-color:#FDE68A}
+.od-paybadge[data-code="unpaid"]{background:#F8FAFC;color:#64748B;border-color:#E2E8F0}
+.od-paybadge[data-code="refunded"]{background:#EFF6FF;color:#1E3A8A;border-color:#BFDBFE}
+.od-paybadge[data-code="none"]{background:#F8FAFC;color:#64748B;border:1px dashed #94A3B8}
+@media(min-width:900px){
+  .dash-grid{grid-template-columns:1fr 1fr;gap:16px;}
+}
+@media(max-width:768px){
+  .content{padding:14px;padding-bottom:82px;}
+  .dash-tiles{grid-template-columns:1fr 1fr;}
+  .report-card{padding:16px;}
+  /* every dashboard table is three short columns (recent: four after .dash-phone-hide) — they fit a phone as they are;
+     .dash-table-wrap keeps overflow-x:auto only as a safety net for long product / source names */
+  .report-card table{min-width:0!important;}
+  .report-card thead{display:table-header-group!important;}
+  .report-card tbody tr{display:table-row!important;padding:0!important;border-bottom:none!important;}
+  .report-card tbody td,.report-card tbody td:first-child{display:table-cell!important;padding:8px 8px 8px 0!important;border:none!important;border-bottom:1px solid #F0F2FA!important;font-size:12px!important;text-align:left!important;}
+  .dash-phone-hide,
+  .report-card thead th.dash-phone-hide,
+  .report-card tbody td.dash-phone-hide{display:none!important;}
+}
+</style>
+</head>
+<body data-pwa-banner>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=dc7b9e857b"></script>
+    <script src="auth.js"></script>
+    <script src="orders-model.js?v=3123f1cc3a"></script>
+    <script src="finance-model.js?v=8dfba2ca3a"></script>
+    <script src="crm-charts.js?v=4cc1a39a7f"></script>
+    <script src="dashboard-model.js?v=86b59feaa7"></script>
+
+<div class="app-wrapper">
+<aside class="sidebar" id="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display:none;background:none;border:none;font-size:24px;cursor:pointer;padding:0 10px;" aria-label="Toggle menu">☰</button>
+    <div class="topbar-titles">
+      <div class="topbar-title">Dashboard</div>
+    </div>
+    <div class="topbar-right">
+      <button class="topbar-icon-btn" onclick="logout()">↩</button>
+    </div>
+  </header>
+  <div class="content">
+    <div class="dash-panel">
+      <select id="dash-period" aria-label="Period">
+        <option value="30d" selected>Last 30 days</option>
+        <option value="90d">Last 90 days</option>
+        <option value="ytd">This year</option>
+        <option value="all">All time</option>
+      </select>
+      <button type="button" id="dash-refresh">Refresh</button>
+    </div>
+    <div id="dash-summary"></div>
+    <p class="dash-caption">Revenue = order value of paid orders (amount due, not cash received) — the same figure as “Order value · Paid only” in Finance Reports. Outstanding and To ship count all open orders. The monthly chart shows the last 6 months and Recent orders always show the latest 8, regardless of the selected period.</p>
+
+    <div class="dash-tiles">
+      <div data-tile="orders"><div class="tile-label">Orders</div><div class="tile-value">—</div><div class="tile-sub"></div></div>
+      <div data-tile="revenue"><div class="tile-label">Revenue</div><div class="tile-value">—</div><div class="tile-sub"></div></div>
+      <div data-tile="outstanding"><div class="tile-label">Outstanding</div><div class="tile-value">—</div><div class="tile-sub"></div></div>
+      <div data-tile="toship"><div class="tile-label">To ship</div><div class="tile-value">—</div><div class="tile-sub"></div></div>
+    </div>
+
+    <div class="dash-grid">
+      <section class="report-card" id="dash-months">
+        <h3>Revenue by month</h3>
+        <div class="dash-body"><div class="dash-loading">Loading…</div></div>
+      </section>
+      <section class="report-card" id="dash-status">
+        <h3>Orders by status</h3>
+        <div class="dash-body"><div class="dash-loading">Loading…</div></div>
+      </section>
+      <section class="report-card" id="dash-products">
+        <h3>Top products</h3>
+        <div class="dash-body"><div class="dash-loading">Loading…</div></div>
+      </section>
+      <section class="report-card" id="dash-sources">
+        <h3>Where customers come from</h3>
+        <div class="dash-body"><div class="dash-loading">Loading…</div></div>
+      </section>
+    </div>
+    <section class="report-card" id="dash-recent">
+      <h3>Recent orders</h3>
+      <div class="dash-body"><div class="dash-loading">Loading…</div></div>
+    </section>
+  </div>
+</div>
+</div>
+
+<script>
+if (!localStorage.getItem('crm_token')) window.location.href='/crm/login.html';
+renderNav('dashboard');
+
+var PERIOD_LABEL = { '30d': 'Last 30 days', '90d': 'Last 90 days', 'ytd': 'This year', 'all': 'All time' };
+var STATUS_CLASS = { unpaid: 'b-pending', toship: 'b-confirmed', shipped: 'b-shipped', delivered: 'b-delivered', cancelled: 'b-cancelled', other: 'b-pending' };
+var PAY_CODES = ['unpaid', 'partial', 'paid', 'refunded'];
+var SECTIONS = ['dash-months', 'dash-status', 'dash-products', 'dash-sources', 'dash-recent'];
+var DASH = '\u2014';
+var allOrders = [];
+var loadError = false;
+
+function money(n) { return OrdersModel.formatMoney(n); }
+function pct(share) { return Math.round(Number(share) * 100) + '%'; }
+function periodVal() {
+  var p = document.getElementById('dash-period').value;
+  return /^(30d|90d|ytd|all)$/.test(p) ? p : '30d';
+}
+function persist() {
+  try { localStorage.setItem('crm_dash_period', periodVal()); } catch (e) { /* private mode */ }
+}
+function restore() {
+  try {
+    var p = localStorage.getItem('crm_dash_period');
+    if (p && /^(30d|90d|ytd|all)$/.test(p)) document.getElementById('dash-period').value = p;
+  } catch (e) { /* private mode */ }
+}
+function bodyOf(id) { return document.querySelector('#' + id + ' .dash-body'); }
+function setTile(name, value, sub) {
+  var el = document.querySelector('.dash-tiles [data-tile="' + name + '"]');
+  if (!el) return;
+  var v = el.querySelector('.tile-value');
+  var s = el.querySelector('.tile-sub');
+  if (v) v.textContent = value;
+  if (s) s.textContent = sub == null ? '' : sub;
+}
+function setTilesDash() {
+  ['orders', 'revenue', 'outstanding', 'toship'].forEach(function (name) { setTile(name, DASH, ''); });
+}
+function setLoading() {
+  document.getElementById('dash-summary').textContent = 'Loading…';
+  setTilesDash();
+  SECTIONS.forEach(function (id) {
+    var b = bodyOf(id);
+    if (b) b.innerHTML = '<div class="dash-loading">Loading…</div>';
+  });
+}
+function setError() {
+  document.getElementById('dash-summary').textContent = 'Could not load orders';
+  setTilesDash();
+  SECTIONS.forEach(function (id) {
+    var b = bodyOf(id);
+    if (b) b.innerHTML = '<div class="dash-error">Could not load orders</div>';
+  });
+}
+function isOrdersPayload(d) {
+  return Array.isArray(d) || !!(d && Array.isArray(d.orders));
+}
+function productLabel(p) { return p.name + (p.mg ? ' ' + p.mg : ''); }
+function statusClassOf(group) {
+  return Object.prototype.hasOwnProperty.call(STATUS_CLASS, group) ? STATUS_CLASS[group] : STATUS_CLASS.other;
+}
+function recentRow(r) {
+  var id = r.ref || r.id || '';
+  var customer = r.name || r.email || '—';
+  var items = (r.itemsShort || '') + (r.itemsMore > 0 ? ' +' + r.itemsMore : '');
+  var ps = OrdersModel.paymentStatus(r);
+  var payHtml = PAY_CODES.indexOf(ps.code) < 0
+    ? '—'
+    : '<span class="od-paybadge" data-code="' + escAttr(ps.code) + '">' + esc(ps.label) + '</span>';
+  var when = OrdersModel.formatWhen(r.createdAt) || '—';
+  return '<tr>' +
+    '<td>' + esc(id) + '</td>' +
+    '<td>' + esc(customer) + '</td>' +
+    '<td class="dash-phone-hide">' + esc(items) + '</td>' +
+    '<td>' + esc(money(r.toPay)) + '</td>' +
+    '<td class="dash-phone-hide">' + payHtml + '</td>' +
+    '<td><span class="badge ' + statusClassOf(r.group) + '">' + esc(r.status) + '</span></td>' +
+    '<td class="dash-phone-hide">' + esc(when) + '</td>' +
+    '</tr>';
+}
+
+function render() {
+  if (loadError) { setError(); return; }
+  var period = periodVal();
+  var built = DashboardModel.build(allOrders, { period: period, now: new Date() });
+  var t = built.tiles;
+  var periodLabel = PERIOD_LABEL[built.period];
+  document.getElementById('dash-summary').textContent =
+    periodLabel + ' · ' + t.orders + ' orders · ' + money(t.revenue) + ' revenue';
+  setTile('orders', String(t.orders), t.cancelled + ' cancelled');
+  setTile('revenue', money(t.revenue), t.paidCount + ' paid · avg ' + money(t.average));
+  setTile('outstanding', money(t.outstanding), t.owingCount + ' unpaid or partly paid · all time');
+  setTile('toship', String(t.toShip), 'paid, not shipped · all time');
+
+  var monthsHtml = '<div class="dash-chart" data-chart="months">' + CrmCharts.bars({
+    items: built.months.map(function (m) { return { label: m.short, value: m.revenue }; }),
+    format: money
+  }) + '</div>';
+  monthsHtml += '<div class="dash-table-wrap"><table data-table="months"><thead><tr><th>Month</th><th>Orders</th><th>Revenue</th></tr></thead><tbody>' +
+    built.months.map(function (m) {
+      return '<tr><td>' + esc(m.label) + '</td><td>' + esc(String(m.orders)) + '</td><td>' + esc(money(m.revenue)) + '</td></tr>';
+    }).join('') + '</tbody></table></div>';
+  monthsHtml += '<p class="dash-note">Paid revenue by order date, last 6 months. Orders here exclude cancelled.</p>';
+  bodyOf('dash-months').innerHTML = monthsHtml;
+
+  var statusHtml;
+  if (!built.status.length) {
+    statusHtml = '<div class="dash-empty">No orders in this period</div>';
+  } else {
+    statusHtml = '<div class="dash-chart" data-chart="status">' + CrmCharts.donut({
+      items: built.status.map(function (row) { return { label: row.label, value: row.orders }; })
+    }) + '</div>';
+    statusHtml += '<div class="dash-table-wrap"><table data-table="status"><thead><tr><th>Status</th><th>Orders</th><th>Share</th></tr></thead><tbody>' +
+      built.status.map(function (row) {
+        return '<tr><td>' + esc(row.label) + '</td><td>' + esc(String(row.orders)) + '</td><td>' + esc(pct(row.share)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  bodyOf('dash-status').innerHTML = statusHtml;
+
+  var prodHtml;
+  if (!built.products.length) {
+    prodHtml = '<div class="dash-empty">No orders in this period</div>';
+  } else {
+    prodHtml = '<div class="dash-chart" data-chart="products">' + CrmCharts.hbars({
+      items: built.products.map(function (p) { return { label: productLabel(p), value: p.units }; }),
+      format: function (n) { return String(n); }
+    }) + '</div>';
+  }
+  bodyOf('dash-products').innerHTML = prodHtml;
+
+  var srcHtml;
+  if (!built.sources.length) {
+    srcHtml = '<div class="dash-empty">No orders in this period</div>';
+  } else {
+    srcHtml = '<div class="dash-chart" data-chart="sources">' + CrmCharts.donut({
+      items: built.sources.map(function (row) { return { label: row.source, value: row.orders }; })
+    }) + '</div>';
+    srcHtml += '<div class="dash-table-wrap"><table data-table="sources"><thead><tr><th>Source</th><th>Orders</th><th>Share</th></tr></thead><tbody>' +
+      built.sources.map(function (row) {
+        return '<tr><td>' + esc(row.source) + '</td><td>' + esc(String(row.orders)) + '</td><td>' + esc(pct(row.share)) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  bodyOf('dash-sources').innerHTML = srcHtml;
+
+  var recentHtml;
+  if (!built.recent.length) {
+    recentHtml = '<div class="dash-empty">No orders yet</div>';
+  } else {
+    recentHtml = '<div class="dash-table-wrap"><table data-table="recent"><thead><tr>' +
+      '<th>Order</th><th>Customer</th><th class="dash-phone-hide">Items</th><th>To pay</th>' +
+      '<th class="dash-phone-hide">Payment</th><th>Status</th><th class="dash-phone-hide">When</th>' +
+      '</tr></thead><tbody>' + built.recent.map(recentRow).join('') + '</tbody></table></div>';
+  }
+  recentHtml += '<a class="dash-all-orders" href="/crm/orders.html">All orders →</a>';
+  bodyOf('dash-recent').innerHTML = recentHtml;
+}
+
+function modulesMissing() {
+  return typeof OrdersModel === 'undefined' || typeof FinanceModel === 'undefined' || typeof CrmCharts === 'undefined' || typeof DashboardModel === 'undefined';
+}
+var loadSeq = 0;
+async function load() {
+  // The module gate sits inside load(): a Refresh after a partial deploy (404 on one script) must end in .dash-error too,
+  // not in a ReferenceError that leaves "Loading…" on the screen (review, MEDIUM).
+  if (modulesMissing()) { loadError = true; setError(); return; }
+  var gen = ++loadSeq;
+  setLoading();
+  loadError = false;
+  var d;
+  try {
+    d = await api('/msolpeptides-api/orders');
+  } catch (e) {
+    if (gen !== loadSeq) return; // a newer request owns the screen
+    loadError = true;
+    setError();
+    return;
+  }
+  if (gen !== loadSeq) return;
+  if (!isOrdersPayload(d)) {
+    loadError = true;
+    setError();
+    try { toast('Could not load orders'); } catch (e) { /* toast helper missing */ }
+    return;
+  }
+  allOrders = OrdersModel.load(Array.isArray(d) ? d : d.orders);
+  render();
+}
+
+restore();
+document.getElementById('dash-period').addEventListener('change', function () { persist(); render(); });
+document.getElementById('dash-refresh').addEventListener('click', function () { persist(); load(); });
+load();
+</script>
+</body>
+</html>

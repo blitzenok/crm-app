@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* segments-only styling; everything shared lives in crm.css */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
+.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
+.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap;}
+.card-head h3{margin-bottom:0;}
+.note{font-size:12px;color:#5A6685;margin-top:8px;line-height:1.5;}
+.err{font-size:12px;font-weight:600;color:#C62828;margin-top:5px;min-height:15px;}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
+tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;vertical-align:top;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:#E8F5E9;color:#2E7D32;}
+.badge-gray{background:#E8ECF4;color:#5A6685;}
+.badge-amber{background:#FFF8EC;color:#D97706;}
+.badge-red{background:#FEF2F2;color:#C62828;}
+.seg-name{font-weight:700;color:#1a1a2e;}
+.seg-desc{font-size:12px;color:#5A6685;margin-top:3px;}
+.rule-words{font-size:12px;color:#475569;line-height:1.6;}
+.rule-words b{color:#1B2A4A;font-weight:700;}
+.size-num{font-size:16px;font-weight:700;color:#1B2A4A;}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+.rule-row{display:grid;grid-template-columns:1.2fr 1fr 1.2fr auto;gap:8px;align-items:center;}
+.form-grid{display:grid;grid-template-columns:1.4fr 2fr .8fr;gap:10px;align-items:end;}
+.form-grid .field{margin-bottom:0;}
+.warn{background:#FFFBEB;border:1px solid #FBBF24;border-radius:10px;padding:10px 12px;font-size:12px;color:#7C5A10;line-height:1.5;margin-top:10px;}
+.status-line{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:#5A6685;}
+.status-line b{color:#1a1a2e;}
+.log-line{font-size:12px;color:#475569;padding:6px 0;border-bottom:1px solid #F0F2FA;}
+.members-list{max-height:320px;overflow-y:auto;border:1px solid #E8ECF4;border-radius:10px;background:#fff;}
+.member-row{padding:7px 11px;font-size:13px;border-bottom:1px solid #F0F2FA;word-break:break-all;}
+.member-row:last-child{border-bottom:none;}
+.members-empty{padding:12px;font-size:12px;color:#5A6685;}
+.muted{color:#5A6685;}
+:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
+@media(max-width:768px){
+.form-grid,.rule-row{grid-template-columns:1fr;}
+.sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;background:#fff;border-top:2px solid var(--border);z-index:1000;overflow-x:auto;}
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.nav{display:flex;flex-direction:row;padding:0 4px;overflow-x:auto;}
+.nav-item{flex:0 0 64px;flex-direction:column;font-size:10px;padding:6px 3px;}
+.content{padding:14px;padding-bottom:82px;}
+.topbar{background:#1B2A4A;}
+.topbar-title{color:#fff;}
+/* crm.css turns tables into card lists on phones and hides the first cell; here the first cell is the
+   segment name, i.e. what the row is about — keep it. */
+tbody td:first-child{display:flex!important}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">🎯 Segments <span>Who gets which campaign</span></div>
+  </header>
+  <div class="content">
+
+<div class="card">
+  <div class="card-head">
+    <h3>Segments in Customer.io</h3>
+    <div class="row-actions">
+      <button class="btn btn-secondary" type="button" id="new-btn" onclick="openForm(null)">New segment</button>
+      <button class="btn btn-primary" type="button" id="sync-all-btn" onclick="syncAll()">Sync all</button>
+    </div>
+  </div>
+  <div class="status-line" id="status-line"></div>
+  <p class="note">
+    A segment is a set of rules over what the shop already knows about a customer — orders, money, country, the
+    products of the last order, whether they are on the insider list. The same numbers travel to Customer.io with
+    every profile update, so a segment here and a filter there mean the same thing. Sync creates a manual segment
+    in Customer.io the first time and keeps its membership in step afterwards.
+    Test and service addresses — the smoke orders of our own releases, QA carts, the shop's own mailbox — are left
+    out of every count here and are never sent to Customer.io.
+  </p>
+</div>
+
+<div class="card" id="form-card" style="display:none">
+  <div class="card-head">
+    <h3 id="form-title">New segment</h3>
+    <button class="btn btn-secondary" type="button" onclick="closeForm()">Close</button>
+  </div>
+  <div class="form-grid">
+    <div class="field">
+      <label for="f-name">Name</label>
+      <input type="text" id="f-name" maxlength="60" autocomplete="off" placeholder="Repeat buyers">
+    </div>
+    <div class="field">
+      <label for="f-desc">Description</label>
+      <input type="text" id="f-desc" maxlength="200" autocomplete="off" placeholder="What this segment is for">
+    </div>
+    <div class="field">
+      <label for="f-match">Match</label>
+      <select id="f-match"><option value="all">All rules</option><option value="any">Any rule</option></select>
+    </div>
+  </div>
+  <div class="rules" id="rule-rows"></div>
+  <div class="row-actions">
+    <button class="btn btn-secondary" type="button" onclick="addRule()">Add rule</button>
+    <button class="btn btn-primary" type="button" id="save-btn" onclick="saveForm()">Save segment</button>
+  </div>
+  <div class="err" id="form-err"></div>
+  <div id="form-warn"></div>
+  <p class="note">
+    A rule can only be true about a value we have: someone with no country recorded is not "not from Italy", and
+    such a person is left out of the segment. Use “is known” to talk about people we have no value for.
+    A segment with no rules matches nobody.
+  </p>
+</div>
+
+<div class="card">
+  <div class="table-wrap">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th>Segment</th><th>Rule</th><th>Size</th><th>Last sync</th><th>Customer.io</th><th></th>
+      </tr></thead>
+      <tbody id="seg-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Recent syncs</h3>
+  <div id="log-box"><p class="note">Loading…</p></div>
+</div>
+
+  </div>
+</div>
+</div>
+<script>
+renderNav('marketing-segments');
+
+let SEGMENTS = [];      // last loaded list; row handlers address it by index
+let FIELDS = [];        // [{field,label,type,ops,warn}] — the server decides what can be segmented on
+let CONFIG = {};
+let SIZES = {};         // id -> {count,total,error} filled in by the previews
+let EXCLUDED = null;    // {count,sample} from products-api: the test/service identities kept out of the list
+let EDIT_ID = null;     // id of the segment being edited, null while creating
+let FORM_RULES = [];    // [{field,op,value}] of the open form
+let BUSY = false;
+
+function fieldSpec(name){ return FIELDS.filter(function(f){ return f.field===name; })[0] || null; }
+function noteRow(text, cols){
+  const box=document.getElementById('seg-body');
+  const tr=document.createElement('tr'), td=document.createElement('td'), div=document.createElement('div');
+  td.colSpan=cols||6; div.className='note'; div.textContent=text; td.appendChild(div); tr.appendChild(td);
+  box.innerHTML=''; box.appendChild(tr);
+}
+
+/* ── the table ───────────────────────────────────────────────────────────── */
+
+function sizeCell(seg){
+  const s=SIZES[seg.id];
+  if(!s) return '<span class="muted">—</span>';
+  if(s.error) return '<span class="badge badge-red">no count</span>';
+  return '<span class="size-num">'+esc(String(s.count))+'</span><div class="seg-desc">of '+esc(String(s.total))+' people</div>';
+}
+function syncCell(seg){
+  const ls=seg.last_sync;
+  if(!ls) return '<span class="badge badge-gray">never synced</span>';
+  if(ls.error) return '<span class="badge badge-red">failed</span><div class="seg-desc">'+esc(fmtDate(ls.at))+'<br>'+esc(ls.error)+'</div>';
+  return '<span class="badge badge-green">'+esc(String(ls.size))+' in Customer.io</span>'+
+    '<div class="seg-desc">'+esc(fmtDate(ls.at))+' · +'+esc(String(ls.added))+' / −'+esc(String(ls.removed))+
+    (ls.unknown_members ? '<br>'+esc(String(ls.unknown_members))+' members there we cannot read' : '')+
+    (ls.source && ls.source!=='customer.io' ? '<br>compared against the '+esc(ls.source) : '')+'</div>';
+}
+function cioCell(seg){
+  if(!seg.cio_segment_id) return '<span class="muted">not created yet</span>';
+  const url=seg.cio_url ? safeUrl(seg.cio_url) : '';
+  const label='#'+esc(String(seg.cio_segment_id));
+  return url ? '<a href="'+escAttr(url)+'" target="_blank" rel="noopener">'+label+'</a>' : label;
+}
+function renderTable(){
+  const box=document.getElementById('seg-body');
+  if(!SEGMENTS.length){ noteRow('No segments yet. “New segment” builds one.'); return; }
+  box.innerHTML=SEGMENTS.map(function(seg,i){
+    const words=(seg.rule_words||[]);
+    const joiner=seg.match==='any' ? ' or ' : ' and ';
+    const rule=words.length ? words.map(esc).join('<b>'+esc(joiner)+'</b>') : '<span class="badge badge-amber">no rules — matches nobody</span>';
+    return '<tr>'+
+      '<td><div class="seg-name">'+esc(seg.name)+(seg.builtin ? ' <span class="badge badge-gray">built-in</span>' : '')+'</div>'+
+        (seg.description ? '<div class="seg-desc">'+esc(seg.description)+'</div>' : '')+'</td>'+
+      '<td data-label="Rule"><div class="rule-words">'+rule+'</div></td>'+
+      '<td data-label="Size">'+sizeCell(seg)+'</td>'+
+      '<td data-label="Last sync">'+syncCell(seg)+'</td>'+
+      '<td data-label="Customer.io">'+cioCell(seg)+'</td>'+
+      '<td><div class="row-actions">'+
+        '<button class="btn btn-secondary" type="button" id="seg-preview-'+i+'" onclick="openMembers('+i+')">Preview</button>'+
+        '<button class="btn btn-primary" type="button" onclick="syncOne('+i+')">Sync</button>'+
+        '<button class="btn btn-secondary" type="button" onclick="openForm('+i+')">Edit</button>'+
+        (seg.builtin ? '' : '<button class="btn btn-danger" type="button" onclick="removeSeg('+i+')">Delete</button>')+
+      '</div></td>'+
+    '</tr>';
+  }).join('');
+}
+function renderStatus(){
+  const bits=[];
+  bits.push('Customer.io keys: <b>'+esc(CONFIG.app_key_present && CONFIG.track_keys_present ? 'in place' : (CONFIG.app_key_present ? 'App API only — membership cannot be written' : 'missing'))+'</b>');
+  bits.push('Scheduled sync: <b>'+esc(CONFIG.sync_interval_min ? 'every '+CONFIG.sync_interval_min+' min' : 'off')+'</b>');
+  bits.push('Segments: <b>'+esc(String(SEGMENTS.length))+'</b>');
+  // What the counts above are not about. Shown as soon as it is known, zero included: "0 excluded" is an answer,
+  // a missing line only looks like a page that forgot to ask.
+  if(EXCLUDED){
+    const who=(EXCLUDED.sample||[]).join(', ');
+    bits.push('<span'+(who ? ' title="'+escAttr('for example: '+who)+'"' : '')+'><b>'+esc(String(EXCLUDED.count))+
+      '</b> test/service identities excluded</span>');
+  }
+  document.getElementById('status-line').innerHTML=bits.join('<span></span>');
+}
+
+/* ── loading ─────────────────────────────────────────────────────────────── */
+
+async function load(){
+  try{
+    const data=await api('/api/marketing/segments',{toast:false});
+    SEGMENTS=(data && data.segments) || [];
+    FIELDS=(data && data.fields) || [];
+    CONFIG=(data && data.config) || {};
+  }catch(e){
+    noteRow(e.status===503 ? 'The segment file cannot be read on the server — the reason is in the blitz-api log.' : 'Could not load the segments: '+e.message);
+    return;
+  }
+  renderStatus();
+  renderTable();
+  loadExcluded();          // not awaited: a slow products-api must not hold up the previews
+  await previewAll();
+}
+// Straight to products-api, which owns the rule and the list — the segment module only ever sees what is left after
+// it. ?summary=1 asks for the two numbers instead of every customer of the shop. It repaints the status line when it
+// arrives, so nothing waits for it. A failure costs that one line and nothing else: on401 'throw', because an answer
+// to this side call must never log out a session that works.
+async function loadExcluded(){
+  try{
+    const d=await api('/msolpeptides-api/marketing/profiles?summary=1',{toast:false,on401:'throw'});
+    EXCLUDED=(d && d.excluded && typeof d.excluded.count==='number') ? d.excluded : null;
+  }catch(e){
+    EXCLUDED=null;
+  }
+  renderStatus();
+}
+// One at a time on purpose: the first preview reads the orders once and the rest answer from that minute's cache.
+async function previewAll(){
+  for(let i=0;i<SEGMENTS.length;i++){
+    try{
+      const d=await api('/api/marketing/segments/'+encodeURIComponent(SEGMENTS[i].id)+'/preview',{toast:false});
+      SIZES[SEGMENTS[i].id]={count:d.count,total:d.total_profiles,sample:d.sample||[]};
+    }catch(e){
+      SIZES[SEGMENTS[i].id]={error:e.message||'no count'};
+    }
+    renderTable();
+  }
+}
+async function loadLog(){
+  const box=document.getElementById('log-box');
+  try{
+    const d=await api('/api/marketing/segments/log',{toast:false});
+    const rows=(d && d.entries) || [];
+    if(!rows.length){ box.innerHTML='<p class="note">No syncs recorded yet.</p>'; return; }
+    box.innerHTML=rows.slice(0,15).map(function(e){
+      return '<div class="log-line">'+esc(fmtDate(e.at))+' · <b>'+esc(e.name||e.segment_id)+'</b> — '+
+        esc(String(e.size))+' members, +'+esc(String(e.added))+' / −'+esc(String(e.removed))+
+        (e.error ? ' · <span class="badge badge-red">'+esc(e.error)+'</span>' : '')+
+        ' <span class="muted">('+esc(e.actor||'system')+')</span></div>';
+    }).join('');
+  }catch(e){
+    box.innerHTML='<p class="note">The run log could not be read.</p>';
+  }
+}
+
+/* ── preview / sync ──────────────────────────────────────────────────────── */
+
+// Preview used to be a toast with the first five addresses: the right answer for a segment of three and no
+// answer at all for one of three hundred. It opens a panel now — the same membership the server counts, read a
+// hundred at a time, searchable, and downloadable as a file. Built the way orders.html builds its order card:
+// every address enters the document as text, so nothing in a customer record can become markup.
+const MEMBERS_PAGE = 100;          // the server's default page; its ceiling is 200
+const MEMBERS_CSV_PAGE = 200;      // that ceiling, for the download: fewest requests for the whole list
+const MEMBERS_SEARCH_MS = 300;
+let PANEL = null;                  // the open panel, null when there is none — only one at a time
+
+function elem(tag, cls, text){
+  const n=document.createElement(tag);
+  if(cls) n.className=cls;
+  if(text!==undefined && text!==null) n.textContent=String(text);
+  return n;
+}
+function membersUrl(id, offset, limit, q){
+  return '/api/marketing/segments/'+encodeURIComponent(id)+'/members'+
+         '?offset='+offset+'&limit='+limit+(q ? '&q='+encodeURIComponent(q) : '');
+}
+// vip-crm-2026-09-09.csv — the segment and the day it was taken, because a file called members.csv in a
+// downloads folder next week is a file nobody can identify.
+function csvName(name){
+  const slug=String(name===null||name===undefined ? '' : name).toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);
+  return (slug || 'segment')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+}
+
+async function openMembers(i){
+  const seg=SEGMENTS[i];
+  if(!seg || PANEL) return;
+
+  const overlay=elem('div','modal-overlay open');
+  const modal=elem('div','modal');
+
+  const header=elem('div','modal-header');
+  const info=elem('div','modal-info');
+  info.appendChild(elem('div','modal-title', seg.name));
+  const words=(seg.rule_words||[]);
+  info.appendChild(elem('div','seg-desc',
+    words.length ? words.join(seg.match==='any' ? ' or ' : ' and ') : 'No rules — this segment matches nobody.'));
+  const closeX=elem('button','modal-close','✕');
+  closeX.type='button';
+  header.appendChild(elem('div','modal-icon','👥'));
+  header.appendChild(info);
+  header.appendChild(closeX);
+
+  const body=elem('div','modal-body');
+  const countLine=elem('div','status-line');
+  const search=elem('input','field-input');
+  search.type='search'; search.placeholder='Search by e-mail'; search.autocomplete='off'; search.maxLength=100;
+  const list=elem('div','members-list');
+  const err=elem('div','err');
+  const more=elem('button','btn btn-secondary','Load more');
+  more.type='button';
+  body.appendChild(countLine); body.appendChild(search); body.appendChild(list); body.appendChild(err); body.appendChild(more);
+
+  const footer=elem('div','modal-footer');
+  const left=elem('div','modal-footer-left');
+  const right=elem('div','modal-footer-right');
+  const csvBtn=elem('button','btn btn-secondary','Download CSV');
+  csvBtn.type='button';
+  const closeBtn=elem('button','btn-cancel','Close');
+  closeBtn.type='button';
+  right.appendChild(csvBtn); right.appendChild(closeBtn);
+  footer.appendChild(left); footer.appendChild(right);
+
+  modal.appendChild(header); modal.appendChild(body); modal.appendChild(footer);
+  overlay.appendChild(modal);
+
+  PANEL={seg:seg, loaded:[], count:0, total:0, q:'', computed:'', note:'', busy:false, again:false, csvBusy:false, timer:null};
+
+  function close(){
+    if(!PANEL) return;
+    if(PANEL.timer) clearTimeout(PANEL.timer);
+    PANEL=null;
+    document.removeEventListener('keydown', onKey, true);
+    if(overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    // The table behind the panel may have been repainted while it was open (the first page refreshes the row's
+    // count), so the button is found again by its id instead of held as a node the document no longer contains.
+    const back=document.getElementById('seg-preview-'+i);
+    if(back && back.focus) back.focus();
+  }
+  function onKey(e){ if(e.key==='Escape'){ e.preventDefault(); close(); } }
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) close(); });
+  closeX.addEventListener('click', close);
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', onKey, true);
+
+  function paint(){
+    if(!PANEL) return;
+    countLine.textContent=PANEL.count+' of '+PANEL.total+' people'+
+      (PANEL.q ? ' matching “'+PANEL.q+'”' : '')+
+      (PANEL.computed ? ' · counted '+fmtDate(PANEL.computed) : '');
+    left.textContent=PANEL.note || (PANEL.loaded.length ? 'Showing '+PANEL.loaded.length+' of '+PANEL.count : '');
+    more.style.display=(PANEL.loaded.length<PANEL.count) ? '' : 'none';
+    more.disabled=PANEL.busy;
+    more.textContent=PANEL.busy ? 'Loading…' : 'Load more';
+  }
+
+  // One request in flight at a time: a search box that fires on every keystroke would otherwise have four answers
+  // racing into the same list. A later keystroke sets `again`, and the answer to a query nobody is looking at any
+  // more is dropped rather than merged (q !== PANEL.q below).
+  async function fetchPage(reset){
+    if(!PANEL) return;
+    if(PANEL.busy){ PANEL.again=true; return; }
+    const q=PANEL.q;
+    const offset=reset ? 0 : PANEL.loaded.length;
+    PANEL.busy=true; PANEL.note=''; err.textContent=''; paint();
+    let data=null, bad=null;
+    try{ data=await api(membersUrl(seg.id, offset, MEMBERS_PAGE, q),{toast:false}); }
+    catch(e){ bad=e; }
+    if(!PANEL) return;                                  // closed while the answer was on its way
+    PANEL.busy=false;
+    if(bad){
+      err.textContent=bad.status===503
+        ? 'The order history is not readable right now — no list.'
+        : ('Could not read the members: '+(bad.message||'unknown error'));
+      paint();
+      return;
+    }
+    if(q===PANEL.q){
+      PANEL.count=data.count||0;
+      PANEL.total=data.total_profiles||0;
+      PANEL.computed=data.computed_at||'';
+      if(reset){ list.innerHTML=''; PANEL.loaded=[]; }
+      const rows=data.members||[];
+      PANEL.loaded=PANEL.loaded.concat(rows);
+      for(let k=0;k<rows.length;k++) list.appendChild(elem('div','member-row', rows[k]));
+      // A page that came back short of what the count promised would leave "Load more" on screen for ever and
+      // send the scroll handler after a page that does not exist.
+      if(!rows.length && PANEL.loaded.length<PANEL.count) PANEL.count=PANEL.loaded.length;
+      if(!PANEL.loaded.length) list.appendChild(elem('div','members-empty',
+        q ? 'No address here contains “'+q+'”.' : 'Nobody is in this segment.'));
+      // The same click used to refresh the row's count; it still does, on the unfiltered first page.
+      if(!q && reset){ SIZES[seg.id]={count:PANEL.count,total:PANEL.total}; renderTable(); }
+      paint();
+    }
+    if(PANEL.again){ PANEL.again=false; await fetchPage(true); }
+  }
+
+  search.addEventListener('input', function(){
+    if(!PANEL) return;
+    const v=String(search.value||'').trim().toLowerCase();
+    if(v===PANEL.q) return;
+    PANEL.q=v;
+    if(PANEL.timer) clearTimeout(PANEL.timer);
+    PANEL.timer=setTimeout(function(){ if(PANEL){ PANEL.timer=null; fetchPage(true); } }, MEMBERS_SEARCH_MS);
+  });
+  more.addEventListener('click', function(){ fetchPage(false); });
+  list.addEventListener('scroll', function(){
+    if(!PANEL || PANEL.busy || PANEL.loaded.length>=PANEL.count) return;
+    if(list.scrollTop+list.clientHeight >= list.scrollHeight-40) fetchPage(false);
+  });
+
+  // The file is the whole current selection, not the part that happens to be on screen: a list of a hundred named
+  // after a segment of three hundred is a wrong answer in a spreadsheet a week later. It is collected page by page
+  // with the count in the footer, and nothing else on the page is blocked while it runs.
+  csvBtn.addEventListener('click', async function(){
+    if(!PANEL || PANEL.csvBusy) return;
+    PANEL.csvBusy=true; csvBtn.disabled=true; err.textContent='';
+    const q=PANEL.q, all=[];
+    try{
+      for(;;){
+        const d=await api(membersUrl(seg.id, all.length, MEMBERS_CSV_PAGE, q),{toast:false});
+        if(!PANEL) return;                              // closed mid-collection: there is nobody to hand a file to
+        const rows=d.members||[];
+        for(let k=0;k<rows.length;k++) all.push(rows[k]);
+        PANEL.note='Collecting '+all.length+' of '+(d.count||0)+'…';
+        paint();
+        if(!rows.length || all.length>=(d.count||0)) break;
+      }
+      // One column, one address per line. Quoted the way orders.html exports, so an address that ever held a
+      // comma could not split a row; a spreadsheet reads the quotes away.
+      const text='email\n'+all.map(function(e){ return '"'+String(e).replace(/"/g,'""')+'"'; }).join('\n')+'\n';
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'}));
+      a.download=csvName(seg.name);
+      a.click();
+      PANEL.note=all.length+(all.length===1 ? ' address' : ' addresses')+' downloaded';
+    }catch(e){
+      if(!PANEL) return;
+      PANEL.note='';
+      err.textContent=e.status===503
+        ? 'The order history is not readable right now — nothing was downloaded.'
+        : ('Download failed: '+(e.message||'unknown error'));
+    }
+    if(!PANEL) return;
+    PANEL.csvBusy=false; csvBtn.disabled=false; paint();
+  });
+
+  document.body.appendChild(overlay);
+  if(search.focus) search.focus();
+  paint();
+  await fetchPage(true);
+}
+
+async function syncOne(i){
+  const seg=SEGMENTS[i];
+  if(!seg || BUSY) return;
+  const first=!seg.cio_segment_id;
+  const ok=await confirmDialog(
+    first ? ('This creates a new manual segment named “'+seg.name+'” in Customer.io and puts its members in it. Continue?')
+          : ('Update the membership of “'+seg.name+'” in Customer.io?'),
+    {ok: first ? 'Create and sync' : 'Sync'});
+  if(!ok) return;
+  BUSY=true;
+  try{
+    const d=await api('/api/marketing/segments/'+encodeURIComponent(seg.id)+'/sync',{method:'POST',toast:false});
+    const r=(d && d.result && d.result.last_sync) || {};
+    toast(seg.name+': '+(r.size||0)+' members, +'+(r.added||0)+' / −'+(r.removed||0),'success',6000);
+  }catch(e){
+    // crm.js turns any 503 into "Server unavailable" without reading the body, so the reason for a failed run is
+    // read back from the row: the server wrote it into last_sync.error before answering.
+    toast(e.status===503 ? 'Sync did not finish — the reason is in the row' : ('Sync failed: '+e.message),'error',6000);
+  }
+  BUSY=false;
+  await load();
+  await loadLog();
+}
+
+async function syncAll(){
+  if(BUSY) return;
+  const missing=SEGMENTS.filter(function(s){ return !s.cio_segment_id; }).length;
+  const ok=await confirmDialog('Sync every segment with Customer.io'+(missing ? ' (this creates '+missing+' new manual segment(s) there)' : '')+'?',{ok:'Sync all'});
+  if(!ok) return;
+  BUSY=true;
+  const btn=document.getElementById('sync-all-btn');
+  btn.disabled=true;
+  try{
+    const d=await api('/api/marketing/segments/sync-all',{method:'POST',toast:false});
+    toast((d.ok_count||0)+' synced'+(d.error_count ? ', '+d.error_count+' failed — see the rows' : ''), d.error_count ? 'error' : 'success',6000);
+  }catch(e){
+    toast(e.status===503 ? 'Nothing was synced — the order history or Customer.io did not answer' : ('Sync failed: '+e.message),'error',6000);
+  }
+  btn.disabled=false;
+  BUSY=false;
+  await load();
+  await loadLog();
+}
+
+async function removeSeg(i){
+  const seg=SEGMENTS[i];
+  if(!seg) return;
+  const ok=await confirmDialog('Delete the segment “'+seg.name+'” from the CRM?'+(seg.cio_segment_id ? ' The segment in Customer.io stays where it is — delete it there yourself if no campaign needs it.' : ''),{ok:'Delete'});
+  if(!ok) return;
+  try{
+    const d=await api('/api/marketing/segments/'+encodeURIComponent(seg.id),{method:'DELETE',toast:false});
+    toast(d && d.note ? d.note : 'Segment deleted','success',6000);
+  }catch(e){ toast('Could not delete: '+e.message,'error'); return; }
+  await load();
+}
+
+/* ── the rule editor ─────────────────────────────────────────────────────── */
+
+function defaultValueFor(spec, op){
+  if(!spec) return '';
+  if(spec.type==='bool') return true;
+  if(spec.type==='date') return op==='is_set' ? true : 30;
+  if(spec.type==='number') return 1;
+  return '';
+}
+function opWord(op){
+  const words={eq:'is',ne:'is not',gt:'more than',gte:'at least',lt:'less than',lte:'at most',
+    older_than_days:'longer ago than (days)',newer_than_days:'within the last (days)',is_set:'is known',
+    in:'is one of',contains:'includes',not_contains:'does not include',is:'is'};
+  return words[op]||op;
+}
+function valueInputHtml(idx, rule){
+  const spec=fieldSpec(rule.field);
+  const v=rule.value;
+  if((spec && spec.type==='bool') || (spec && spec.type==='date' && rule.op==='is_set')){
+    const yes=(v===true || v==='true');
+    return '<select onchange="setRuleValue('+idx+',this.value)">'+
+      '<option value="true"'+(yes ? ' selected' : '')+'>Yes</option>'+
+      '<option value="false"'+(yes ? '' : ' selected')+'>No</option></select>';
+  }
+  if(spec && (spec.type==='number' || spec.type==='date')){
+    return '<input type="number" step="any" value="'+escAttr(v===null||v===undefined ? '' : String(v))+'" oninput="setRuleValue('+idx+',this.value)"'+
+      (spec.type==='date' ? ' placeholder="days"' : '')+'>';
+  }
+  const hint=(spec && spec.type==='list') ? 'product slug' : (rule.op==='in' ? 'comma separated' : 'value');
+  return '<input type="text" maxlength="200" value="'+escAttr(v===null||v===undefined ? '' : (Array.isArray(v) ? v.join(', ') : String(v)))+'" placeholder="'+escAttr(hint)+'" oninput="setRuleValue('+idx+',this.value)">';
+}
+function renderFormWarn(){
+  const box=document.getElementById('form-warn');
+  const flagged=FORM_RULES.filter(function(r){ const s=fieldSpec(r.field); return s && s.warn==='not_stored'; });
+  box.innerHTML=flagged.length
+    ? '<div class="warn">“Items in cart” is not stored in the CRM — carts live in the browser and on the Customer.io '+
+      'profile, so a rule over it matches nobody here. Filter on it inside Customer.io instead (the Shop '+
+      'Abandonment campaign already does).</div>'
+    : '';
+}
+function renderRules(){
+  const box=document.getElementById('rule-rows');
+  if(!FORM_RULES.length){ box.innerHTML='<p class="note">No rules yet — a segment without rules matches nobody.</p>'; renderFormWarn(); return; }
+  box.innerHTML=FORM_RULES.map(function(rule,idx){
+    const spec=fieldSpec(rule.field);
+    const fieldOpts=FIELDS.map(function(f){ return '<option value="'+escAttr(f.field)+'"'+(f.field===rule.field ? ' selected' : '')+'>'+esc(f.label)+'</option>'; }).join('');
+    const opOpts=(spec ? spec.ops : []).map(function(op){ return '<option value="'+escAttr(op)+'"'+(op===rule.op ? ' selected' : '')+'>'+esc(opWord(op))+'</option>'; }).join('');
+    return '<div class="rule-row">'+
+      '<select onchange="setRuleField('+idx+',this.value)">'+fieldOpts+'</select>'+
+      '<select onchange="setRuleOp('+idx+',this.value)">'+opOpts+'</select>'+
+      valueInputHtml(idx,rule)+
+      '<button class="btn btn-secondary" type="button" onclick="dropRule('+idx+')">Remove</button>'+
+    '</div>';
+  }).join('');
+  renderFormWarn();
+}
+function addRule(){
+  const f=FIELDS[0];
+  if(!f) return;
+  FORM_RULES.push({field:f.field, op:f.ops[0], value:defaultValueFor(f,f.ops[0])});
+  renderRules();
+}
+function dropRule(i){ FORM_RULES.splice(i,1); renderRules(); }
+function setRuleField(i,name){
+  const spec=fieldSpec(name);
+  if(!spec) return;
+  FORM_RULES[i]={field:name, op:spec.ops[0], value:defaultValueFor(spec,spec.ops[0])};
+  renderRules();
+}
+function setRuleOp(i,op){
+  const rule=FORM_RULES[i];
+  const spec=fieldSpec(rule.field);
+  rule.op=op;
+  if(spec && spec.type==='date') rule.value=defaultValueFor(spec,op);
+  renderRules();
+}
+function setRuleValue(i,v){ FORM_RULES[i].value=v; renderFormWarn(); }
+
+function openForm(i){
+  const seg=(i===null||i===undefined) ? null : SEGMENTS[i];
+  EDIT_ID=seg ? seg.id : null;
+  document.getElementById('form-title').textContent=seg ? ('Edit '+seg.name) : 'New segment';
+  document.getElementById('f-name').value=seg ? seg.name : '';
+  document.getElementById('f-name').disabled=!!(seg && seg.builtin);
+  document.getElementById('f-desc').value=seg ? (seg.description||'') : '';
+  document.getElementById('f-match').value=seg ? seg.match : 'all';
+  document.getElementById('form-err').textContent=(seg && seg.builtin) ? 'A built-in segment keeps its name; its rules can be changed.' : '';
+  FORM_RULES=seg ? JSON.parse(JSON.stringify(seg.rules||[])) : [];
+  if(!FORM_RULES.length && !seg) addRule(); else renderRules();
+  document.getElementById('form-card').style.display='block';
+  document.getElementById('f-name').focus();
+}
+function closeForm(){
+  EDIT_ID=null; FORM_RULES=[];
+  document.getElementById('form-card').style.display='none';
+}
+
+// The values leave the inputs as strings; the server validates them again anyway, but sending a number as a
+// number means its error message talks about the number and not about the string.
+function ruleForWire(rule){
+  const spec=fieldSpec(rule.field);
+  const out={field:rule.field, op:rule.op};
+  if(!spec){ out.value=rule.value; return out; }
+  if(spec.type==='bool' || (spec.type==='date' && rule.op==='is_set')) out.value=(rule.value===true || rule.value==='true');
+  else if(spec.type==='number') out.value=Number(rule.value);
+  else if(spec.type==='date') out.value=parseInt(rule.value,10);
+  else if(rule.op==='in') out.value=String(rule.value===null||rule.value===undefined ? '' : rule.value).split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+  else out.value=String(rule.value===null||rule.value===undefined ? '' : rule.value);
+  return out;
+}
+async function saveForm(){
+  const errEl=document.getElementById('form-err');
+  const btn=document.getElementById('save-btn');
+  errEl.textContent='';
+  const name=document.getElementById('f-name').value.trim();
+  if(!name){ errEl.textContent='Name is required'; return; }
+  const body={ name:name, description:document.getElementById('f-desc').value.trim(),
+               match:document.getElementById('f-match').value, rules:FORM_RULES.map(ruleForWire) };
+  btn.disabled=true;
+  try{
+    if(EDIT_ID) await api('/api/marketing/segments/'+encodeURIComponent(EDIT_ID),{method:'PUT',body:body,toast:false});
+    else await api('/api/marketing/segments',{method:'POST',body:body,toast:false});
+    toast('Segment saved','success');
+    closeForm();
+    await load();
+  }catch(e){
+    errEl.textContent=e.message||'Could not save';
+  }
+  btn.disabled=false;
+}
+
+(async function(){ await load(); await loadLog(); })();
+</script>
+</body>
+</html>

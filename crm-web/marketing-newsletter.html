@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* newsletter-only styling; everything shared lives in crm.css */
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
+.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;margin-bottom:16px;}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;color:#1B2A4A;}
+.note{font-size:12px;color:#5A6685;margin-top:8px;line-height:1.5;}
+.err{font-size:12px;font-weight:600;color:#C62828;margin-top:6px;min-height:15px;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-green{background:#E8F5E9;color:#2E7D32;}
+.badge-gray{background:#E8ECF4;color:#5A6685;}
+.badge-amber{background:#FFF8EC;color:#D97706;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
+.status-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;}
+.status-off{border:1px solid #FBBF24;background:#FFFBEB;}
+.status-bad{border:1px solid #FCA5A5;background:#FEF2F2;}
+.cols{display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start;}
+.issue{border:1px solid #E8ECF4;border-radius:10px;padding:11px 13px;margin-bottom:8px;cursor:pointer;background:#fff;}
+.issue:hover{border-color:#CBD5E1;}
+.issue.active{border-color:#1F7A3D;box-shadow:0 0 0 1px #1F7A3D inset;}
+.issue-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;}
+.issue-subject{font-size:13px;font-weight:700;color:#1a1a2e;word-break:break-word;}
+.issue-meta{font-size:11px;color:#5A6685;margin-top:5px;line-height:1.5;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
+.field input,.field select,.field textarea{width:100%;padding:9px 11px;border:1px solid #CBD5E1;border-radius:8px;font-size:13px;font-family:inherit;background:#fff;color:#1a1a2e;}
+.field textarea{min-height:220px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;resize:vertical;}
+.field-hint{font-size:11px;color:#5A6685;margin-top:4px;}
+.editor-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+.preview-frame{width:100%;height:320px;border:1px solid #E8ECF4;border-radius:10px;background:#fff;}
+.sent-box{border:1px solid #E8ECF4;background:#F8FAFC;border-radius:10px;padding:12px 14px;font-size:12px;color:#5A6685;line-height:1.6;margin-bottom:12px;}
+.count-line{font-size:12px;color:#1B2A4A;font-weight:600;margin-top:4px;min-height:16px;}
+@media(max-width:900px){.cols{grid-template-columns:1fr;}}
+@media(max-width:768px){
+.sidebar{position:fixed;bottom:0;left:0;right:0;top:auto;width:100%;height:calc(64px + env(safe-area-inset-bottom));flex-direction:row;background:#fff;border-top:2px solid #CBD5E1;z-index:1000;overflow-x:auto;}
+.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
+.nav{display:flex;flex-direction:row;padding:0 4px;overflow-x:auto;}
+.nav-item{flex:0 0 64px;flex-direction:column;font-size:10px;padding:6px 3px;}
+.content{padding:14px;padding-bottom:82px;}
+.topbar{background:#1B2A4A;}
+.topbar-title{color:#fff;}
+}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">📨 Newsletter <span>One-off letters through Customer.io</span></div>
+  </header>
+  <div class="content">
+
+<div class="card" id="status-card">
+  <div class="status-line" id="status-line">Checking the newsletter channel…</div>
+  <div class="note" id="status-note"></div>
+</div>
+
+<div class="cols">
+  <div>
+    <div class="card">
+      <h3>Issues</h3>
+      <button class="btn btn-primary" type="button" id="new-btn">New issue</button>
+      <div id="issue-list" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card" id="editor-card">
+      <h3 id="editor-title">New issue</h3>
+      <div class="sent-box" id="sent-box" style="display:none"></div>
+
+      <div class="field">
+        <label for="f-subject">Subject</label>
+        <input type="text" id="f-subject" maxlength="300" autocomplete="off" placeholder="What the letter is about">
+      </div>
+      <div class="field">
+        <label for="f-preheader">Preheader</label>
+        <input type="text" id="f-preheader" maxlength="300" autocomplete="off" placeholder="The line shown after the subject in the inbox">
+      </div>
+      <div class="field">
+        <label for="f-audience">Audience</label>
+        <select id="f-audience"><option value="all">Choose a segment…</option></select>
+        <div class="count-line" id="count-line"></div>
+        <div class="field-hint" id="segments-hint"></div>
+      </div>
+      <div class="field">
+        <label for="f-body">Body (HTML)</label>
+        <textarea id="f-body" spellcheck="false" placeholder="&lt;p&gt;Hello…&lt;/p&gt;"></textarea>
+        <div class="field-hint" id="body-hint"></div>
+      </div>
+
+      <div class="err" id="editor-err"></div>
+      <div class="editor-actions">
+        <button class="btn btn-primary" type="button" id="save-btn">Save</button>
+        <button class="btn btn-secondary" type="button" id="test-btn">Send test to me</button>
+        <button class="btn btn-primary" type="button" id="send-btn">Send</button>
+        <button class="btn btn-danger" type="button" id="delete-btn">Delete</button>
+      </div>
+      <p class="note" id="foot-note"></p>
+    </div>
+
+    <div class="card">
+      <h3>Preview</h3>
+      <iframe class="preview-frame" id="preview" sandbox="" title="Newsletter preview"></iframe>
+      <p class="note">The preview shows your HTML with scripts switched off. The unsubscribe link and the footer come from the broadcast template in Customer.io, not from this text — every marketing letter has to carry one.</p>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+</div>
+<script>
+renderNav('marketing-newsletter');
+
+const API = '/api/marketing/newsletter';
+
+let STATUS = null;        // GET /status
+let ISSUES = [];          // summaries, newest first
+let SEGMENTS = [];        // audience picker; empty when Customer.io could not be read
+let CURRENT = null;       // the issue open in the editor: null = a new one that has no id yet
+let LOADED = null;        // what the editor showed when it was opened — the "dirty" comparison
+let BUSY = false;
+
+/* ── status ───────────────────────────────────────────────────────────── */
+
+async function loadStatus(){
+  const line = document.getElementById('status-line');
+  const note = document.getElementById('status-note');
+  const card = document.getElementById('status-card');
+  try{
+    STATUS = await api(API + '/status', { toast:false });
+  }catch(e){
+    card.className = 'card status-bad';
+    line.textContent = e.status === 0 ? 'Cannot reach the server.' : 'Could not read the newsletter channel (' + e.message + ').';
+    note.textContent = '';
+    return;
+  }
+  if(STATUS.configured){
+    card.className = 'card';
+    line.innerHTML = '<span class="badge badge-green">Channel ready</span>' +
+      '<span>Broadcast <strong>' + esc(STATUS.broadcast_id) + '</strong> in Customer.io</span>';
+    note.textContent = 'Test letters are sent from ' + STATUS.from + '. Sending hands the issue to Customer.io, which does the delivery, the unsubscribe link and the reporting.';
+  }else{
+    card.className = 'card status-off';
+    line.innerHTML = '<span class="badge badge-amber">Not configured</span><span>Sending is switched off</span>';
+    note.textContent = STATUS.hint || 'Newsletter channel is not configured yet.';
+  }
+  applyState();
+}
+
+/* ── issues ───────────────────────────────────────────────────────────── */
+
+function audienceLabel(a){
+  if(!a || a.type !== 'segment') return 'No segment chosen';
+  return 'Segment: ' + (a.segment_name || ('#' + a.segment_id));
+}
+
+function renderIssues(){
+  const box = document.getElementById('issue-list');
+  if(!ISSUES.length){
+    box.innerHTML = '<div class="note">No issues yet. Write the first one.</div>';
+    return;
+  }
+  box.innerHTML = ISSUES.map(function(it, i){
+    const sent = it.state === 'sent';
+    const sending = it.state === 'sending';
+    const when = sent ? ('Sent ' + fmtDate(it.sent_at))
+      : sending ? ('Sending since ' + fmtDate(it.sending_at) + (it.sending_stale ? ' — not confirmed' : ''))
+      : ('Draft · ' + fmtDate(it.updated_at || it.created_at));
+    const people = sent && typeof it.recipients_estimate === 'number' ? (' · ' + it.recipients_estimate + ' people') : '';
+    const active = CURRENT && CURRENT.id === it.id ? ' active' : '';
+    return '<div class="issue' + active + '" data-idx="' + i + '">' +
+        '<div class="issue-top">' +
+          '<div class="issue-subject">' + esc(it.subject || '(no subject)') + '</div>' +
+          '<span class="badge ' + (sent ? 'badge-green' : sending ? 'badge-amber' : 'badge-gray') + '">' +
+            (sent ? 'Sent' : sending ? 'Sending' : 'Draft') + '</span>' +
+        '</div>' +
+        '<div class="issue-meta">' + esc(when) + esc(people) + '<br>' + esc(audienceLabel(it.audience)) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+async function loadIssues(){
+  try{
+    const d = await api(API + '/', { toast:false });
+    ISSUES = (d && Array.isArray(d.issues)) ? d.issues : [];
+  }catch(e){
+    ISSUES = [];
+    document.getElementById('issue-list').innerHTML =
+      '<div class="note">' + esc(e.status === 503 ? 'Newsletters could not be read right now.' : ('Could not load the issues (' + e.message + ').')) + '</div>';
+    return;
+  }
+  renderIssues();
+}
+
+/* ── segments ─────────────────────────────────────────────────────────── */
+
+async function loadSegments(){
+  const hint = document.getElementById('segments-hint');
+  if(STATUS && !STATUS.keys_present){
+    hint.textContent = 'Segments are read from Customer.io; the key is not set, so a newsletter cannot be sent yet.';
+    return;
+  }
+  try{
+    const d = await api(API + '/segments', { toast:false });
+    SEGMENTS = (d && Array.isArray(d.segments)) ? d.segments : [];
+  }catch(e){
+    SEGMENTS = [];
+    hint.textContent = e.status === 503
+      ? 'Customer.io did not answer, so the segment list is empty. Drafts can be saved; sending waits for the list.'
+      : ('Segments could not be read (' + e.message + ').');
+    return;
+  }
+  const sel = document.getElementById('f-audience');
+  const keep = sel.value;
+  sel.innerHTML = '<option value="all">Choose a segment…</option>' +
+    SEGMENTS.map(function(s){
+      return '<option value="' + escAttr(s.id) + '">' + esc(s.name || ('#' + s.id)) + '</option>';
+    }).join('');
+  sel.value = keep;
+  if(sel.value !== keep) sel.value = 'all';
+  hint.textContent = SEGMENTS.length
+    ? 'Only segments kept by the CRM are listed: Customer.io examples such as "All Users" and journey filters cannot receive a newsletter.'
+    : 'No CRM segment in Customer.io yet: sync one from the Segments page first.';
+}
+
+async function showCount(){
+  const line = document.getElementById('count-line');
+  const sel = document.getElementById('f-audience');
+  if(sel.value === 'all'){ line.textContent = ''; return; }
+  line.textContent = 'Counting…';
+  try{
+    const d = await api(API + '/segments/' + encodeURIComponent(sel.value) + '/count', { toast:false });
+    line.textContent = (d && typeof d.count === 'number') ? (d.count + ' people in this segment right now') : 'Customer.io did not give a count for this segment';
+  }catch(e){
+    line.textContent = 'Could not count this segment (' + e.message + ')';
+  }
+}
+
+/* ── editor ───────────────────────────────────────────────────────────── */
+
+function formValues(){
+  const sel = document.getElementById('f-audience');
+  const audience = sel.value === 'all'
+    ? { type:'all', segment_id:null, segment_name:null }
+    : { type:'segment', segment_id:String(sel.value), segment_name:(sel.options[sel.selectedIndex] || {}).text || null };
+  return {
+    subject: document.getElementById('f-subject').value.trim(),
+    preheader: document.getElementById('f-preheader').value.trim(),
+    body_html: document.getElementById('f-body').value,
+    audience: audience
+  };
+}
+
+/* The three author fields travel base64-encoded. blitz-api rewrites every string of every JSON body
+   before a route sees it — it deletes <script> blocks and javascript: URIs, trims the ends, and removes
+   anything matching on...="..." , a rule with no word boundary in front of it, so an ordinary
+   <meta name="description" content="..."> loses everything from content= onwards. Encoded, the letter
+   reaches the record exactly as typed; the server refuses these fields in any other form. */
+function toB64(str){
+  var bytes = new TextEncoder().encode(str);
+  var bin = '', CH = 0x8000;
+  for(var i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+function encodedValues(v){
+  return { subject_b64: toB64(v.subject), preheader_b64: toB64(v.preheader), body_b64: toB64(v.body_html), audience: v.audience };
+}
+
+function isDirty(){
+  if(!LOADED) return true;
+  const v = formValues();
+  return v.subject !== LOADED.subject || v.preheader !== LOADED.preheader || v.body_html !== LOADED.body_html ||
+    v.audience.type !== LOADED.audience.type || String(v.audience.segment_id) !== String(LOADED.audience.segment_id);
+}
+
+function updatePreview(){
+  // srcdoc is set as a property, not built into markup: the body is HTML on purpose, and the frame is
+  // sandboxed with no allow-scripts, so it renders without running anything.
+  document.getElementById('preview').srcdoc = document.getElementById('f-body').value || '<p style="font-family:sans-serif;color:#5A6685">Nothing to preview yet.</p>';
+}
+
+function updateBodyHint(){
+  const bytes = new Blob([document.getElementById('f-body').value]).size;
+  const max = (STATUS && STATUS.limits && STATUS.limits.body_bytes) || 307200;
+  const el = document.getElementById('body-hint');
+  // Now literally true: the three author fields are sent encoded (see toB64), so the input filter of the
+  // CRM has nothing to rewrite. Before that they were cleaned on the way in — including the content="..."
+  // of an ordinary <meta> tag — and the writer would have found out from the letter that went out.
+  el.textContent = Math.round(bytes / 1024) + ' KB of ' + Math.round(max / 1024) + ' KB. The letter is stored exactly as typed — the editor sends it encoded, so nothing on the way in can rewrite your HTML.';
+  el.style.color = bytes > max ? '#C62828' : '';
+}
+
+function applyState(){
+  const sent = !!(CURRENT && CURRENT.state === 'sent');
+  // 'sending' is the server's claim on an issue that is with Customer.io right now: read-only, like a
+  // sent one, but it is not a record of anything yet.
+  const sending = !!(CURRENT && CURRENT.state === 'sending');
+  // ...unless nobody ever released that claim (the service was restarted mid-send, or Customer.io never
+  // answered). The server lets such an issue be claimed again after five minutes and says so with
+  // sending_stale; a page that went on hiding Save, Send and Delete would leave an issue that can never
+  // be touched again and no way to find out from here what became of the letter.
+  const stale = sending && !!CURRENT.sending_stale;
+  const frozen = sent || (sending && !stale);
+  const saved = !!(CURRENT && CURRENT.id);
+  const configured = !!(STATUS && STATUS.configured);
+  const keys = !!(STATUS && STATUS.keys_present);
+
+  ['f-subject','f-preheader','f-audience','f-body'].forEach(function(id){ document.getElementById(id).disabled = frozen || BUSY; });
+  document.getElementById('save-btn').style.display = frozen ? 'none' : '';
+  document.getElementById('delete-btn').style.display = (frozen || !saved) ? 'none' : '';
+  document.getElementById('test-btn').style.display = frozen ? 'none' : '';
+  document.getElementById('send-btn').style.display = frozen ? 'none' : '';
+  document.getElementById('save-btn').disabled = BUSY;
+  document.getElementById('delete-btn').disabled = BUSY;
+  document.getElementById('test-btn').disabled = BUSY || !saved || !keys;
+  document.getElementById('send-btn').disabled = BUSY || !saved || !configured;
+
+  const foot = document.getElementById('foot-note');
+  if(stale) foot.textContent = 'This issue was claimed for sending more than five minutes ago and Customer.io never confirmed it. It is not known whether the letter went out — open Deliveries in Customer.io and check before sending it again.';
+  else if(sending) foot.textContent = 'This issue is being sent right now. Reload the page in a minute to see how it finished.';
+  else if(sent) foot.textContent = 'A sent issue is kept as a record and cannot be changed or sent again.';
+  else if(!configured) foot.textContent = (STATUS && STATUS.hint) ? STATUS.hint : 'Sending is not configured yet.';
+  else if(!saved) foot.textContent = 'Save the issue first — the test and the send work on what is saved.';
+  else foot.textContent = 'Send test to me delivers this letter to your own address through Customer.io; it creates or uses a profile for that address there.';
+}
+
+function openIssue(rec){
+  CURRENT = rec ? JSON.parse(JSON.stringify(rec)) : null;
+  const v = rec || { subject:'', preheader:'', body_html:'', audience:{ type:'all', segment_id:null, segment_name:null } };
+  document.getElementById('f-subject').value = v.subject || '';
+  document.getElementById('f-preheader').value = v.preheader || '';
+  document.getElementById('f-body').value = v.body_html || '';
+  const sel = document.getElementById('f-audience');
+  const wanted = (v.audience && v.audience.type === 'segment') ? String(v.audience.segment_id) : 'all';
+  sel.value = wanted;
+  if(sel.value !== wanted){
+    // the segment is gone from Customer.io (or the list could not be read): say so instead of
+    // silently sending the issue to everybody
+    const opt = document.createElement('option');
+    opt.value = wanted;
+    opt.textContent = (v.audience && v.audience.segment_name ? v.audience.segment_name : ('#' + wanted)) + ' (not in the current list)';
+    sel.appendChild(opt);
+    sel.value = wanted;
+  }
+  document.getElementById('editor-title').textContent = rec
+    ? (rec.state === 'sent' ? 'Sent issue'
+      : rec.state === 'sending' ? (rec.sending_stale ? 'Issue with no confirmation' : 'Issue being sent')
+      : 'Edit draft')
+    : 'New issue';
+  document.getElementById('editor-err').textContent = '';
+
+  const box = document.getElementById('sent-box');
+  if(rec && rec.state === 'sent'){
+    box.style.display = '';
+    box.innerHTML = 'Sent ' + esc(fmtDate(rec.sent_at)) + ' by ' + esc(rec.sent_by || 'unknown') + '.<br>' +
+      esc(audienceLabel(rec.audience)) +
+      (typeof rec.recipients_estimate === 'number' ? esc(' · about ' + rec.recipients_estimate + ' people at the moment it went out') : '') +
+      (rec.cio_response && rec.cio_response.id ? ('<br>Customer.io reference: ' + esc(rec.cio_response.id)) : '');
+  }else if(rec && rec.state === 'sending' && rec.sending_stale){
+    box.style.display = '';
+    box.innerHTML = 'Claimed for sending ' + esc(fmtDate(rec.sending_at)) + ', and Customer.io never confirmed it' +
+      (rec.last_error && rec.last_error.message ? (' (' + esc(rec.last_error.message) + ')') : '') + '.<br>' +
+      'It is not known whether this letter went out. Open Deliveries in Customer.io and check before sending it again.';
+  }else{
+    box.style.display = 'none';
+    box.innerHTML = '';
+  }
+
+  LOADED = formValues();
+  updatePreview();
+  updateBodyHint();
+  showCount();
+  applyState();
+  renderIssues();
+}
+
+async function openById(id){
+  try{
+    const d = await api(API + '/' + encodeURIComponent(id), { toast:false });
+    openIssue(d && d.issue);
+  }catch(e){
+    toast(e.status === 404 ? 'That issue is gone' : ('Could not open the issue (' + e.message + ')'), 'error');
+    await loadIssues();
+  }
+}
+
+/* ── actions ──────────────────────────────────────────────────────────── */
+
+async function save(){
+  const errEl = document.getElementById('editor-err');
+  errEl.textContent = '';
+  const v = formValues();
+  if(!v.subject){ errEl.textContent = 'A subject is required'; return null; }
+  if(!v.body_html.trim()){ errEl.textContent = 'A body is required'; return null; }
+  const max = (STATUS && STATUS.limits && STATUS.limits.body_bytes) || 307200;
+  if(new Blob([v.body_html]).size > max){ errEl.textContent = 'The body is larger than ' + Math.round(max/1024) + ' KB'; return null; }
+
+  BUSY = true; applyState();
+  try{
+    const d = CURRENT && CURRENT.id
+      ? await api(API + '/' + encodeURIComponent(CURRENT.id), { method:'PUT', body:encodedValues(v), toast:false })
+      : await api(API + '/', { method:'POST', body:encodedValues(v), toast:false });
+    const issue = d && d.issue;
+    BUSY = false;
+    await loadIssues();
+    openIssue(issue);
+    toast('Saved', 'success');
+    return issue;
+  }catch(e){
+    BUSY = false; applyState();
+    errEl.textContent = e.status === 503 ? 'Server unavailable — the issue was not saved.' : e.message;
+    return null;
+  }
+}
+
+async function sendTest(){
+  if(!CURRENT || !CURRENT.id) return;
+  if(isDirty() && !(await confirmDialog('The draft has changes that are not saved. Send the test with the saved version?', { ok:'Send test' }))) return;
+  BUSY = true; applyState();
+  try{
+    const d = await api(API + '/' + encodeURIComponent(CURRENT.id) + '/test', { method:'POST', toast:false });
+    toast('Test sent to ' + ((d && d.to) || 'your address'), 'success');
+  }catch(e){
+    document.getElementById('editor-err').textContent = e.status === 503
+      ? 'Customer.io unavailable — the test was not sent.'
+      : ('Test not sent: ' + e.message);
+  }
+  BUSY = false; applyState();
+}
+
+async function sendIssue(){
+  if(!CURRENT || !CURRENT.id) return;
+  if(isDirty()){ toast('Save the issue before sending', 'error'); return; }
+
+  let people = '';
+  const a = CURRENT.audience || { type:'all' };
+  // Infra 2026-09-22: the server refuses anything but a CRM segment; saying so here spares two dialogs.
+  if(a.type !== 'segment'){ toast('Choose a segment before sending', 'error'); return; }
+  if(a.type === 'segment'){
+    try{
+      const c = await api(API + '/segments/' + encodeURIComponent(a.segment_id) + '/count', { toast:false });
+      if(c && typeof c.count === 'number') people = ' — about ' + c.count + ' people';
+    }catch(e){ people = ' — the number of people could not be read'; }
+  }
+
+  const again = (CURRENT.state === 'sending' && CURRENT.sending_stale)
+    ? 'This issue was already claimed for sending and Customer.io never confirmed it — it may have gone out. '
+    : '';
+  const first = again + 'Send "' + (CURRENT.subject || '(no subject)') + '" to ' + audienceLabel(a) + people + '?';
+  if(!(await confirmDialog(first, { ok:'Continue' }))) return;
+  if(!(await confirmDialog('This sends the e-mail now, through Customer.io. It cannot be taken back.', { ok:'Send now' }))) return;
+
+  BUSY = true; applyState();
+  try{
+    const d = await api(API + '/' + encodeURIComponent(CURRENT.id) + '/send', { method:'POST', toast:false });
+    BUSY = false;
+    await loadIssues();
+    if(d && d.delivery_unknown){
+      // 200, but not a success: Customer.io never confirmed the trigger, so nobody knows whether the
+      // letter went out. The issue stays marked as being sent and the server offers it again in five
+      // minutes; saying "not sent" here is the one thing that must not happen.
+      await openById(CURRENT.id);
+      document.getElementById('editor-err').textContent = d.warning || 'Customer.io did not confirm this send. Check Deliveries in Customer.io before sending it again.';
+      applyState();
+    }else if(d && d.record_updated === false){
+      document.getElementById('editor-err').textContent = d.warning || 'Sent, but the record was not updated. Do not send it again.';
+      applyState();
+    }else{
+      openIssue(d && d.issue);
+      toast('Newsletter sent', 'success');
+    }
+  }catch(e){
+    BUSY = false; applyState();
+    document.getElementById('editor-err').textContent = e.status === 503
+      ? 'Customer.io unavailable — nothing was sent, the issue is still a draft.'
+      : ('Not sent: ' + e.message);
+  }
+}
+
+async function removeIssue(){
+  if(!CURRENT || !CURRENT.id) return;
+  if(!(await confirmDialog('Delete the draft "' + (CURRENT.subject || '(no subject)') + '"?', { ok:'Delete' }))) return;
+  BUSY = true; applyState();
+  try{
+    await api(API + '/' + encodeURIComponent(CURRENT.id), { method:'DELETE', toast:false });
+    BUSY = false;
+    toast('Draft deleted', 'success');
+    await loadIssues();
+    openIssue(null);
+  }catch(e){
+    BUSY = false; applyState();
+    document.getElementById('editor-err').textContent = e.message;
+  }
+}
+
+/* ── wiring ───────────────────────────────────────────────────────────── */
+
+document.getElementById('issue-list').addEventListener('click', function(e){
+  const row = e.target.closest ? e.target.closest('.issue') : null;
+  if(!row) return;
+  const it = ISSUES[Number(row.getAttribute('data-idx'))];
+  if(it) openById(it.id);
+});
+document.getElementById('new-btn').addEventListener('click', function(){ openIssue(null); });
+document.getElementById('save-btn').addEventListener('click', function(){ save(); });
+document.getElementById('test-btn').addEventListener('click', sendTest);
+document.getElementById('send-btn').addEventListener('click', sendIssue);
+document.getElementById('delete-btn').addEventListener('click', removeIssue);
+document.getElementById('f-audience').addEventListener('change', showCount);
+document.getElementById('f-body').addEventListener('input', function(){ updatePreview(); updateBodyHint(); });
+
+(async function(){
+  openIssue(null);
+  await loadStatus();
+  await loadSegments();
+  await loadIssues();
+  applyState();
+})();
+</script>
+</body>
+</html>

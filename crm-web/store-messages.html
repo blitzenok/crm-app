@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* store-messages-only styling; everything shared lives in crm.css */
+.logo-text-box{}
+.stats-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:24px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.msg-list{ display:flex; flex-direction:column; gap:10px; }
+.msg-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; cursor:pointer; transition:all 0.15s; }
+.msg-card:hover{ border-color:#1F7A3D; }
+.msg-card.unread{ border-left:4px solid #1F7A3D; background:#FAFFFC; }
+.msg-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+.msg-sender{ font-weight:700; font-size:13px; color:#1a1a2e; }
+.msg-email{ color:#5A6685; font-size:11px; margin-left:6px; font-weight:400; }
+.msg-date{ color:#5A6685; font-size:11px; white-space:nowrap; }
+.msg-subject{ font-weight:600; font-size:12px; color:#1B2A4A; margin-bottom:4px; }
+.msg-preview{ color:#5A6685; font-size:12px; line-height:1.5; }
+.msg-status{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; margin-left:8px; }
+.status-unread{ background:#E6F4EA; color:#145C2C; }
+.status-read{ background:#E8ECF4; color:#5A6685; }
+.empty-state{ text-align:center; color:#5A6685; padding:60px; background:#fff; border-radius:14px; border:1px solid #E8ECF4; }
+.btn-secondary:hover{ background:#E6F4EA; color:#1B2A4A; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.stats-grid,.kpi-grid,.metrics-grid,.stats-row,.kpi-row,.stat-row,.cards-row{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;}
+.stats-grid{grid-template-columns:1fr 1fr 1fr!important;gap:8px!important}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Store Messages <span>— Contact Form Submissions</span></div>
+      <button class="btn btn-secondary" onclick="loadMessages()">🔄 Refresh</button>
+    </div>
+    <div class="content">
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-label">Total Messages</div><div class="stat-value" id="statTotal">—</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card"><div class="stat-label">Unread</div><div class="stat-value" id="statUnread" style="color:#1F7A3D;">—</div><div class="stat-sub">Need response</div></div>
+        <div class="stat-card"><div class="stat-label">Read</div><div class="stat-value" id="statRead" style="color:#5A6685;">—</div><div class="stat-sub">Handled</div></div>
+      </div>
+      <div class="msg-list" id="msgList"><div class="empty-state">Loading...</div></div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('store-messages');
+const API='/msolpeptides-api';
+// Phase 5 (2026-09-05): every call goes through api() from crm.js — Bearer header, JSON in/out, the 401 redirect and
+// the error toast are all in one place now.
+
+let messages=[];
+
+async function loadMessages(){
+  document.getElementById('msgList').innerHTML='<div class="empty-state">Loading...</div>';
+  try{
+    messages=await api(API+'/messages',{toast:false});
+    messages.sort((a,b)=>new Date(b.receivedAt||0)-new Date(a.receivedAt||0));
+    renderStats();
+    renderList();
+  }catch(e){
+    document.getElementById('msgList').innerHTML='<div class="empty-state" style="color:#E53935;">Failed to load messages: '+esc(e.message)+'</div>';
+  }
+}
+
+function renderStats(){
+  document.getElementById('statTotal').textContent=messages.length;
+  document.getElementById('statUnread').textContent=messages.filter(m=>m.status==='unread').length;
+  document.getElementById('statRead').textContent=messages.filter(m=>m.status==='read').length;
+  const b=document.getElementById('msgBadgeNav');
+  const unread=messages.filter(m=>m.status==='unread').length;
+  if(unread>0){b.textContent=unread;b.style.display='inline-block';}else{b.style.display='none';}
+}
+
+function renderList(){
+  const list=document.getElementById('msgList');
+  if(!messages.length){list.innerHTML='<div class="empty-state">No messages yet</div>';return;}
+  list.innerHTML=messages.map(m=>{
+    const name=[m.firstName,m.lastName].filter(Boolean).join(' ')||'Anonymous';
+    const date=m.receivedAt?new Date(m.receivedAt).toLocaleString():'—';
+    const unread=m.status==='unread';
+    return `<div class="msg-card ${unread?'unread':''}" onclick="markRead('${safeId(m.id)}')">
+      <div class="msg-top">
+        <div><span class="msg-sender">${esc(name)}</span><span class="msg-email">${esc(m.email||'')}</span><span class="msg-status status-${escAttr(m.status||'unread')}">${esc(m.status||'unread')}</span></div>
+        <div class="msg-date">${date}</div>
+      </div>
+      <div class="msg-subject">${esc(m.subject||'(no subject)')}${esc(m.org?' — '+m.org:'')}</div>
+      <div class="msg-preview">${esc((m.message||'').substring(0,200))}</div>
+    </div>`;
+  }).join('');
+}
+
+async function markRead(id){
+  const msg=messages.find(m=>m.id===id);
+  if(!msg||msg.status==='read')return;
+  try{
+    await api(API+'/messages/'+encodeURIComponent(id),{method:'PATCH'});
+    loadMessages();
+  }catch(e){}
+}
+
+
+loadMessages();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Processors — BioLabs CRM</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+.content{flex:1;overflow-y:auto;padding:20px 24px;max-width:920px}
+.settings-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px}
+.settings-card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A}
+.row{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:10px 0;border-bottom:1px solid #F0F2FA}
+.row:last-child{border-bottom:none}
+label.k{color:#5A6685;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:6px}
+input,select{width:100%;padding:9px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.muted{font-size:12px;color:#5A6685;margin-top:6px}
+.ok{color:#145C2C;font-weight:700}
+.warn{color:#B45309;font-weight:700}
+</style>
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=05fa5a1bda-umg"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar"><div id="crm-nav" class="crm-nav"></div></div>
+  <div class="main">
+    <div class="topbar"><div class="topbar-title">Processors <span>— UMG #1 sidecar</span></div></div>
+    <div class="content">
+      <p class="muted">Live CRM API on :3001 is unchanged. These settings hit the UMG sidecar (:8787) via /api/psp/ only.</p>
+      <div class="settings-card" id="healthCard"><h3>UMG secret / callback</h3><div class="muted">Loading…</div></div>
+      <div class="settings-card">
+        <h3>Kill-switch</h3>
+        <select id="kill"></select>
+      </div>
+      <div id="pspCards"></div>
+      <button class="btn btn-primary" id="saveBtn" type="button">Save processor settings</button>
+      <div class="muted" id="msg"></div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('processors');
+let settings = null;
+
+function opt(sel, value, label) {
+  const o = document.createElement('option');
+  o.value = value; o.textContent = label; sel.appendChild(o);
+}
+
+async function load() {
+  const data = await api('/api/psp/settings', { toast: false });
+  settings = data.settings;
+  const h = data.health || {};
+  document.getElementById('healthCard').innerHTML =
+    '<h3>UMG secret / callback</h3>' +
+    '<div class="row"><span>Secret</span><span class="' + (h.umgSecretConfigured ? 'ok' : 'warn') + '">' +
+      (h.umgSecretConfigured ? 'Loaded on server' : 'Not loaded') + '</span></div>' +
+    '<div class="row"><span>Path</span><span class="muted">' + (h.umgEnvPath || '') + ' · ' + (h.source || '') + '</span></div>' +
+    '<div class="row"><span>Callback</span><span>' + (h.callbackUrl || '/api/webhooks/umg') + '</span></div>' +
+    '<div class="muted">Value is never shown. Portal: https://crm.biolabsresearch.co/api/webhooks/umg</div>';
+  const kill = document.getElementById('kill');
+  kill.innerHTML = '';
+  opt(kill, '', 'Off — use priority cascade');
+  opt(kill, 'umg', 'Force UMG only');
+  opt(kill, 'tagada', 'Force Tagada only');
+  opt(kill, 'centrobill', 'Force Centrobill only');
+  kill.value = settings.killSwitchPsp || '';
+  const box = document.getElementById('pspCards');
+  box.innerHTML = '';
+  (settings.processors || []).forEach(function (p) {
+    const card = document.createElement('div');
+    card.className = 'settings-card';
+    card.innerHTML =
+      '<h3>' + p.label + ' <span class="muted">' + (p.id === 'umg' ? 'live adapter' : 'stub') + '</span></h3>' +
+      '<div class="row"><label><input type="checkbox" data-en="' + p.id + '"' + (p.enabled ? ' checked' : '') + '> Enabled</label></div>' +
+      '<div class="grid2"><div><label class="k">Priority</label><input type="number" data-pr="' + p.id + '" value="' + p.priority + '"></div>' +
+      '<div><label class="k">Mode</label><select data-mo="' + p.id + '">' +
+      '<option value="sandbox">Sandbox</option><option value="live">Live</option><option value="off">Off</option></select></div></div>';
+    box.appendChild(card);
+    card.querySelector('[data-mo]').value = p.mode;
+  });
+}
+
+document.getElementById('saveBtn').onclick = async function () {
+  settings.killSwitchPsp = document.getElementById('kill').value || null;
+  settings.processors = settings.processors.map(function (p) {
+    const en = document.querySelector('[data-en="' + p.id + '"]');
+    const pr = document.querySelector('[data-pr="' + p.id + '"]');
+    const mo = document.querySelector('[data-mo="' + p.id + '"]');
+    return { ...p, enabled: !!(en && en.checked), priority: Number(pr && pr.value) || p.priority, mode: (mo && mo.value) || p.mode };
+  });
+  const out = await api('/api/psp/settings', { method: 'PUT', body: { settings } });
+  settings = out.settings;
+  document.getElementById('msg').textContent = 'Saved. Cascade default is UMG → Tagada → Centrobill.';
+};
+
+load().catch(function (e) {
+  document.getElementById('healthCard').innerHTML = '<h3>UMG sidecar</h3><div class="warn">Cannot reach /api/psp/settings. Is crm-umg on :8787 and nginx /api/psp/ proxied?</div>';
+});
+</script>
+</body>
+</html>

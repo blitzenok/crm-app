@@ -90,16 +90,19 @@ test("createPayment uses Basic auth + JSON body and does not require a live key 
   assert.ok(!JSON.stringify(result.raw).includes("unit-test-secret"));
 });
 
-test("timeout is soft processor-down", async () => {
-  const fetchImpl = async () => {
-    const err = new Error("aborted");
-    err.name = "AbortError";
+test("a refused connection is soft processor-down once find-by-ext-id confirms nothing was charged", async () => {
+  // infra 2026-09-29 honest-charge: a timeout alone is no longer "declined": UMG is asked by our key first (200 + [] = no charge).
+  const fetchImpl = async (url) => {
+    if (String(url).includes("/find-by-ext-id/")) return { status: 200, async text() { return "[]"; } };
+    const err = new Error("fetch failed"); // connection refused: the request never reached UMG
+    err.cause = { code: "ECONNREFUSED" };
     throw err;
   };
-  const result = await createPayment(SAMPLE, { secret: "unit-test-secret", fetchImpl, timeoutMs: 5 });
+  const result = await createPayment(SAMPLE, { secret: "unit-test-secret", fetchImpl, timeoutMs: 5, findDelayMs: 0 });
   assert.equal(result.declineClass, "soft");
   assert.equal(result.cascadeAction, "next");
   assert.equal(result.processorStatus, "PROCESSOR_DOWN");
+  assert.equal(result.noChargeConfirmed, true);
 });
 
 test("getTransaction hits verified poll URL shape", async () => {

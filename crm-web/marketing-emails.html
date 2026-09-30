@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* emails-only styling; everything shared lives in crm.css */
+.section{margin-bottom:20px;}
+.notice{background:#FFF8EC;border:1px solid #F5DFAE;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#7A5B18;margin-bottom:20px;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#991B1B;margin-bottom:20px;}
+.banner-error b{display:block;margin-bottom:3px;font-size:13px;}
+.muted{color:#7A869A;}
+.hint{font-size:11.5px;color:#7A869A;margin-top:4px;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;color:#7A869A;font-weight:600;margin-bottom:5px;}
+.field input,.field textarea{width:100%;padding:9px 12px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;font-family:inherit;}
+.field textarea{min-height:260px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.45;white-space:pre;}
+.editor-body{padding:18px 20px;}
+.editor-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid #F0F3FA;}
+.editor-title{font-size:13.5px;font-weight:700;color:#1B2A4A;}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:6px;}
+.btn-row select{padding:8px 10px;border:1px solid #E8ECF4;border-radius:8px;font-size:12.5px;background:#F8FAFF;max-width:280px;}
+.preview-box{border:1px solid #E8ECF4;border-radius:10px;overflow:hidden;background:#fff;}
+.preview-box iframe{display:block;width:100%;height:420px;border:0;background:#fff;}
+.person-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:16px 20px;}
+.person-bar input{padding:8px 14px;border:1px solid #E8ECF4;border-radius:8px;font-size:13px;background:#F8FAFF;min-width:260px;flex:1;}
+.person-result{padding:0 20px 16px;font-size:12.5px;color:#2D3654;}
+.link-btn{font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #E8ECF4;color:#1B2A4A;background:#fff;cursor:pointer;white-space:nowrap;}
+.link-btn:hover{background:#E8ECF4;}
+.tx-box{padding:12px 20px;border-bottom:1px solid #F0F3FA;font-size:12.5px;color:#2D3654;}
+.tx-box code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:#F1F4FB;border-radius:4px;padding:1px 5px;margin:2px 2px;display:inline-block;}
+.tx-box select{padding:6px 10px;border:1px solid #E8ECF4;border-radius:8px;font-size:12.5px;background:#F8FAFF;max-width:320px;}
+.tx-warn{color:#7A5B18;}
+@media(max-width:768px){
+.person-bar input{min-width:0;width:100%;}
+.preview-box iframe{height:300px;}
+}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Emails <span>&mdash; letter texts in Customer.io</span></div>
+      <button class="refresh-btn" onclick="loadAll(true)">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+
+      <div id="banner"></div>
+
+      <div class="notice">
+        This page changes the <b>words</b> of the letters. When a journey runs, whom it goes to and how long it
+        waits are set in Customer.io. Every save keeps the previous text, so an edit can be taken back here.
+      </div>
+
+      <div class="section card">
+        <div class="card-header"><div class="card-title">Letters in journeys</div><div class="muted" id="letterCount">&mdash;</div></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Journey</th><th>Letter</th><th>Subject</th><th>State</th><th>Saved versions</th><th></th></tr></thead>
+            <tbody id="letterRows"><tr><td colspan="6" class="muted">Loading&hellip;</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section card" id="editorCard" style="display:none">
+        <div class="editor-head">
+          <div class="editor-title" id="editorTitle"></div>
+          <button class="link-btn" onclick="closeEditor()">Close</button>
+        </div>
+        <div class="tx-box" id="txBox" style="display:none">
+          <div id="txVariantRow" style="display:none;margin-bottom:8px"><label for="txVariant" class="muted">Variant&nbsp;</label><select id="txVariant"></select></div>
+          <div id="txFields"></div>
+        </div>
+        <div class="editor-body">
+          <div class="field">
+            <label for="fSubject">Subject</label>
+            <input id="fSubject" type="text" maxlength="300" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="fPreheader">Preheader (the grey line after the subject in an inbox)</label>
+            <input id="fPreheader" type="text" maxlength="300" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="fBody">Body</label>
+            <textarea id="fBody" spellcheck="false"></textarea>
+            <div class="hint">
+              HTML and Liquid are allowed &mdash; this is a template, not customer data. Customer.io does <b>not</b> escape
+              what a Liquid tag returns, so never build a link out of a value a customer typed.
+            </div>
+          </div>
+          <div class="field">
+            <label>Preview (no scripts; Customer.io wraps this in the journey&rsquo;s own layout)</label>
+            <div class="preview-box"><iframe id="preview" sandbox referrerpolicy="no-referrer" title="Letter preview"></iframe></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="saveLetter()">Save to Customer.io</button>
+            <button class="btn btn-secondary" onclick="sendTest()">Send test to me</button>
+          </div>
+          <div class="hint" id="testHint">
+            The test letter goes to the address you signed in with. While the workspace is in test mode Customer.io
+            delivers it to the test address set there instead.
+          </div>
+          <div class="btn-row" id="restoreRow" style="display:none">
+            <select id="versionSelect"></select>
+            <button class="btn btn-secondary" onclick="restoreVersion()">Restore this version</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section card">
+        <div class="card-header"><div class="card-title">Order letters</div><div class="muted">what buyers get after an order; saved here, changed in Customer.io at once</div></div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>ID</th><th>Name</th><th>Subject</th><th></th></tr></thead>
+            <tbody id="transactionalRows"><tr><td colspan="4" class="muted">Loading&hellip;</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section card">
+        <div class="card-header"><div class="card-title">Person</div></div>
+        <div class="person-bar">
+          <input id="personEmail" type="email" placeholder="person@example.com" autocomplete="off">
+          <button class="btn btn-secondary" onclick="personAction('unsubscribe')">Unsubscribe</button>
+          <button class="btn btn-danger" onclick="personAction('delete')">Delete from Customer.io</button>
+        </div>
+        <div class="person-result" id="personResult">
+          Unsubscribing sets the person&rsquo;s <span class="muted">unsubscribed</span> flag in Customer.io; deleting removes
+          their profile and its history there. Either way the CRM lead stays where it is.
+        </div>
+        <div class="hint" style="padding:0 20px 18px">
+          After an unsubscribe the two systems disagree, and they are meant to: Customer.io says the person is
+          unsubscribed, the lead in the CRM still says they are not. Anything built on the CRM copy &mdash; a segment,
+          a list, an export &mdash; will not know until someone changes the lead as well. An address Customer.io has
+          never seen is refused here rather than created.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+renderNav('marketing-emails');
+
+var state = { letter: null, cid: '', aid: '', versions: [], kind: 'campaign', tid: '', contentId: '', contents: [] };
+var previewTimer = null;
+/* Filled by the list: journey id -> its state ('draft', 'running', ...). The editor is opened from a row of
+   that list, so by the time Save is pressed the state of the journey this letter belongs to is known, and
+   the confirmation can tell a draft from a journey that is sending. Kept outside `state` because closing
+   the editor resets that one. */
+var campaignState = {};
+
+/* The shared api() answers 502/503/504 with its own message without reading the body, so the page cannot show
+   the server's own words here (the same limitation the Marketing panel has). 503 from this feature means one of
+   three things - no key, a key Customer.io rejected, a provider that did not answer - and the blitz-api log says
+   which. The banner says so instead of pretending to know. */
+function showBanner(e) {
+  var box = document.getElementById('banner');
+  if (!e) { box.innerHTML = ''; return; }
+  var text = e.status === 503
+    ? 'Customer.io unavailable. Either the API key is missing or was rejected, or Customer.io did not answer. The blitz-api log has the exact reason.'
+    : (e.message || 'Something went wrong');
+  box.innerHTML = '<div class="banner-error"><b>Customer.io</b>' + esc(text) + '</div>';
+}
+
+function row(cols, text) { return '<tr><td colspan="' + cols + '" class="muted">' + esc(text) + '</td></tr>'; }
+
+// fresh is passed only by the Refresh button. The calls after a save and after a restore leave it
+// off on purpose: the server drops the list cache itself when a letter is written, so those already
+// read the truth, and asking for fresh there would spend a second fan-out on the same answer.
+async function loadAll(fresh) {
+  try {
+    var d = await api('/api/marketing/emails' + (fresh ? '?fresh=1' : ''), { toast: false });
+    showBanner(null);
+    renderLetters(d.campaigns || []);
+    renderTransactional(d.transactional);
+  } catch (e) {
+    showBanner(e);
+    document.getElementById('letterRows').innerHTML = row(6, 'Letters could not be loaded.');
+    document.getElementById('transactionalRows').innerHTML = row(4, 'Not loaded.');
+    document.getElementById('letterCount').textContent = '—';
+  }
+}
+
+function renderLetters(campaigns) {
+  var tb = document.getElementById('letterRows');
+  var html = '', total = 0;
+  // What the save confirmation reads later. Kept out of the loop below because it is not a value on its way
+  // into the page: it is written with textContent by confirmDialog, never as markup.
+  campaigns.forEach(function (c) { campaignState[String(c.id)] = String(c.state || ''); });
+  campaigns.forEach(function (c) {
+    var title = esc(c.name || ('Journey ' + c.id));
+    if (c.letters === null) {
+      html += '<tr><td><b>' + title + '</b></td><td colspan="5" class="muted">Customer.io did not answer for this journey.</td></tr>';
+      return;
+    }
+    if (!c.letters.length) {
+      html += '<tr><td><b>' + title + '</b></td><td colspan="5" class="muted">No letters in this journey yet.</td></tr>';
+      return;
+    }
+    c.letters.forEach(function (l) {
+      total++;
+      var cid = safeId(c.id), aid = safeId(l.id);
+      html += '<tr>' +
+        '<td>' + title + '<div class="hint">' + esc(c.state || '') + '</div></td>' +
+        '<td><b>' + esc(l.name || ('Letter ' + l.id)) + '</b></td>' +
+        '<td>' + esc(l.subject || '—') + '</td>' +
+        '<td><span class="badge ' + (l.sending_state === 'draft' ? 'badge-none' : 'badge-sent') + '">' + esc(l.sending_state || 'unknown') + '</span></td>' +
+        '<td>' + esc(String(l.versions || 0)) + '</td>' +
+        '<td>' + (cid && aid
+          ? '<button class="link-btn" onclick="openLetter(&#39;' + escAttr(cid) + '&#39;,&#39;' + escAttr(aid) + '&#39;)">Edit</button>'
+          : '<span class="muted">—</span>') + '</td>' +
+      '</tr>';
+    });
+  });
+  tb.innerHTML = html || row(6, 'No journeys in this workspace yet.');
+  document.getElementById('letterCount').textContent = total + (total === 1 ? ' letter' : ' letters');
+}
+
+function renderTransactional(list) {
+  var tb = document.getElementById('transactionalRows');
+  if (list === null || list === undefined) { tb.innerHTML = row(4, 'Customer.io did not answer for this section.'); return; }
+  if (!list.length) { tb.innerHTML = row(4, 'No transactional messages in this workspace.'); return; }
+  tb.innerHTML = list.map(function (t) {
+    var id = safeId(t.id);
+    return '<tr><td>' + esc(t.id) + '</td>' +
+      '<td><b>' + esc(t.name || '—') + '</b><div class="hint">' + (t.checked ? 'order letter: fields checked on save' : 'fields not checked') + '</div></td>' +
+      '<td>' + esc(t.subject || '—') + '</td>' +
+      '<td>' + (id ? '<button class="link-btn" onclick="openTx(&#39;' + escAttr(id) + '&#39;)">Edit</button>' : '<span class="muted">—</span>') + '</td></tr>';
+  }).join('');
+}
+
+/* ---- editor ---- */
+
+async function openLetter(cid, aid) {
+  try {
+    var d = await api('/api/marketing/emails/campaigns/' + encodeURIComponent(cid) + '/actions/' + encodeURIComponent(aid), { toast: false });
+    showBanner(null);
+    showTxBox(null);
+    state.kind = 'campaign'; state.tid = ''; state.contentId = ''; state.contents = [];
+    state.cid = cid; state.aid = aid; state.letter = d.letter || {}; state.versions = d.versions || [];
+    fillEditor((state.letter.name || ('Letter ' + aid)) + ' — journey ' + cid);
+  } catch (e) { showBanner(e); }
+}
+
+/* Order letters (Customer.io transactional messages): the same editor, another address. A message can carry more than
+   one content (a language variant); the first one is opened, and a select appears when there are several. */
+async function openTx(tid, contentId) {
+  try {
+    var d = await api('/api/marketing/emails/transactional/' + encodeURIComponent(tid), { toast: false });
+    showBanner(null);
+    var contents = d.contents || [];
+    if (!contents.length) { toast('This message has no content to edit yet', 'error'); return; }
+    if (d.editable === false) { toast(d.reason || 'This letter cannot be edited here; edit it in Customer.io', 'error'); return; }
+    var pick = contents[0];
+    contents.forEach(function (c) { if (contentId && String(c.id) === String(contentId)) pick = c; });
+    state.kind = 'tx'; state.tid = String(tid); state.contentId = String(pick.id); state.contents = contents;
+    state.cid = ''; state.aid = ''; state.letter = pick; state.versions = pick.versions || [];
+    state.txKind = d.kind || 'classic';
+    state.draftDiffers = !!d.draft_differs;
+    showTxBox(d);
+    fillEditor((pick.name || (d.message && d.message.name) || ('Message ' + tid)) + ' — order letter');
+  } catch (e) { showBanner(e); }
+}
+
+function fillEditor(title) {
+  document.getElementById('editorTitle').textContent = title;
+  document.getElementById('fSubject').value = state.letter.subject || '';
+  document.getElementById('fPreheader').value = state.letter.preheader_text || '';
+  document.getElementById('fBody').value = state.letter.body || '';
+  renderVersions();
+  updatePreview();
+  document.getElementById('editorCard').style.display = '';
+  document.getElementById('editorCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* The box above the editor for an order letter: which variant is open and which {{ trigger.* }} fields this letter can
+   read. Everything that came from the server is escaped or set as text. */
+function showTxBox(d) {
+  var box = document.getElementById('txBox');
+  if (!d) { box.style.display = 'none'; document.getElementById('txFields').innerHTML = ''; document.getElementById('txVariantRow').style.display = 'none'; return; }
+  var sel = document.getElementById('txVariant');
+  sel.innerHTML = '';
+  (d.contents || []).forEach(function (c) {
+    var o = document.createElement('option');
+    o.value = String(c.id);
+    o.textContent = (c.name || ('Content ' + c.id)) + (c.language ? ' (' + c.language + ')' : '');
+    sel.appendChild(o);
+  });
+  sel.value = state.contentId;
+  sel.onchange = function () { openTx(state.tid, sel.value); };
+  document.getElementById('txVariantRow').style.display = (d.contents || []).length > 1 ? '' : 'none';
+  var dsNote = d.kind === 'design_studio'
+    ? '<div class="hint" style="margin:0 0 8px"><b>Design Studio letter.</b> Save puts the text into Design Studio and publishes it in one step. If the publish fails you get an error and the letter stays as it was.</div>'
+    : '';
+  var draftNote = d.draft_differs
+    ? '<div class="tx-warn" style="margin:0 0 8px"><b>Unpublished draft in Design Studio.</b> Someone changed this letter in Design Studio and did not publish. The text below is what buyers get now. Saving here replaces that draft (a copy stays in the version history file).</div>'
+    : '';
+  var warnNote = (d.warnings || []).map(function (w) { return '<div class="tx-warn" style="margin:0 0 8px">' + esc(w) + '</div>'; }).join('');
+  document.getElementById('txFields').innerHTML = warnNote + draftNote + dsNote + (d.fields
+    ? 'This letter can read only these fields: ' + d.fields.map(function (f) { return '<code>{{ trigger.' + esc(f) + ' }}</code>'; }).join(' ') +
+      '<div class="hint">Any other <code>trigger.</code> field, the long dash and words about dosing are refused when you save: the letter would go out with a blank or against the letter rules. ' +
+      '<code>{{ customer.first_name }}</code> is a profile field, not a trigger field, and is not checked.</div>'
+    : '<span class="tx-warn">This message is not one of the order letters, so its fields are not checked. Be careful with {{ trigger.* }}.</span>');
+  box.style.display = '';
+}
+
+function closeEditor() {
+  document.getElementById('editorCard').style.display = 'none';
+  showTxBox(null);
+  state = { letter: null, cid: '', aid: '', versions: [], kind: 'campaign', tid: '', contentId: '', contents: [] };
+}
+
+function renderVersions() {
+  var sel = document.getElementById('versionSelect');
+  var rowBox = document.getElementById('restoreRow');
+  sel.innerHTML = '';
+  if (!state.versions.length) { rowBox.style.display = 'none'; return; }   // no versions yet: no dead button
+  state.versions.forEach(function (v) {
+    var o = document.createElement('option');
+    o.value = String(v.version);
+    o.textContent = 'v' + v.version + ' — ' + fmtDate(v.saved_at) + ' — ' + String(v.subject || '(no subject)').slice(0, 60);
+    sel.appendChild(o);
+  });
+  rowBox.style.display = '';
+}
+
+/* srcdoc is set as a property, not through innerHTML: the letter never becomes part of this page's markup, and
+   an empty sandbox attribute leaves the frame without scripts, forms, popups and same-origin access. */
+function updatePreview() {
+  var frame = document.getElementById('preview');
+  frame.srcdoc = document.getElementById('fBody').value || '<p style="color:#7A869A;font-family:sans-serif">Empty letter</p>';
+}
+
+document.getElementById('fBody').addEventListener('input', function () {
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(updatePreview, 400);
+});
+
+/* The shared input filter in blitz-api strips <script> blocks, on...="..." attributes and javascript: URIs from
+   every JSON body before a route sees it. That is right for a form and wrong for a template, so the letter travels
+   base64-encoded and reaches Customer.io exactly as typed. */
+function toB64(str) {
+  var bytes = new TextEncoder().encode(str);
+  var bin = '', CH = 0x8000;
+  for (var i = 0; i < bytes.length; i += CH) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  return btoa(bin);
+}
+
+// The server refuses a letter over 200 KB, and base64 of anything much larger would be stopped even earlier by
+// the 512 KB body limit in blitz-api with a message about request sizes. Saying it here keeps the answer about
+// the letter.
+var MAX_BODY_BYTES = 200 * 1024;
+function tooBig(text) {
+  var size = new TextEncoder().encode(text).length;
+  if (size <= MAX_BODY_BYTES) return false;
+  toast('This letter is ' + Math.round(size / 1024) + ' KB; the limit is 200 KB', 'error');
+  return true;
+}
+
+/* The editor serves two kinds of letter: a step of a journey and an order letter (a transactional message). Only the
+   address differs; the text, the versions and the buttons are the same. */
+function letterUrl(suffix) {
+  var s = suffix || '';
+  return state.kind === 'tx'
+    ? '/api/marketing/emails/transactional/' + encodeURIComponent(state.tid) + '/content/' + encodeURIComponent(state.contentId) + s
+    : '/api/marketing/emails/campaigns/' + encodeURIComponent(state.cid) + '/actions/' + encodeURIComponent(state.aid) + s;
+}
+function haveLetter() { return state.kind === 'tx' ? !!(state.tid && state.contentId) : !!state.cid; }
+function reopen() { return state.kind === 'tx' ? openTx(state.tid, state.contentId) : openLetter(state.cid, state.aid); }
+
+async function saveLetter() {
+  if (!haveLetter()) return;
+  var body = document.getElementById('fBody').value;
+  if (tooBig(body)) return;
+  // A draft journey is not sending anything yet; a journey that is running puts this text in front of the
+  // next person it reaches. The confirmation says which of the two this is instead of asking one question
+  // for both. The state is the journey's own word for itself, so it is shown, not interpreted.
+  var warn;
+  if (state.kind === 'tx') {
+    warn = 'This is an order letter: the next order that triggers it goes out to the buyer with this text. ' +
+      (state.txKind === 'design_studio' ? 'It is saved in Design Studio and published at once. ' : '') +
+      (state.draftDiffers ? 'Design Studio holds an unpublished draft of this letter; saving replaces that draft. ' : '');
+  } else {
+    var cState = campaignState[String(state.cid)] || '';
+    warn = (cState && cState !== 'draft')
+      ? 'This journey is ' + cState + ', not a draft: the next letter it sends goes out with this text. '
+      : '';
+  }
+  var ok = await confirmDialog(warn + 'Save this text to Customer.io? The letter as it is now is kept, so you can restore it.', { ok: 'Save' });
+  if (!ok) return;
+  try {
+    var put = {
+      // All three fields are base64: the shared input filter in blitz-api trims every string it sees, and a
+      // subject typed with a trailing space would otherwise be saved without it.
+      subject_b64: toB64(document.getElementById('fSubject').value),
+      preheader_b64: toB64(document.getElementById('fPreheader').value),
+      body_b64: toB64(body)
+    };
+    if (state.kind === 'tx' && state.draftDiffers) put.publish_draft = true;   // the confirmation above said the draft is replaced
+    var r = await api(letterUrl(), { method: 'PUT', body: put });
+    showBanner(null);
+    toast(r && r.unchanged ? 'Nothing to save - the letter is already like this' : 'Saved. Previous text kept as v' + (r && r.saved_version));
+    await reopen();
+    loadAll();
+  } catch (e) { showBanner(e); }
+}
+
+async function restoreVersion() {
+  var sel = document.getElementById('versionSelect');
+  if (!sel.value) return;
+  var replaces = state.kind === 'tx' && state.draftDiffers;
+  var ok = await confirmDialog('Restore version ' + sel.value + '? The text as it is now is kept as a new version first.' +
+    (replaces ? ' Design Studio holds an unpublished draft of this letter; restoring replaces that draft.' : ''), { ok: 'Restore' });
+  if (!ok) return;
+  try {
+    var rb = { version: Number(sel.value) };
+    if (replaces) rb.publish_draft = true;
+    var r = await api(letterUrl('/restore'), { method: 'POST', body: rb });
+    showBanner(null);
+    var notes = (r && r.warnings && r.warnings.length) ? ' (this version has: ' + r.warnings.join(', ') + ')' : '';
+    toast('Restored v' + (r && r.restored_version) + notes);
+    await reopen();
+    loadAll();
+  } catch (e) { showBanner(e); }
+}
+
+async function sendTest() {
+  var subject = document.getElementById('fSubject').value;
+  var body = document.getElementById('fBody').value;
+  if (!subject || !body) { toast('A test letter needs a subject and a body', 'error'); return; }
+  if (tooBig(body)) return;
+  var isTx = state.kind === 'tx';
+  var ok = await confirmDialog(isTx
+    ? 'Send this text to yourself now, filled with sample order data? It goes out through Customer.io as a real letter.'
+    : 'Send this text to yourself now? It goes out through Customer.io as a real letter.', { ok: 'Send' });
+  if (!ok) return;
+  try {
+    var r = await api(isTx ? letterUrl('/test') : '/api/marketing/emails/test', { method: 'POST', body: { subject_b64: toB64(subject), body_b64: toB64(body) } });
+    showBanner(null);
+    toast('Test letter sent to ' + (r && r.to ? r.to : 'your address'));
+    if (r && r.note) document.getElementById('testHint').textContent = r.note + (r.delivery_id ? ' Delivery id ' + r.delivery_id + '.' : '');
+  } catch (e) { showBanner(e); }
+}
+
+/* ---- person ---- */
+
+async function personAction(what) {
+  var email = (document.getElementById('personEmail').value || '').trim();
+  var out = document.getElementById('personResult');
+  if (!email) { toast('Type an e-mail address first', 'error'); return; }
+  var question = what === 'delete'
+    ? 'Delete ' + email + ' from Customer.io? Their profile and its history there are removed. This cannot be undone, and the CRM lead is left alone.'
+    : 'Mark ' + email + ' as unsubscribed in Customer.io? They stop receiving journeys and newsletters.';
+  var ok = await confirmDialog(question, { ok: what === 'delete' ? 'Delete' : 'Unsubscribe' });
+  if (!ok) return;
+  try {
+    var r = what === 'delete'
+      ? await api('/api/marketing/people/' + encodeURIComponent(email), { method: 'DELETE' })
+      : await api('/api/marketing/people/' + encodeURIComponent(email) + '/unsubscribe', { method: 'POST' });
+    showBanner(null);
+    var done = what === 'delete' ? 'deleted from Customer.io' : 'marked unsubscribed in Customer.io';
+    out.innerHTML = '<b>' + esc(r && r.email ? r.email : email) + '</b> — ' + esc(done) + '. ' + esc((r && r.note) || '');
+    toast(what === 'delete' ? 'Deleted' : 'Unsubscribed');
+  } catch (e) {
+    showBanner(e);
+    out.innerHTML = '<span class="muted">' + esc(email) + ' — ' + esc(e.message || 'failed') + '</span>';
+  }
+}
+
+loadAll();
+</script>
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

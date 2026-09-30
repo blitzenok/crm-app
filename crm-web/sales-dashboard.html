@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* sales-dashboard-only styling; everything shared lives in crm.css */
+.hero-card{background:linear-gradient(135deg,#1F7A3D,#145C2C);border-radius:16px;padding:22px 24px;color:#fff;margin-bottom:20px;}
+.hero-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;opacity:0.85;}
+.hero-value{font-size:32px;font-weight:800;margin-top:6px;}
+.hero-sub-row{display:flex;gap:14px;margin-top:16px;}
+.hero-sub{background:rgba(255,255,255,0.15);border-radius:10px;padding:10px 14px;flex:1;}
+.hero-sub-label{font-size:10px;opacity:0.85;font-weight:600;text-transform:uppercase;}
+.hero-sub-value{font-size:18px;font-weight:700;margin-top:3px;}
+.quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px;}
+.quick-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 16px;text-align:center;text-decoration:none;color:#1a1a2e;transition:all 0.15s;cursor:pointer;}
+.quick-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,0.06);border-color:#1F7A3D;}
+.quick-icon{font-size:28px;margin-bottom:8px;}
+.quick-label{font-size:13px;font-weight:700;}
+.stats-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+.stat-card{ background:#fff; border:1px solid #E8ECF4; border-radius:12px; padding:16px 18px; }
+.stat-label{ font-size:11px; color:#5A6685; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; }
+.stat-value{ font-size:22px; font-weight:700; color:#1a1a2e; margin-top:6px; }
+.stat-sub{ font-size:11px; color:#5A6685; margin-top:2px; }
+.stat-sub.warn{color:#E65100;font-weight:700;}
+.table-card{ background:#fff; border:1px solid #E8ECF4; border-radius:14px; overflow:hidden; }
+.table-header{ display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #E8ECF4; }
+.table-header h3{ font-size:14px; font-weight:700; }
+.btn{ padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; border:none; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; gap:6px; }
+.btn-primary{ background:linear-gradient(135deg,#1F7A3D,#1B2A4A); color:#fff; }
+.btn-primary:hover{ opacity:0.9; transform:translateY(-1px); }
+thead th{ text-align:left; padding:12px 20px; font-size:11px; font-weight:600; color:#5A6685; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid #E8ECF4; }
+tbody td{ padding:12px 20px; font-size:13px; border-bottom:1px solid #E8ECF4; vertical-align:top; }
+tbody tr:hover{ background:#F8FAFF; }
+.badge{ padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.badge-ok{background:#E8F5E9;color:#2E7D32;}
+.badge-low{background:#FFF3E0;color:#E65100;}
+.badge-out{background:#FFEBEE;color:#C62828;}
+.empty-state{ text-align:center; color:#5A6685; padding:40px; }
+/* page-only mobile rules (the shared mobile layout is in crm.css) */
+@media(max-width:768px){
+.quick-grid{grid-template-columns:repeat(2,1fr)!important;}
+.stats-grid{grid-template-columns:repeat(2,1fr)!important;}
+}
+</style>
+
+</head>
+<body>
+
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Sales Dashboard <span id="periodLabel">This Month</span></div>
+      <div class="user-initials" id="topbar-user" style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;">YA</div>
+    </div>
+    <div class="content">
+
+      <div class="hero-card">
+        <div class="hero-label">August Sales</div>
+        <div class="hero-value" id="heroSales">$0.00</div>
+        <div class="hero-sub-row">
+          <div class="hero-sub"><div class="hero-sub-label">Profit</div><div class="hero-sub-value" id="heroProfit">$0.00</div></div>
+          <div class="hero-sub"><div class="hero-sub-label">Invoices</div><div class="hero-sub-value" id="heroInvoices">0</div></div>
+        </div>
+      </div>
+
+      <div class="quick-grid">
+        <a href="/crm/sales-entry.html" class="quick-card"><div class="quick-icon">➕</div><div class="quick-label">Add Sale</div></a>
+        <a href="/crm/customers.html" class="quick-card"><div class="quick-icon">🧑‍🤝‍🧑</div><div class="quick-label">Customers</div></a>
+        <a href="/crm/inventory.html" class="quick-card"><div class="quick-icon">📦</div><div class="quick-label">Products</div></a>
+        <a href="/crm/reports.html" class="quick-card"><div class="quick-icon">📈</div><div class="quick-label">Reports</div></a>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Stock Value</div><div class="stat-value" id="statStockValue">$0</div><div class="stat-sub">On hand, at cost</div></div>
+        <div class="stat-card"><div class="stat-label">Low Stock Items</div><div class="stat-value" id="statLowStock">0</div><div class="stat-sub" id="statLowStockSub">All well stocked</div></div>
+        <div class="stat-card"><div class="stat-label">Outstanding Balance</div><div class="stat-value" id="statOutstanding">$0</div><div class="stat-sub">Owed by customers</div></div>
+        <div class="stat-card"><div class="stat-label">Active Products</div><div class="stat-value" id="statProducts">0</div><div class="stat-sub">In catalog</div></div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Recent Sales</h3>
+          <a href="/crm/sales-entry.html" class="btn btn-primary">+ Add Sale</a>
+        </div>
+        <table>
+          <thead><tr><th>Invoice</th><th>Customer</th><th>Items</th><th>Total</th><th>Payment</th><th>Due</th><th>Date</th></tr></thead>
+          <tbody id="salesTableBody"><tr><td colspan="7" class="empty-state">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<script>
+renderNav('sales-dashboard');
+const API = '/msolpeptides-api';
+
+
+
+
+// Phase 4 (2026-09-05): both loaders go through api() from crm.js - Bearer header, JSON parsing, the 401 redirect
+// and the error toast live in one place now. The console.error lines are kept: they were the only trace this page left.
+async function loadKPIs() {
+  try {
+    const d = await api(API + '/dashboard/kpis?period=month');
+    document.getElementById('heroSales').textContent = fmtMoney(d.total_sales);
+    document.getElementById('heroProfit').textContent = fmtMoney(d.total_profit);
+    document.getElementById('heroInvoices').textContent = d.invoice_count;
+    document.getElementById('statStockValue').textContent = fmtMoney(d.stock_value);
+    document.getElementById('statLowStock').textContent = d.low_stock_count;
+    document.getElementById('statLowStockSub').textContent = d.low_stock_count > 0 ? 'Needs reorder' : 'All well stocked';
+    document.getElementById('statLowStockSub').className = 'stat-sub' + (d.low_stock_count > 0 ? ' warn' : '');
+    document.getElementById('statOutstanding').textContent = fmtMoney(d.outstanding_balance);
+    document.getElementById('statProducts').textContent = d.active_products + ' / ' + d.total_products;
+  } catch(e) { console.error('KPI load failed', e); }
+}
+
+async function loadRecentSales() {
+  try {
+    const sales = await api(API + '/sales');
+    const tbody = document.getElementById('salesTableBody');
+    if (!sales.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No sales recorded yet. Click "+ Add Sale" to record your first order.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = sales.slice(0, 15).map(s => `
+      <tr>
+        <td><b>#${esc(s.invoice_number)}</b></td>
+        <td>${esc(s.customer_name)}</td>
+        <td>${esc(s.line_items.map(li => li.qty + 'x ' + li.name).join(', '))}</td>
+        <td>${fmtMoney(s.total)}</td>
+        <td>${esc(s.payment_type)}</td>
+        <td>${s.due > 0 ? '<span class="badge badge-low">'+fmtMoney(s.due)+'</span>' : '<span class="badge badge-ok">Paid</span>'}</td>
+        <td>${new Date(s.created_at).toLocaleDateString()}</td>
+      </tr>
+    `).join('');
+  } catch(e) { console.error('Sales load failed', e); }
+}
+
+loadKPIs();
+loadRecentSales();
+</script>
+
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>
