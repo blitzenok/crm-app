@@ -177,7 +177,7 @@ export function createHandler(deps = {}) {
     // Replays of an approved / pending / in-flight order are answered from the stored order; no new price, no charge.
     if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return { ok: true, pricing: null };
     const pricing = await cardPricer(body || {});
-    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
+    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems, ...(pricing.error === "shipping_mismatch" ? { message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod } : {}) };
     return { ok: true, pricing };
   }
   // Consent proof log. A test that injects its own store gets no log unless it injects one too (never the live file).
@@ -517,10 +517,12 @@ export function createHandler(deps = {}) {
       }
       priced = await priceCardBody(body);
       if (!priced.ok) {
-        const message = priced.error === "unknown_item"
+        const message = priced.error === "shipping_mismatch" && priced.message
+          ? priced.message
+          : priced.error === "unknown_item"
           ? "One of the items in your cart is no longer available. Please refresh the cart and try again."
           : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
-        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
+        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false, ...(priced.error === "shipping_mismatch" ? { shipping: priced.shipping, shipMethod: priced.shipMethod } : {}) });
       }
       // infra 2026-09-29 honest-charge: same buyer, same server amount, same lines within 15 min under a NEW key = the browser
       // lost our answer and retried. Do not charge again; point at the existing order. Same key is handled by chargeCart (reused).
@@ -752,6 +754,9 @@ export function createHandler(deps = {}) {
       if (cryptoPricer && !(idemKey && db.getOrderByIdempotency(idemKey)) && Array.isArray(body?.items) && body.items.length) {
         pricing = await cryptoPricer(body);
         if (!pricing.ok) {
+          if (pricing.error === "shipping_mismatch") {
+            return json(400, { ok: false, error: "shipping_mismatch", charged: false, message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod });
+          }
           return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
         }
       }
