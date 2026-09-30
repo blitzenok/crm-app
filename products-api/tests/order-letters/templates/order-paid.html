@@ -1,0 +1,13 @@
+<h2 style="margin:0 0 12px">Payment received</h2>
+
+<p>Hi {{ trigger.first_name | default: "there" }},</p>
+<p>We have received your payment for order <strong>{{ trigger.ref }}</strong>{% if trigger.paid_via == "crypto" %}, confirmed on the blockchain{% endif %}.{% if trigger.totals_available %} Total paid: ${{ trigger.total_due_server }}.{% endif %}</p>
+<p>Our team is now preparing your order, and we will email you the tracking number as soon as it ships.</p>
+{% if trigger.shipping_address != "" %}<p>Ship to: {{ trigger.shipping_address }}{% if trigger.shipping_method != "" %}<br>Shipping method: {{ trigger.shipping_method }}{% endif %}</p>{% endif %}
+
+<p>All products are supplied for laboratory research use only. They are not medicines and are not for human or veterinary use.</p>
+<p>Best regards,<br>The BioLabs Research Team</p>
+
+<p style="margin:0;color:#52525B;font-size:13px">
+  Questions about this order? Reply to this email and include your order number, {{ trigger.ref }}.
+</p>

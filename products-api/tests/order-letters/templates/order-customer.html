@@ -1,0 +1,35 @@
+<h2 style="margin:0 0 12px">{% if trigger.payment_state == "paid" %}Thank you, your payment is received{% else %}Thank you for your order{% endif %}</h2>
+
+<p>Hi {{ trigger.first_name | default: "there" }},</p>
+<p>Your order number is <strong>{{ trigger.ref }}</strong>. Please quote it in any correspondence with us.</p>
+{% if trigger.payment_state == "paid" %}
+<p>We have received your card payment. Our team is now preparing your order, and we will email you the tracking number as soon as it ships.</p>
+{% elsif trigger.payment_state == "crypto_pending" %}
+<p>To complete your order, send the exact amount shown on the checkout page to the wallet address shown there, within 60 minutes of placing the order. Unpaid orders are cancelled automatically.</p>
+<p>We will email you as soon as your payment is confirmed on the blockchain. If you closed the page before paying, reply to this email and we will help.</p>
+{% else %}
+<p>Our team will review your order and contact you shortly.</p>
+{% endif %}
+
+{% if trigger.items.size > 0 %}
+<table cellpadding="6" cellspacing="0" style="border-collapse:collapse;margin:0 0 12px;font-size:14px">
+  <tr style="text-align:left;border-bottom:1px solid #E4E4E7"><th>Item</th><th>Size</th><th>Qty</th><th>Price</th></tr>
+  {% for i in trigger.items %}<tr><td>{{ i.name }}</td><td>{{ i.mg }}</td><td>{{ i.qty }}</td><td>${{ i.price }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+{% if trigger.totals_available %}
+<p>Subtotal: ${{ trigger.subtotal_server }}<br>
+Shipping: ${{ trigger.shipping_server }}<br>
+{% if trigger.discount_server != "0.00" %}Discount: -${{ trigger.discount_server }} ({{ trigger.discount_pct_server }}%{% if trigger.discount_source contains "coupon:" %}, code {{ trigger.discount_source | remove: "coupon:" }}{% endif %})<br>{% endif %}
+<strong>Total: ${{ trigger.total_due_server }}</strong></p>
+{% else %}
+<p>We will confirm the total in the invoice.</p>
+{% endif %}
+{% if trigger.shipping_address != "" %}<p>Ship to: {{ trigger.shipping_address }}{% if trigger.shipping_method != "" %}<br>Shipping method: {{ trigger.shipping_method }}{% endif %}</p>{% endif %}
+
+<p>All products are supplied for laboratory research use only. They are not medicines and are not for human or veterinary use.</p>
+<p>Best regards,<br>The BioLabs Research Team</p>
+
+<p style="margin:0;color:#52525B;font-size:13px">
+  Questions about this order? Reply to this email and include your order number, {{ trigger.ref }}.
+</p>

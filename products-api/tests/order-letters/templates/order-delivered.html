@@ -1,0 +1,15 @@
+<h2 style="margin:0 0 12px">Your order has been delivered</h2>
+
+<p>Hi {{ trigger.first_name | default: "there" }},</p>
+<p>Your order <strong>{{ trigger.ref }}</strong> has been marked as delivered.</p>
+{% if trigger.tracking_number != "" %}<p>Carrier: {{ trigger.carrier }}<br>
+Tracking number: {{ trigger.tracking_number }}</p>{% endif %}
+<p>Please check that everything arrived complete and intact. If anything is missing or damaged, reply to this email and include your order number.</p>
+<p>Thank you for choosing BioLabs Research.</p>
+
+<p>All products are supplied for laboratory research use only. They are not medicines and are not for human or veterinary use.</p>
+<p>Best regards,<br>The BioLabs Research Team</p>
+
+<p style="margin:0;color:#52525B;font-size:13px">
+  Questions about this order? Reply to this email and include your order number, {{ trigger.ref }}.
+</p>

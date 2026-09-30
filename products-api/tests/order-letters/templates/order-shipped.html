@@ -1,0 +1,16 @@
+<h2 style="margin:0 0 12px">Your order has shipped</h2>
+
+<p>Hi {{ trigger.first_name | default: "there" }},</p>
+<p>Your order <strong>{{ trigger.ref }}</strong> is on its way.</p>
+<p>Carrier: {{ trigger.carrier }}<br>
+Tracking number: <strong>{{ trigger.tracking_number }}</strong></p>
+{% if trigger.tracking_url != "" %}<p><a href="{{ trigger.tracking_url }}" style="display:inline-block;padding:10px 18px;background:#18181B;color:#FFFFFF;text-decoration:none;border-radius:6px">Track your package</a></p>{% endif %}
+<p>Tracking can take up to 24 hours to show the first update.</p>
+{% if trigger.shipping_address != "" %}<p>Shipping to: {{ trigger.shipping_address }}</p>{% endif %}
+
+<p>All products are supplied for laboratory research use only. They are not medicines and are not for human or veterinary use.</p>
+<p>Best regards,<br>The BioLabs Research Team</p>
+
+<p style="margin:0;color:#52525B;font-size:13px">
+  Questions about this order? Reply to this email and include your order number, {{ trigger.ref }}.
+</p>

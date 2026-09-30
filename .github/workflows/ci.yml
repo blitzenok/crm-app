@@ -28,6 +28,13 @@ jobs:
       - name: Payment module tests (server/tests)
         run: npm test
 
+      - name: Module tests (products-api, crm-api)
+        run: |
+          # card import, mail outbox, customer letters, Telegram alerts / summary / stock, CRM transactional emails
+          files=$(find products-api/tests crm-api/tests -name '*.test.cjs' 2>/dev/null | sort)
+          if [ -z "$files" ]; then echo "no module tests yet"; exit 0; fi
+          node --test $files
+
       - name: Build the CRM screens (vite)
         run: npm run build
 

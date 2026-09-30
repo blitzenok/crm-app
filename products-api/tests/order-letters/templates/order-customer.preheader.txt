@@ -1,0 +1,1 @@
+{% if trigger.payment_state == "paid" %}Your payment is received and we are preparing your order.{% else %}We have your order and will be in touch shortly.{% endif %}
