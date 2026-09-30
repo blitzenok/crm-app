@@ -346,6 +346,9 @@ export function createCryptoCheckout(input, deps) {
             mismatch: pricing.mismatch,
             discountInfo: pricing.discountInfo,
             volumeDiscount: pricing.volumeDiscount || null,
+            // infra 2026-09-29 honest-charge: coupon-quote coupon/discount, so the crypto order email reconciles too
+            coupon: pricing.coupon || "",
+            discount: pricing.discount || null,
             lines: pricing.lines,
           },
           priceMismatch: pricing.mismatch,
