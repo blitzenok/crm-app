@@ -9,7 +9,10 @@
 // Which shop item is which warehouse SKU is the agents' map (config/rapid-sku-map[.draft].json, key <slug>-<mg>): their
 // inventory_code, or their product_id when it is a warehouse SKU code. Anything else is listed apart as "no warehouse SKU",
 // never guessed. Deleted message -> a new one is sent and pinned. Settings in the env file of the alerts (ENV_FILE):
-// TG_STOCK_MODE off|on, TG_ALERTS_TOPIC_STOCK, TG_STOCK_SALES_SINCE (optional: count sales from this moment).
+// TG_STOCK_MODE off|on, TG_ALERTS_TOPIC_STOCK, TG_STOCK_SALES_SINCE (optional: count sales from this moment), TG_STOCK_LOW_PCT.
+// Alerts in the same topic (owner 30.09), one message per run: new stock came in (the SKU's intake grew), running low (left at
+// or under TG_STOCK_LOW_PCT %, default 20, of what was there right after its last intake; 0 = off), out of stock. Each once,
+// until the next intake or a cancelled order lifts it back. The first run only remembers the figures.
 // Source: services/tg-alerts/ in biofirst-hosting; install — deploy/INSTALL.md.
 const fs = require('fs');
 const path = require('path');
@@ -17,7 +20,8 @@ const A = require('./tg-alerts.cjs');
 
 const DEFAULT_TZ = 'Asia/Jerusalem';
 const INVENTORY_URL = 'https://crm.biolabsresearch.co/crm/inventory-intake.html';
-const HEADING_SIZE = 5;
+const HEADING_SIZE = 6;   // the smallest; 5 still read too big for the pinned table (owner 30.09)
+const DEFAULT_LOW_PCT = 20;
 // orders-model.js GROUPS: toship = paid, payment-confirmed, processing; shipped = shipped, in-transit; delivered.
 const PAID_GROUPS = ['toship', 'shipped', 'delivered'];
 const MAX_UNMATCHED = 15;
@@ -40,7 +44,13 @@ function parseStock(env) {
   }
   let tz = String(e.TG_DAILY_TZ || '').trim() || DEFAULT_TZ;
   try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch (err) { tz = DEFAULT_TZ; }
-  return { mode, topic, sinceMs, tz, problems };
+  let lowPct = DEFAULT_LOW_PCT;
+  const rawPct = String(e.TG_STOCK_LOW_PCT || '').trim();
+  if (rawPct) {
+    if (/^([0-9]|[1-9][0-9])$/.test(rawPct)) lowPct = Number(rawPct);
+    else problems.push('TG_STOCK_LOW_PCT is not 0-99, using ' + DEFAULT_LOW_PCT);
+  }
+  return { mode, topic, sinceMs, tz, lowPct, problems };
 }
 
 function text(v) { return v === undefined || v === null ? '' : String(v).trim(); }
@@ -124,9 +134,6 @@ function message(res, opts) {
   const title = 'Stock · calculated';
   const blocks = [{ type: 'heading', size: HEADING_SIZE, text: ['📦 ', { type: 'bold', text: title }] }];
   const lines = ['📦 ' + title];
-  const note = 'Warehouse intakes minus paid orders. Not a shelf count.';
-  blocks.push({ type: 'paragraph', text: { type: 'italic', text: note } });
-  lines.push(note);
   if (res.rows.length) {
     const cells = [[cell('Item', 'left', true), cell('In', 'right', true), cell('Sold', 'right', true), cell('Left', 'right', true)]];
     for (const r of res.rows) {
@@ -152,10 +159,64 @@ function message(res, opts) {
     blocks.push({ type: 'table', is_compact: true, is_bordered: true, cells });
     lines.push(head + ': ' + shown.map(u => u.label + ' ×' + u.sold).join('; '));
   }
-  const foot = 'Updated ' + stamp(opts.nowMs, opts.tz) + ' · ' + res.paidOrders + ' paid order' + (res.paidOrders === 1 ? '' : 's') + ' counted';
+  const foot = 'Updated ' + stamp(opts.nowMs, opts.tz);
   blocks.push({ type: 'paragraph', text: foot });
   lines.push(foot, 'Inventory in CRM: ' + INVENTORY_URL);
   blocks.push({ type: 'buttons', buttons: [{ text: 'Inventory in CRM', url: INVENTORY_URL, style: 'primary' }] });
+  return { type: 'stock', text: lines.join('\n').slice(0, 4096), rich: { blocks, skip_entity_detection: true } };
+}
+
+// ---- alerts ----
+// rows: compute().rows; prev: what the last run remembered ({received, peak, level} by SKU code), none on the first run.
+// peak = what was there right after the SKU's last intake (or the most since: a cancelled order adds back); the low line is a
+// percent of it, not of everything ever received, which after a few deliveries would warn with a full shelf.
+// level: none (nothing ever came in; below zero shows in the table) | ok | low | out; an alert fires only when it gets worse.
+const RANK = { none: 0, ok: 0, low: 1, out: 2 };
+function levelOf(row, peak, pct) {
+  if (!(row.received > 0)) return 'none';
+  if (row.left <= 0) return 'out';
+  return pct > 0 && row.left <= peak * pct / 100 ? 'low' : 'ok';
+}
+function stockEvents(rows, prev, pct) {
+  const first = !prev || typeof prev !== 'object' || !prev.received;
+  const p = first ? { received: {}, peak: {}, level: {} } : { received: prev.received || {}, peak: prev.peak || {}, level: prev.level || {} };
+  const next = { received: {}, peak: {}, level: {} };
+  const intakes = [], low = [];
+  for (const r of rows) {
+    const before = Number(p.received[r.code]) || 0;
+    const came = !first && r.received > before;
+    const peak = first || came || !Number.isFinite(Number(p.peak[r.code])) ? r.left : Math.max(Number(p.peak[r.code]), r.left);
+    const level = levelOf(r, peak, pct);
+    if (came) intakes.push({ code: r.code, name: r.name, added: r.received - before, left: r.left });
+    else if (!first && RANK[level] > (RANK[p.level[r.code]] || 0)) low.push({ code: r.code, name: r.name, left: r.left, peak, out: level === 'out' });
+    next.received[r.code] = r.received;
+    next.peak[r.code] = peak;
+    next.level[r.code] = level;
+  }
+  return { intakes, low, next };
+}
+function alertMessage(ev) {
+  if (!ev.intakes.length && !ev.low.length) return null;
+  const title = ev.intakes.length && ev.low.length ? ['📦 ', 'Stock update'] : ev.intakes.length ? ['📥 ', 'New stock'] : ['⚠️ ', 'Stock running low'];
+  const blocks = [{ type: 'heading', size: HEADING_SIZE, text: [title[0], { type: 'bold', text: title[1] }] }];
+  const lines = [title.join('')];
+  if (ev.intakes.length) {
+    const cells = [[cell('Came in', 'left', true), cell('Added', 'right', true), cell('Now', 'right', true)]];
+    for (const x of ev.intakes) {
+      cells.push([cell(x.name), cell('+' + x.added, 'right'), cell(leftText(x.left), 'right')]);
+      lines.push(x.name + ': +' + x.added + ', now ' + x.left);
+    }
+    blocks.push({ type: 'table', is_compact: true, is_striped: true, cells });
+  }
+  if (ev.low.length) {
+    const cells = [[cell('Running low', 'left', true), cell('Left', 'right', true)]];
+    for (const x of ev.low) {
+      const t = x.out ? 'out of stock' : x.left + ' of ' + x.peak + ' (' + Math.round(x.left * 100 / x.peak) + '%)';
+      cells.push([cell(x.name), cell(x.out ? { type: 'bold', text: t } : t, 'right')]);
+      lines.push(x.name + ': ' + (x.out ? t : x.left + ' left of ' + x.peak + ' (' + Math.round(x.left * 100 / x.peak) + '%)'));
+    }
+    blocks.push({ type: 'table', is_compact: true, is_bordered: true, cells });
+  }
   return { type: 'stock', text: lines.join('\n').slice(0, 4096), rich: { blocks, skip_entity_detection: true } };
 }
 
@@ -224,25 +285,40 @@ function main() {
     res = compute({ inventory, map, records: OM.load(readJson(ORDERS)), ownAddresses: alertsCfg.ownAddresses, sinceMs: cfg.sinceMs });
   } catch (e) { log('ERROR data not read, table left as it was: ' + String((e && e.message) || e).slice(0, 200)); process.exitCode = 1; return; }
   const msg = message(res, { nowMs: Date.now(), tz: cfg.tz });
-  if (dry) { console.log(msg.text); return; }
+  let state = {};
+  try { state = readJson(STATE) || {}; } catch (e) { state = {}; }
+  const ev = stockEvents(res.rows, state.stock, cfg.lowPct);
+  const alert = alertMessage(ev);
+  if (dry) { console.log(msg.text + (alert ? '\n\n--- alert ---\n' + alert.text : '\n\n(no alert)')); return; }
   const tg = A.parseConfig(Object.assign({}, env, { TG_ALERTS_MODE: 'on', TG_ALERTS_SINCE: new Date().toISOString() }));
   if (!tg.token || !tg.chatId) { log('ERROR bot token or chat id missing, not sent'); process.exitCode = 1; return; }
   tg.topics = Object.assign({}, tg.topics, cfg.topic ? { stock: cfg.topic } : {});
-  let state = {};
-  try { state = readJson(STATE) || {}; } catch (e) { state = {}; }
+  const save = () => {
+    try {
+      fs.writeFileSync(STATE + '.tmp', JSON.stringify(state) + '\n');
+      fs.renameSync(STATE + '.tmp', STATE);
+    } catch (e) { log('ERROR state not written (a new table or a repeated alert may follow): ' + e.message); }
+  };
   publish(tg, state, msg, r => {
-    if (!r.ok) { log('ERROR not updated: ' + (r.status || '') + ' ' + (r.error || '') + ' (tried again next hour)'); process.exitCode = 1; return; }
-    if (r.richRefused) log('WARN sent not as meant: ' + r.richRefused);
-    if (r.action === 'sent' && !r.pinned) log('WARN new table message ' + r.messageId + ' not pinned: ' + (r.pinError || '') + ' (give the bot the Pin messages right)');
-    if (r.action === 'sent' || !state.createdAt) {
-      try {
-        fs.writeFileSync(STATE + '.tmp', JSON.stringify({ messageId: r.messageId, chatId: String(tg.chatId), topic: r.topic, createdAt: new Date().toISOString() }) + '\n');
-        fs.renameSync(STATE + '.tmp', STATE);
-      } catch (e) { log('ERROR sent but state not written (next hour sends another table): ' + e.message); }
+    if (!r.ok) { log('ERROR table not updated: ' + (r.status || '') + ' ' + (r.error || '') + ' (tried again next hour)'); process.exitCode = 1; }
+    else {
+      if (r.richRefused) log('WARN sent not as meant: ' + r.richRefused);
+      if (r.action === 'sent' && !r.pinned) log('WARN new table message ' + r.messageId + ' not pinned: ' + (r.pinError || '') + ' (give the bot the Pin messages right)');
+      if (r.action === 'sent' || !state.createdAt) Object.assign(state, { messageId: r.messageId, chatId: String(tg.chatId), topic: r.topic, createdAt: new Date().toISOString() });
+      log(r.action + ' ' + r.messageId + ': ' + res.rows.length + ' SKUs, ' + res.negative.length + ' below zero, ' + res.unmatched.length + ' unmatched, ' + res.paidOrders + ' paid orders');
     }
-    log(r.action + ' ' + r.messageId + ': ' + res.rows.length + ' SKUs, ' + res.negative.length + ' below zero, ' + res.unmatched.length + ' unmatched, ' + res.paidOrders + ' paid orders');
+    // The alert goes whatever happened to the table; its figures are remembered only once it is sent, so a failed one is
+    // tried again next hour.
+    if (!alert) { state.stock = ev.next; return save(); }
+    A.send(tg, alert, a => {
+      if (!a.ok) { log('ERROR alert not sent: ' + (a.status || '') + ' ' + (a.error || '') + ' (tried again next hour)'); process.exitCode = 1; return save(); }
+      if (a.richRefused) log('WARN alert sent not as meant: ' + a.richRefused);
+      state.stock = ev.next;
+      save();
+      log('alert ' + a.messageId + ': ' + ev.intakes.length + ' new stock, ' + ev.low.length + ' low/out');
+    });
   });
 }
 
 if (require.main === module) main();
-module.exports = { parseStock, shopKey, skuMap, compute, message, publish, PAID_GROUPS };
+module.exports = { parseStock, shopKey, skuMap, compute, message, publish, stockEvents, alertMessage, PAID_GROUPS };
