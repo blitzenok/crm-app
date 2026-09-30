@@ -3,7 +3,8 @@
 // tg-daily.cjs — the morning summary for the team's Telegram group (topic «daily stats»): yesterday's orders, paid revenue,
 // average order, new and returning buyers, payment methods, top items, and the month so far. Counted with the CRM's own
 // models (orders-model.js, finance-model.js — the rules of Finance Reports: "paid" by the payments on the order, by order
-// date), so the group and the CRM page never disagree. No name, address or e-mail goes out.
+// date), so the group and the CRM page never disagree. No name, address or e-mail goes out. Plus, when there are any, the line
+// "Paid > 24h, no tracking: N" with the order numbers (untrackedPaid): paid and still without a tracking number.
 // Run by cron every hour (/etc/cron.d/tg-daily); it sends once a day, from TG_DAILY_HOUR in TG_DAILY_TZ, for the day
 // before, and a failed send is tried again the next hour. Settings in the env file next to the alerts' (ENV_FILE):
 // TG_DAILY_MODE off|on, TG_DAILY_HOUR (0-23, default 9), TG_DAILY_TZ (default Asia/Jerusalem), TG_ALERTS_TOPIC_DAILY.
@@ -101,6 +102,34 @@ function stats(records, opts) {
   };
 }
 
+// "Paid, but no tracking number after 24 hours" (ad readiness 30.09): the warehouse order and the tracking number are still typed
+// by hand, so this is the morning check that nobody paid is forgotten. Not day-bound: everything that stands right now.
+// Paid = the statuses in which the money is in and the parcel is not yet delivered (paid / payment-confirmed / processing, and
+// shipped / in-transit without a number); delivered is history. The moment of payment: the last payment on the order, else the
+// last update (a status set by hand), else the order date. No date we can read: listed anyway, we cannot prove it is fresh.
+const UNTRACKED_AFTER_H = 24;
+const UNTRACKED_GROUPS = ['toship', 'shipped'];
+const UNTRACKED_LIST = 10;
+const ORDERS_URL = 'https://crm.biolabsresearch.co/crm/orders.html';
+function untrackedPaid(records, opts) {
+  const { now, OM } = opts;
+  const own = opts.ownAddresses instanceof Set ? opts.ownAddresses : new Set();
+  const out = [];
+  for (const r of Array.isArray(records) ? records : []) {
+    if (!r || r.kind !== 'order' || r.isTest || r.duplicateOf || !UNTRACKED_GROUPS.includes(r.group)) continue;
+    if (String(r.trackingNumber || '').trim() || own.has(String(r.email || '').trim().toLowerCase())) continue;
+    if (OM.paymentStatus(r).code === 'refunded') continue;
+    const paidTimes = (r.payments || []).filter(p => p.kind === 'payment').map(p => OM.whenMs(p.at)).filter(t => !Number.isNaN(t));
+    const t = paidTimes.length ? Math.max(...paidTimes) : [r.updatedAt, r.createdAt].map(s => OM.whenMs(s)).find(x => !Number.isNaN(x));
+    const hours = t === undefined ? null : Math.floor((now - t) / 3600000);
+    if (hours !== null && hours < UNTRACKED_AFTER_H) continue;
+    out.push({ ref: r.ref, amount: typeof r.toPay === 'number' && r.toPay > 0 ? r.toPay : null, hours });
+  }
+  // the longest waiting first; an unreadable date goes first (worst case)
+  return out.sort((a, b) => (b.hours === null ? Infinity : b.hours) - (a.hours === null ? Infinity : a.hours));
+}
+function ageLabel(h) { return h === null ? '' : h >= 48 ? Math.floor(h / 24) + 'd' : h + 'h'; }
+
 function usd(n) { return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function plain(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max); }
 function cell(text, align) { return { text, align: align || 'left', valign: 'middle' }; }
@@ -138,10 +167,26 @@ function message(s) {
       lines.push('Top: ' + s.top.map(t => plain(t.name, 60) + ' ×' + t.units).join('; '));
     }
   }
+  const stuck = Array.isArray(s.untracked) ? s.untracked : [];
+  if (stuck.length) {
+    const head = '⚠️ Paid > ' + UNTRACKED_AFTER_H + 'h, no tracking: ' + stuck.length;
+    const shown = stuck.slice(0, UNTRACKED_LIST);
+    const row = (u) => [plain(u.ref, 40), u.amount === null ? 'sum not set' : usd(u.amount), ageLabel(u.hours)].filter(Boolean);
+    const more = stuck.length - shown.length;
+    blocks.push({ type: 'paragraph', text: { type: 'bold', text: head } });
+    blocks.push({ type: 'table', is_compact: true, is_bordered: true, cells: shown.map(u => { const [ref, sum, age] = row(u); return [cell(ref), cell(sum, 'right'), cell(age || '', 'right')]; }) });
+    if (more > 0) blocks.push({ type: 'paragraph', text: { type: 'italic', text: '+' + more + ' more' } });
+    lines.push(head);
+    for (const u of shown) lines.push(row(u).join(' · '));
+    if (more > 0) lines.push('+' + more + ' more');
+    lines.push('Orders: ' + ORDERS_URL);
+  }
   const monthLine = s.month.label + ' so far: ' + usd(s.month.revenue) + ' · ' + s.month.paidOrders + ' paid order' + (s.month.paidOrders === 1 ? '' : 's');
   blocks.push({ type: 'paragraph', text: { type: 'bold', text: monthLine } });
   lines.push(monthLine, 'Finance Reports: ' + FINANCE_URL);
-  blocks.push({ type: 'buttons', buttons: [{ text: 'Finance Reports', url: FINANCE_URL, style: 'primary' }] });
+  const buttons = [{ text: 'Finance Reports', url: FINANCE_URL, style: 'primary' }];
+  if (stuck.length) buttons.push({ text: 'Orders', url: ORDERS_URL });
+  blocks.push({ type: 'buttons', buttons });
   return { type: 'daily', text: lines.join('\n'), rich: { blocks, skip_entity_detection: true } };
 }
 
@@ -175,7 +220,9 @@ function main() {
   const OM = require(path.join(CRM_DIR, 'orders-model.js'));
   const FM = require(path.join(CRM_DIR, 'finance-model.js'));
   const alertsCfg = A.parseConfig(Object.assign({}, env, { TG_ALERTS_MODE: 'on', TG_ALERTS_SINCE: env.TG_ALERTS_SINCE || new Date().toISOString() }));
-  const s = stats(OM.load(JSON.parse(fs.readFileSync(ORDERS, 'utf8'))), { day, tz: cfg.tz, OM, FM, ownAddresses: alertsCfg.ownAddresses });
+  const records = OM.load(JSON.parse(fs.readFileSync(ORDERS, 'utf8')));
+  const s = stats(records, { day, tz: cfg.tz, OM, FM, ownAddresses: alertsCfg.ownAddresses });
+  s.untracked = untrackedPaid(records, { now: Date.now(), OM, ownAddresses: alertsCfg.ownAddresses });
   const msg = message(s);
   if (dry) { console.log(msg.text); return; }
   if (!alertsCfg.token || !alertsCfg.chatId) { log('ERROR bot token or chat id missing, not sent'); process.exitCode = 1; return; }
@@ -186,9 +233,9 @@ function main() {
       fs.writeFileSync(STATE + '.tmp', JSON.stringify({ lastDay: day, sentAt: new Date().toISOString(), messageId: r.messageId }) + '\n');
       fs.renameSync(STATE + '.tmp', STATE);
     } catch (e) { log('ERROR sent but state not written (may repeat next hour): ' + e.message); }
-    log('sent ' + day + ': ' + s.orders + ' orders, ' + usd(s.revenue) + ' paid');
+    log('sent ' + day + ': ' + s.orders + ' orders, ' + usd(s.revenue) + ' paid, ' + s.untracked.length + ' paid without tracking');
   });
 }
 
 if (require.main === module) main();
-module.exports = { parseDaily, localYmd, dueDay, stats, message, prevYmd };
+module.exports = { parseDaily, localYmd, dueDay, stats, untrackedPaid, message, prevYmd };

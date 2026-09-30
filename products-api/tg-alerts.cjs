@@ -49,7 +49,8 @@ function parseConfig(env) {
   }
   // Topics of the forum group, one per alert type (owner 30.09); none set = the General chat. A bad id is left out, the rest works.
   const topics = {};
-  for (const [type, key] of [['order', 'TG_ALERTS_TOPIC_ORDER'], ['paid', 'TG_ALERTS_TOPIC_PAID'], ['daily', 'TG_ALERTS_TOPIC_DAILY']]) {
+  // contact has no General fallback (contactAllowed): a message nobody made a topic for is not announced.
+  for (const [type, key] of [['order', 'TG_ALERTS_TOPIC_ORDER'], ['paid', 'TG_ALERTS_TOPIC_PAID'], ['daily', 'TG_ALERTS_TOPIC_DAILY'], ['contact', 'TG_ALERTS_TOPIC_CONTACT']]) {
     const raw = String(e[key] || '').trim();
     if (!raw) continue;
     if (/^[1-9][0-9]{0,9}$/.test(raw)) topics[type] = Number(raw);
@@ -327,6 +328,79 @@ function messageFor(order, type, ctx) {
   return msg;
 }
 
+// ---- Contact form (30.09, ad readiness): "a new message on the website", once per message, into its own topic ----
+// The queue item is {kind: tg_contact, ref: <message id in messages.json>}; the message record goes where an order goes
+// (mail-outbox RECORD_KINDS). Mark: message.alerts.contact = {sentAt, messageId...} or {suppressedAt} (over the hourly limit).
+// Owner's rule as for orders: no name, e-mail, organisation, subject or text in the group, only when and where to read it.
+const CONTACT_KIND = 'tg_contact';
+const CONTACT_PER_HOUR = 20;
+const CONTACT_REPLY_HOURS = 12;   // the contact page promises "within 12 hours"
+const HOUR_MS = 3600 * 1000;
+const CRM_MESSAGES_URL = 'https://crm.biolabsresearch.co/crm/store-messages.html';
+
+function contactAllowed(msg, cfg) {
+  const c = cfg || {};
+  const no = (reason) => ({ ok: false, reason });
+  if (c.mode !== 'on') return no('mode_off');
+  if (!c.topics || !Number.isInteger(c.topics.contact)) return no('no_topic');
+  if (!msg || typeof msg !== 'object' || typeof msg.id !== 'string' || !msg.id) return no('no_message');
+  const email = typeof msg.email === 'string' ? msg.email.trim().toLowerCase() : '';
+  if (email && typeof c.isExcluded === 'function' && c.isExcluded(email)) return no('excluded');
+  if (email && c.ownAddresses instanceof Set && c.ownAddresses.has(email)) return no('own_test_address');
+  const made = Date.parse(msg.receivedAt);
+  if (!Number.isFinite(made)) return no('no_date');
+  if (!(made >= c.sinceMs)) return no('before_since');
+  const rec = alertsOf(msg).contact;
+  if (rec && typeof rec === 'object' && (rec.sentAt || rec.suppressedAt)) return no('already_sent');
+  return { ok: true };
+}
+function contactWithin(all, field, nowMs) {
+  let n = 0;
+  for (const m of Array.isArray(all) ? all : []) {
+    if (!m || typeof m !== 'object') continue;
+    const rec = alertsOf(m).contact;
+    const t = rec && typeof rec === 'object' ? Date.parse(rec[field]) : NaN;
+    if (Number.isFinite(t) && t > nowMs - HOUR_MS && t <= nowMs) n++;
+  }
+  return n;
+}
+function contactSentLastHour(all, nowMs) { return contactWithin(all, 'sentAt', nowMs); }
+function contactSuppressedLastHour(all, nowMs) { return contactWithin(all, 'suppressedAt', nowMs); }
+// The message that carries this hour's "+K more" line: the newest suppressed one with a count. Later suppressed messages
+// raise its count (and the Telegram message is edited) instead of sending another line.
+function contactOverflowHolder(all, nowMs) {
+  let best = null, bestAt = -Infinity;
+  for (const m of Array.isArray(all) ? all : []) {
+    if (!m || typeof m !== 'object') continue;
+    const rec = alertsOf(m).contact;
+    const t = rec && typeof rec === 'object' ? Date.parse(rec.suppressedAt) : NaN;
+    if (Number.isFinite(t) && t > nowMs - HOUR_MS && t <= nowMs && Number.isInteger(rec.count) && rec.count > 0 && t > bestAt) { best = m; bestAt = t; }
+  }
+  return best;
+}
+function utcMinute(ms) { return new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'; }
+function contactMessage(msg) {
+  const made = Date.parse(msg && msg.receivedAt);
+  const facts = Number.isFinite(made) ? [['Received', utcMinute(made)], ['Reply promised by', utcMinute(made + CONTACT_REPLY_HOURS * HOUR_MS)]] : [];
+  const title = 'New website contact message';
+  const blocks = [{ type: 'heading', size: HEADING_SIZE, text: ['✉️ ', { type: 'bold', text: title }] }];
+  if (facts.length) blocks.push({ type: 'table', is_compact: true, is_striped: true, cells: facts.map(([k, v]) => [cell(k), cell(v, 'right')]) });
+  blocks.push({ type: 'buttons', buttons: [{ text: 'Open Messages in CRM', url: CRM_MESSAGES_URL, style: 'primary' }] });
+  const text = ['✉️ ' + title].concat(facts.map(([k, v]) => k + ': ' + v), 'CRM: ' + CRM_MESSAGES_URL).join('\n');
+  return { type: 'contact', text, rich: { blocks, skip_entity_detection: true } };
+}
+// Over the hourly limit: one line for the rest of the hour instead of a message each (a flood of the form must not bury the group).
+function contactOverflowMessage(k) {
+  const n = Math.max(1, Math.floor(Number(k) || 1));
+  const title = '+' + n + ' more contact message' + (n === 1 ? '' : 's');
+  const note = 'Alert limit reached (' + CONTACT_PER_HOUR + ' per hour); the rest are not announced here. Open Messages in CRM.';
+  return {
+    type: 'contact', text: '✉️ ' + title + '\n' + note + '\nCRM: ' + CRM_MESSAGES_URL,
+    rich: { blocks: [{ type: 'heading', size: HEADING_SIZE, text: ['✉️ ', { type: 'bold', text: title }] }, { type: 'paragraph', text: note },
+      { type: 'buttons', buttons: [{ text: 'Open Messages in CRM', url: CRM_MESSAGES_URL, style: 'primary' }] }], skip_entity_detection: true }
+  };
+}
+
 function typeForKind(kind) {
   for (const t of TYPES) if (KIND[t] === kind) return t;
   return null;
@@ -405,5 +479,7 @@ module.exports = {
   TYPES, KIND, KINDS, PAID_STATUSES, CRM_ORDERS_URL,
   parseConfig, alertAllowed, coveredTypes, sentRecord, markAlert, alreadySent, priorPaidCount,
   orderText, paidText, textFor, richFor, messageFor, typeForKind, safeRef, send,
-  post   // tg-stock edits and pins its table with it
+  post,   // tg-stock edits and pins its table with it
+  CONTACT_KIND, CONTACT_PER_HOUR, CRM_MESSAGES_URL,
+  contactAllowed, contactMessage, contactOverflowMessage, contactSentLastHour, contactSuppressedLastHour, contactOverflowHolder
 };

@@ -2243,6 +2243,7 @@ function handleRequest(req, res) {
         };
         messages.unshift(newMsg);
         writeJsonAtomic(messagesFile, messages);
+        tgContactQueue(newMsg);   // tg-alerts: the team's Telegram group hears about the message
         res.setHeader('Content-Type', 'application/json');
         res.writeHead(200);
         res.end(JSON.stringify({ ok: true, id: newMsg.id }));
@@ -4151,6 +4152,7 @@ function mailOutboxSend(item, order, cb) {
   const done = (ok, status, errorText) => cb({ ok: ok, status: status, error: errorText });
   const skipped = () => cb({ ok: true, status: 'skipped' });
   const ref = order.ref || '';
+  if (item.kind === 'tg_contact') return tgContactSend(item, order, cb);   // tg-alerts: 'order' is the contact-form message here
   if (tgAlertsHandles(item.kind)) return tgAlertsSend(item, order, cb);   // tg-alerts: Telegram, not Customer.io
   if (item.kind === 'letter_restock') return restockSend(item, order, cb);   // restock: 'order' is the subscription record here
   if (orderLettersHandles(item.kind, order)) return orderLettersSend(item, order, cb);   // stage 1 RET: the four status letters and, with letters on, the confirmation
@@ -4198,7 +4200,7 @@ try {
       readDead: () => readJsonOrFallback(MAIL_OUTBOX_DEAD, []),
       writeDead: (list) => mailOutboxWrite(MAIL_OUTBOX_DEAD, list),
       readOrders: mailOutboxReadOrders,
-      findRecord: (kind, ref) => restockFind(ref),   // restock (2026-09-30): the record of a letter_restock item is a subscription
+      findRecord: (kind, ref) => kind === 'tg_contact' ? tgContactFind(ref) : restockFind(ref),   // restock (2026-09-30): the record of a letter_restock item is a subscription
       send: mailOutboxSend,
       intervalMs: Number(outboxEnv.MAIL_OUTBOX_INTERVAL_MS) || 60000
     });
@@ -4609,6 +4611,77 @@ function restockSend(item, sub, cb) {
   cioSendEmail(RESTOCK_ID, sub.email, sub.email, data, 'letter-restock', id, (ok, status, errorText) => {
     if (ok) restockMark(sub.id);
     cb({ ok: ok, status: status, error: errorText });
+  });
+}
+// Contact form -> Telegram (2026-09-30, ad readiness; services/tg-alerts/ in biofirst-hosting): POST /contact saved the message and told
+// nobody, while the page promises an answer in 12 hours. Now, with TG_ALERTS_MODE on and TG_ALERTS_TOPIC_CONTACT set (no topic = nothing
+// is sent), one line goes to that topic through the mail queue (kind tg_contact, ref = the message id): when, where to read it in the
+// CRM. No name, e-mail, subject or text. Mark: message.alerts.contact. At most CONTACT_PER_HOUR lines an hour; the rest become one
+// "+K more" line that is edited as K grows. The rules and the text are in tg-alerts.cjs.
+const TG_CONTACT_FILE = path.join(__dirname, 'messages.json');
+function tgContactRead() {
+  const list = readJsonOrFallback(TG_CONTACT_FILE, []);
+  if (!Array.isArray(list)) throw new Error('messages are not an array');
+  return list;
+}
+function tgContactFind(ref) { return tgContactRead().find(m => m && m.id === ref) || null; }
+function tgContactQueue(msg) {
+  try {
+    if (!tgAlerts || TG_ALERTS_CFG.mode === 'off' || !mailOutbox || !msg || !msg.id) return false;
+    const verdict = tgAlerts.contactAllowed(msg, TG_ALERTS_CFG);
+    if (!verdict.ok) { console.log('[tg-alerts] skip contact ' + tgAlerts.safeRef(msg.id) + ': ' + verdict.reason); return false; }
+    return mailOutbox.enqueue(tgAlerts.CONTACT_KIND, msg.id);
+  } catch (e) { console.error('[tg-alerts] ERROR contact not queued: ' + ((e && e.message) || e)); return false; }
+}
+// Notes a sent line (or a suppressed message) on the message; the file is read again: the visitor or the CRM may have written to it meanwhile.
+function tgContactMark(ref, rec) {
+  try {
+    const list = tgContactRead();
+    const found = list.find(m => m && m.id === ref);
+    if (!found) return;
+    tgAlerts.markAlert(found, 'contact', rec);
+    writeJsonAtomic(TG_CONTACT_FILE, list);
+  } catch (e) { console.error('[mail-alert] TG ALERT NOT RECORDED contact ' + tgAlerts.safeRef(ref) + ' was handled but not marked on the message (it could be sent again): ' + ((e && e.message) || e)); }
+}
+function tgContactSend(item, msg, cb) {
+  const skipped = () => cb({ ok: true, status: 'skipped' });
+  const verdict = tgAlerts.contactAllowed(msg, TG_ALERTS_CFG);
+  if (!verdict.ok) { console.log('[tg-alerts] skip contact ' + tgAlerts.safeRef(msg.id) + ': ' + verdict.reason); return skipped(); }
+  let all;
+  try { all = tgContactRead(); } catch (e) { return cb({ ok: false, status: 'orders_unreadable', error: 'messages.json: ' + ((e && e.message) || e) }); }
+  const now = Date.now();
+  if (tgAlerts.contactSentLastHour(all, now) >= tgAlerts.CONTACT_PER_HOUR) {
+    const holder = tgAlerts.contactOverflowHolder(all, now);
+    const suppressed = () => { tgContactMark(msg.id, { suppressedAt: new Date(now).toISOString() }); console.log('[tg-alerts] contact ' + tgAlerts.safeRef(msg.id) + ' over the hourly limit, not announced'); return skipped(); };
+    if (!holder) {
+      // The first one over the limit: the line itself. It is marked on this message, which then carries the count.
+      tgAlerts.send(TG_ALERTS_CFG, tgAlerts.contactOverflowMessage(1), r => {
+        if (!r.ok) return cb({ ok: false, status: r.status, error: r.error });
+        const rec = { suppressedAt: new Date(now).toISOString(), count: 1 };
+        if (Number.isInteger(r.messageId)) rec.messageId = r.messageId;
+        if (Number.isInteger(r.topic)) rec.topic = r.topic;
+        tgContactMark(msg.id, rec);
+        console.error('[mail-alert] TG CONTACT LIMIT ' + tgAlerts.CONTACT_PER_HOUR + ' per hour reached: the rest are not announced one by one (see CRM Messages)');
+        skipped();
+      });
+      return;
+    }
+    // More of them: the holder's count goes up and its Telegram message is edited to the new K; a failed edit is only a log line.
+    const prev = holder.alerts.contact;
+    const next = Object.assign({}, prev, { count: prev.count + 1 });
+    tgContactMark(holder.id, next);
+    if (Number.isInteger(prev.messageId)) {
+      const line = tgAlerts.contactOverflowMessage(next.count);
+      tgAlerts.post(TG_ALERTS_CFG, 'editMessageText', { chat_id: TG_ALERTS_CFG.chatId, message_id: prev.messageId, rich_message: line.rich }, e => {
+        if (!e.ok) console.error('[tg-alerts] contact "+K more" not edited: ' + (e.status || '') + ' ' + (e.error || ''));
+      });
+    }
+    return suppressed();
+  }
+  tgAlerts.send(TG_ALERTS_CFG, tgAlerts.contactMessage(msg), r => {
+    if (r.ok) { tgContactMark(msg.id, tgAlerts.sentRecord(r, TG_ALERTS_CFG)); console.log('[tg-alerts] sent contact ' + tgAlerts.safeRef(msg.id)); }
+    if (r.ok && r.richRefused) console.error('[mail-alert] TG RICH REFUSED contact ' + tgAlerts.safeRef(msg.id) + ', sent not as meant: ' + r.richRefused);
+    cb({ ok: r.ok, status: r.status, error: r.error });
   });
 }
 const server = http.createServer((req, res) => {
