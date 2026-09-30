@@ -26,10 +26,10 @@ const records = raws => OM.load(raws);
 test('costIndex: one entry per slug + strength, strengths compared without case and spaces', () => {
   const idx = FM.costIndex(COSTS);
   assert.equal(idx.size, 4);
-  assert.deepEqual(FM.itemCost({ slug: 'bpc-157', mg: '10mg' }, idx), { unit: 18, id: 'BC10' });
-  assert.deepEqual(FM.itemCost({ slug: 'BPC-157', mg: '10 MG' }, idx), { unit: 18, id: 'BC10' });
-  assert.deepEqual(FM.itemCost({ slug: 'retatrutide', mg: '10mg' }, idx), { unit: 30, id: 'RT10' });
-  assert.deepEqual(FM.itemCost({ slug: 'research-solvent', mg: '10mL' }, idx), { unit: 10, id: 'WA10' });
+  assert.deepEqual(FM.itemCost({ slug: 'bpc-157', mg: '10mg' }, idx), { unit: 18, id: 'BC10', source: '' });
+  assert.deepEqual(FM.itemCost({ slug: 'BPC-157', mg: '10 MG' }, idx), { unit: 18, id: 'BC10', source: '' });
+  assert.deepEqual(FM.itemCost({ slug: 'retatrutide', mg: '10mg' }, idx), { unit: 30, id: 'RT10', source: '' });
+  assert.deepEqual(FM.itemCost({ slug: 'research-solvent', mg: '10mL' }, idx), { unit: 10, id: 'WA10', source: '' });
 });
 
 test('itemCost: an unknown strength, a missing slug or an empty index give null (no guessing)', () => {
@@ -45,7 +45,7 @@ test('costIndex: broken input is skipped, not thrown', () => {
   const idx = FM.costIndex({ items: [null, { id: 'A', cost: 0, match: [{ slug: 'a', mg: '1mg' }] }, { id: 'B', cost: 'x', match: [{ slug: 'b', mg: '1mg' }] },
     { id: 'C', cost: 5, match: 'no' }, { id: 'D', cost: 7, match: [null, { slug: 'd' }, { slug: 'd', mg: '2mg' }] }] });
   assert.equal(idx.size, 1);
-  assert.deepEqual(FM.itemCost({ slug: 'd', mg: '2mg' }, idx), { unit: 7, id: 'D' });
+  assert.deepEqual(FM.itemCost({ slug: 'd', mg: '2mg' }, idx), { unit: 7, id: 'D', source: '' });
 });
 
 test('margin: product revenue = amount due minus shipping and card fee; cost = qty x unit cost; gift vial costs too', () => {
@@ -103,4 +103,19 @@ test('margin: does not change its input', () => {
   const before = JSON.stringify(list);
   FM.margin(list, FM.costIndex(COSTS));
   assert.equal(JSON.stringify(list), before);
+});
+
+test('cost basis: itemCost and product rows carry the source of the cost (purchase average or POD price)', () => {
+  const idx = FM.costIndex({ items: [
+    { id: 'PUR:bpc-157|10mg', cost: 12.5, source: 'purchase', match: [{ slug: 'bpc-157', mg: '10mg' }] },
+    { id: 'RT10', cost: 30, source: 'pod', match: [{ slug: 'g3-r', mg: '10mg' }] },
+    { id: 'OLD', cost: 9, match: [{ slug: 'semax', mg: '10mg' }] }
+  ] });
+  assert.deepEqual(FM.itemCost({ slug: 'bpc-157', mg: '10mg' }, idx), { unit: 12.5, id: 'PUR:bpc-157|10mg', source: 'purchase' });
+  assert.equal(FM.itemCost({ slug: 'semax', mg: '10mg' }, idx).source, '');
+  const m = FM.margin(records([order('E-1', [{ slug: 'bpc-157', mg: '10mg', qty: 2, price: 88, name: 'BPC-157' },
+    { slug: 'g3-r', mg: '10mg', qty: 1, price: 85, name: 'G3-R' }], { total_due_server: 261 })]), idx);
+  assert.equal(m.products.find(p => p.key === 'bpc-157|10mg').source, 'purchase');
+  assert.equal(m.products.find(p => p.key === 'g3-r|10mg').source, 'pod');
+  assert.equal(m.cost, 55);
 });

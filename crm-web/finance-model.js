@@ -235,9 +235,10 @@
     };
   }
 
-  // Gross margin (2026-09-30). Unit costs come from GET /api/unit-costs ({ items: [{ id, cost, match: [{ slug, mg }] }] },
-  // the supplier price list, column "POD Price"). A line is matched by slug + strength only; a strength missing from the
-  // list is reported as missing, never guessed from a neighbour.
+  // Gross margin (2026-09-30). Unit costs come from GET /api/unit-costs ({ items: [{ id, cost, source, match: [{ slug, mg }] }] }):
+  // source 'purchase' = weighted average purchase price of the warehouse stock (orders ship from the warehouse), 'pod' = the
+  // supplier's POD price where no purchase is recorded. A line is matched by slug + strength only; a strength missing from
+  // the list is reported as missing, never guessed from a neighbour.
   function mgKey(mg) { return String(mg || '').toLowerCase().replace(/\s+/g, ''); }
   function slugKey(slug) { return String(slug || '').trim().toLowerCase(); }
 
@@ -250,7 +251,7 @@
       if (typeof row.cost !== 'number' || !(cost > 0) || !Array.isArray(row.match)) return;
       row.match.forEach(function (m) {
         if (!m || !slugKey(m.slug) || !mgKey(m.mg)) return;
-        map.set(slugKey(m.slug) + '|' + mgKey(m.mg), { unit: cost, id: String(row.id || '') });
+        map.set(slugKey(m.slug) + '|' + mgKey(m.mg), { unit: cost, id: String(row.id || ''), source: typeof row.source === 'string' ? row.source : '' });
       });
     });
     return map;
@@ -260,7 +261,7 @@
     var slug = slugKey(i && i.slug);
     if (!slug || !index || typeof index.get !== 'function') return null;
     var hit = index.get(slug + '|' + mgKey(i.mg));
-    return hit ? { unit: hit.unit, id: hit.id } : null;
+    return hit ? { unit: hit.unit, id: hit.id, source: hit.source } : null;
   }
 
   // Product revenue of an order = amount due minus the shipping and card fee it charged (their cost to us is unknown,
@@ -291,7 +292,7 @@
         orderCostC += lineCostC;
         var key = slugKey(i.slug) + '|' + mgKey(i.mg);
         var e = rows[key];
-        if (!e) { e = rows[key] = { key: key, id: c.id, name: productName(i), mg: String(i.mg || '').trim(), units: 0, valueC: 0, costC: 0 }; rowKeys.push(key); }
+        if (!e) { e = rows[key] = { key: key, id: c.id, source: c.source, name: productName(i), mg: String(i.mg || '').trim(), units: 0, valueC: 0, costC: 0 }; rowKeys.push(key); }
         e.units += qty;
         e.valueC += cents(i.sum || 0);
         e.costC += lineCostC;
@@ -304,7 +305,7 @@
     var products = rowKeys.map(function (k) {
       var e = rows[k];
       var profitC = e.valueC - e.costC;
-      return { key: e.key, id: e.id, name: e.name, mg: e.mg, units: e.units, value: e.valueC / 100, cost: e.costC / 100,
+      return { key: e.key, id: e.id, source: e.source, name: e.name, mg: e.mg, units: e.units, value: e.valueC / 100, cost: e.costC / 100,
         profit: profitC / 100, pct: e.valueC > 0 ? profitC / e.valueC : null };
     }).sort(function (a, b) { return b.profit - a.profit || b.units - a.units; });
     var missing = missKeys.map(function (k) {

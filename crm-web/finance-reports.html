@@ -57,7 +57,7 @@
     <script src="crm.js?v=dc7b9e857b"></script>
     <script src="auth.js"></script>
     <script src="orders-model.js?v=3123f1cc3a"></script>
-    <script src="finance-model.js?v=2f0e52b33e"></script>
+    <script src="finance-model.js?v=16a1229df8"></script>
     <script src="crm-charts.js?v=4cc1a39a7f"></script>
 
 <div class="app-wrapper">
@@ -247,6 +247,7 @@ function render() {
   bodyOf('fin-repeat').innerHTML = repHtml;
 }
 
+var COST_BASIS = { purchase: 'Purchase avg', pod: 'POD price' };
 function marginPct(p) { return p === null ? '—' : Math.round(p * 1000) / 10 + '%'; }
 function marginHtml(selected, empty) {
   if (costsError) return '<div class="fin-error">' + esc(costsError) + '</div>';
@@ -260,11 +261,11 @@ function marginHtml(selected, empty) {
     '</div>';
   html += '<p class="fin-note" data-margin-coverage>' + esc(m.costed + ' of ' + m.orders + ' orders have a cost for every item; only they are in the totals above.') + '</p>';
   if (m.products.length) {
-    html += '<div class="fin-table-wrap"><table data-table="margin"><thead><tr><th>Product</th><th>Units</th><th>Value</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead><tbody>' +
+    html += '<div class="fin-table-wrap"><table data-table="margin"><thead><tr><th>Product</th><th>Units</th><th>Value</th><th>Cost</th><th>Profit</th><th>Margin</th><th>Cost basis</th></tr></thead><tbody>' +
       m.products.map(function (p) {
         var label = p.name + (p.mg ? ' ' + p.mg : '');
         return '<tr data-key="' + escAttr(p.key) + '"><td>' + esc(label) + '</td><td>' + esc(String(p.units)) + '</td><td>' + esc(money(p.value)) +
-          '</td><td>' + esc(money(p.cost)) + '</td><td>' + esc(money(p.profit)) + '</td><td>' + esc(marginPct(p.pct)) + '</td></tr>';
+          '</td><td>' + esc(money(p.cost)) + '</td><td>' + esc(money(p.profit)) + '</td><td>' + esc(marginPct(p.pct)) + '</td><td>' + esc(COST_BASIS[p.source] || '—') + '</td></tr>';
       }).join('') + '</tbody></table></div>';
   }
   if (m.missing.length) {
@@ -276,8 +277,9 @@ function marginHtml(selected, empty) {
       }).join('') + '</tbody></table></div>';
   }
   html += '<p class="fin-note">Product revenue = amount due minus the shipping and card fee charged (the discount is already in it). ' +
-    'Cost = POD price × qty (the per-unit price the supplier charges), the free solvent vial included. ' +
-    'Not in it: taxes, shipping, labels, COAs, processing and storage fees, card fees, ads.</p>';
+    'Cost = weighted average purchase price of that product across the warehouse purchase orders (orders ship from the warehouse); ' +
+    'the supplier POD price where no purchase is recorded. The free solvent vial is included. ' +
+    'Not in it: warehouse (Rapid) fees, inbound shipping, COAs and other per-order costs, card fees, ads.</p>';
   return html;
 }
 
