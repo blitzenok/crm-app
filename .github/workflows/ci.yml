@@ -1,0 +1,53 @@
+# Runs on every pull request to main and on every push to main.
+# A red check means: do not merge, the change breaks the payment module tests, the build or a server script.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20   # same major as the server (node v20 on the droplet)
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Payment module tests (server/tests)
+        run: npm test
+
+      - name: Build the CRM screens (vite)
+        run: npm run build
+
+      - name: Syntax check of server scripts (crm-api, products-api, crm-web)
+        run: |
+          found=0
+          for f in crm-api/*.cjs products-api/*.cjs crm-web/*.js; do
+            [ -f "$f" ] || continue
+            found=$((found+1))
+            node --check "$f"
+          done
+          echo "checked $found files"
+
+      - name: No secrets committed
+        run: |
+          # .env files and well-known key formats must never be in the repo (rule 4 of the git rules).
+          if git ls-files | grep -E '(^|/)\.env($|\.)|(^|/)[^/]*\.env$|\.pem$|\.key$'; then
+            echo "::error::an .env / key file is committed"; exit 1
+          fi
+          if git grep -nIE 'sk_live_[A-Za-z0-9]{10,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY|[0-9]{8,10}:AA[A-Za-z0-9_-]{30,}' -- ':!node_modules' ':!package-lock.json'; then
+            echo "::error::a secret-looking value is committed"; exit 1
+          fi
+          echo "no secrets found"
