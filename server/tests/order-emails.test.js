@@ -9,6 +9,7 @@ import { RUO_FOOTER, FOLLOWUP_QUESTION, orderTotals, renderEmail, h } from "../l
 import { createEmailLog, createOrderEmailer, emailConfig, registerEmailType, sampleOrder, maskEmail } from "../lib/order-emails.js";
 import { startCrmServer } from "../index.js";
 import { createMockChain, createMockScreener } from "./crypto-mock.js";
+import { couponQuoteFake } from "./helpers/coupon-quote-fake.js";
 
 const KEY = "test-marketing-digest-key";
 const TRC = `T${"9".repeat(33)}`;
@@ -248,13 +249,8 @@ test("routes: card checkout 200 even when SMTP throws; crypto mark-paid + tracki
   Object.assign(process.env, { PAYMENTS_ENABLED: "true", MARKETING_DIGEST_KEY: KEY, CRYPTO_USDT_TRC: TRC });
   const store = createStore({ memoryOnly: true });
   store.saveSettings({ processors: [{ id: "umg", enabled: true, priority: 1, mode: "sandbox" }, { id: "tagada", enabled: false, priority: 2, mode: "off" }, { id: "centrobill", enabled: false, priority: 3, mode: "off" }] });
-  const CATALOG = { "bpc-157": { "10mg": 88 } };
-  const quote = () => async (url, init) => {
-    const body = JSON.parse(init.body);
-    let sum = 0;
-    for (const it of body.items) { const u = CATALOG[it.slug][it.mg]; sum += (it.qty >= 2 ? Math.round(u * 89 / 99) : u) * it.qty; }
-    return { ok: true, status: 200, json: async () => ({ ok: true, subtotal: sum.toFixed(2) }) };
-  };
+  // infra 2026-09-29 honest-charge: whole-cart coupon-quote fake (total_due), see helpers/coupon-quote-fake.js
+  const quote = () => couponQuoteFake();
   let smtpCalls = 0;
   const logPath = tmpLog();
   // 2026-09-28: crypto mark-paid verifies the tx on-chain (mocked chain here)

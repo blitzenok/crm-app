@@ -5,7 +5,7 @@ import { createStore } from "./lib/store.js";
 import { secretHealth } from "./lib/secrets.js";
 import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
-import { pollPending, startPoller } from "./lib/poller.js";
+import { pollPending, startPoller, recoverInFlight } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
 import { priceCryptoCart, priceCardCart } from "./lib/pricing.js";
 import { createMockUmg } from "./lib/processors/umg.js";
@@ -53,12 +53,14 @@ import {
   nextStepFor,
   recordUmgRouting,
   routeCharge,
+  acquireKeyLock,
   startCleffoAttempt,
   startCleffoSweeper,
   storefrontReturnUrl,
 } from "./lib/cleffo-checkout.js";
-import { routingConfig } from "./lib/routing.js";
-import { loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
+import { routingConfig, capDecision } from "./lib/routing.js";
+import { logSafe } from "./lib/sanitize.js";
+import { getPaymentStatus, loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -80,6 +82,11 @@ function sharedInventoryStore() {
     seedInventory(defaultInventoryStore);
   }
   return defaultInventoryStore;
+}
+
+function isUnknownOutcome(order) {
+  const last = [...(order.attempts || [])].reverse()[0];
+  return order.status === "pending" && last?.reason === "unknown_outcome" && !last.processorTxnId;
 }
 
 function liveAdapters() {
@@ -170,7 +177,7 @@ export function createHandler(deps = {}) {
     // Replays of an approved / pending / in-flight order are answered from the stored order; no new price, no charge.
     if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return { ok: true, pricing: null };
     const pricing = await cardPricer(body || {});
-    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
+    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems, ...(pricing.error === "shipping_mismatch" ? { message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod } : {}) };
     return { ok: true, pricing };
   }
   // Consent proof log. A test that injects its own store gets no log unless it injects one too (never the live file).
@@ -216,6 +223,7 @@ export function createHandler(deps = {}) {
   // Cleffo: config / fetch injectable for tests; the routing config is read per request (env flags).
   const cleffoDeps = deps.cleffoDeps || {};
   const routingCfg = () => (deps.routingConfig ? deps.routingConfig() : routingConfig());
+  const callbackUnverified = new Set(); // one CLEFFO_CALLBACK_UNVERIFIED alert per order + reference
   const cleffoSigKey = () => (cleffoDeps.config || loadCleffoConfig()).signatureKey;
   // Transactional customer emails (confirmation / shipping / follow-up). A test with its own store gets no log file
   // unless it injects one. kickEmails never throws and never delays the response.
@@ -483,8 +491,23 @@ export function createHandler(deps = {}) {
         return json(503, paymentsDisabledBody());
       }
       const body = await readBody(req);
+      // infra 2026-09-29 cleffo: USD only, checked before anything is created or charged (either processor).
+      if (body?.currency != null && String(body.currency).trim() !== "" && String(body.currency).trim().toUpperCase() !== "USD") {
+        return json(400, { ok: false, error: "currency_unsupported", charged: false, message: "Only USD payments are supported. You were not charged." });
+      }
+      const rc0 = routingCfg();
+      const cleffoOnly = rc0.cleffoEnabled === true && rc0.cleffoOnly === true;
+      // Cleffo on: an email is always required (a bot without one must not slip past Cleffo to UMG).
+      if (rc0.cleffoEnabled === true && !String(body?.customer?.email || "").trim()) {
+        return json(400, { ok: false, error: "email_required", charged: false, message: "Please enter your email address to continue to secure payment. You were not charged." });
+      }
+      let route, config, cardKey, priced, umgRoute;
+      // Same order key: one request at a time through "route + price + create the link", so a double click cannot make two attempts.
+      const releaseKey = await acquireKeyLock(String(body?.idempotencyKey || body?.extOrderId || "").trim());
+      try {
       // Processor routing (UMG only unless CLEFFO_ENABLED=true): sticky email bucket, soft decline -> other once.
-      const { route, config, cardKey, reusable } = await routeCharge(db, body, { config: routingCfg(), cleffoDeps, onPaid: onCleffoPaid });
+      let reusable, history;
+      ({ route, config, cardKey, reusable, history } = await routeCharge(db, body, { config: routingCfg(), cleffoDeps, onPaid: onCleffoPaid }));
       if (route.blocked) {
         process.stdout.write(`[routing] refused attempt=${route.attempt} reason=${route.reason}\n`);
         const message = route.reason === "hard_decline_same_card"
@@ -492,24 +515,73 @@ export function createHandler(deps = {}) {
           : "We could not complete payment after several attempts. You were not charged on this attempt. Please contact support, pay with crypto, or request a quote.";
         return json(429, { ok: false, error: route.reason, charged: false, attempt: route.attempt, message });
       }
-      const priced = await priceCardBody(body);
+      priced = await priceCardBody(body);
       if (!priced.ok) {
-        const message = priced.error === "unknown_item"
+        const message = priced.error === "shipping_mismatch" && priced.message
+          ? priced.message
+          : priced.error === "unknown_item"
           ? "One of the items in your cart is no longer available. Please refresh the cart and try again."
           : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
-        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
+        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false, ...(priced.error === "shipping_mismatch" ? { shipping: priced.shipping, shipMethod: priced.shipMethod } : {}) });
       }
-      let umgRoute = route;
+      // infra 2026-09-29 honest-charge: same buyer, same server amount, same lines within 15 min under a NEW key = the browser
+      // lost our answer and retried. Do not charge again; point at the existing order. Same key is handled by chargeCart (reused).
+      const dupKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+      if (dupKey && !db.getOrderByIdempotency(dupKey)) {
+        const dup = db.findRecentCardDuplicate({
+          email: body?.customer?.email,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          items: body?.items,
+          excludeKey: dupKey,
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        });
+        if (dup) {
+          process.stdout.write(`[charge] duplicate_recent_order ${dup.id} for a new key: not charged again\n`);
+          return json(409, {
+            ok: false,
+            error: "duplicate_recent_order",
+            charged: false,
+            existingOrder: dup.id,
+            message: `This order was already placed a few minutes ago (order ${dup.id}). You were not charged again. If you want to buy again, please wait 15 minutes or contact support.`,
+          });
+        }
+      }
+      // Daily Cleffo cap (CLEFFO_DAILY_CAP_USD): today's PAID Cleffo total + open links younger than CLEFFO_CAP_PENDING_MIN (default 60) + this order's
+      // server total over the cap -> this new Cleffo payment goes to UMG instead (reason "cap"). docs/CLEFFO_DAILY_CAP.md.
       if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || body?.extOrderId || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
+      umgRoute = route;
+      // Capped to UMG but the page showed the Cleffo step (no card fields): ask for the card, nothing charged.
+      if (route.reason === "cap" && !hasCard(body)) {
+        return json(400, { ok: false, error: "card_required", processor: "umg", reason: "cap", charged: false, message: "Please enter your card details to pay. You were not charged." });
+      }
+      // Cleffo could not make a link and the storefront (Cleffo step, no card fields) sent no card: nothing to charge on UMG yet.
+      if (route.reason === "retry_switch_link_error" && !hasCard(body)) {
+        return json(400, { ok: false, error: "card_required", processor: "umg", charged: false, message: "Please enter your card details to pay. You were not charged." });
+      }
+      if (route.processor === "cleffo") {
+        if (cleffoOnly && body?.card) process.stdout.write("[routing] card_ignored\n"); // stale cached page still sends the card; it goes nowhere
         const cl = await startCleffoAttempt(db, {
           req, body, pricing: priced.pricing, route, config, consentLog, reusable,
           recordConsent: recordConsentFor(req, body),
-          publicUrl: PUBLIC_URL || deps.publicUrl || "",
+          publicUrl: PUBLIC_URL || deps.publicUrl || "", origin: req.headers.origin,
         }, { cleffoDeps });
         // Cleffo could not even create a link (no charge happened): UMG takes this attempt if the card is on hand.
-        if (!(cl.linkError && hasCard(body))) return json(cl.status, cl.body);
+        // Cleffo-only: never UMG, whatever the body carries.
+        // The spare is only for a plain "no link" answer, and only when no Cleffo link of this buyer is open or was left with an
+        // unknown outcome / a hard result (that one may still be paid: a UMG charge on top would be a double payment).
+        const spareBlocked = (history || []).some((h) => h.processor === "cleffo" && (!h.outcome || h.retryClass === "hard"));
+        if (!(cl.linkError && !cl.linkUnknown && hasCard(body) && !cleffoOnly && !spareBlocked)) return json(cl.status, cl.body);
         umgRoute = { ...route, processor: "umg", reason: "cleffo_unavailable_fallback" };
       }
+      } finally { releaseKey(); }
       const umgSettings = config.cleffoEnabled
         ? (() => { const st = db.getSettings(); return { ...st, processors: (st.processors || []).filter((p) => p.id === "umg") }; })()
         : undefined;
@@ -521,6 +593,15 @@ export function createHandler(deps = {}) {
       if (result.order) {
         result.chargedAmount = result.order.amount;
         result.priceAdjusted = Boolean(result.order.priceMismatch);
+      }
+      // infra 2026-09-29 honest-charge: UMG never answered and find-by-ext-id could not say whether the card was charged.
+      // Same shape as "pending" plus charged:"unknown", so the page keeps its retry key and does not offer a new attempt.
+      // A replay of an unfinished order (pending / 3DS / in flight) is pending too, never "authorized"; in flight = we do not know yet.
+      if (result.reused && result.order && String(result.order.status).toLowerCase() !== "approved") result.pending = true;
+      if (result.order && (isUnknownOutcome(result.order) || (result.reused && result.order.inFlight))) {
+        result.pending = true;
+        result.charged = "unknown";
+        result.message = "We are confirming your payment with the bank. Please do not pay again. If you do not receive an order confirmation within an hour, contact support.";
       }
       result.processor = "umg";
       result.attempt = result.order?.attemptNumber ?? umgRoute.attempt;
@@ -545,7 +626,8 @@ export function createHandler(deps = {}) {
       return out;
     }
 
-    // Which processor the next card attempt goes to (no side effects), so checkout can show card fields (UMG) or the
+    // Which processor the next card attempt goes to (creates no order and no charge; it does ask Cleffo about this buyer's open
+    // links, may mark a stale one abandoned, and remembers a capped buyer for the cap), so checkout can show card fields (UMG) or the
     // "continue to secure payment page" step (Cleffo) and the matching statement line.
     if (path === "/api/checkout/route" && req.method === "POST") {
       const body = await readBody(req);
@@ -553,8 +635,18 @@ export function createHandler(deps = {}) {
       if (!config.cleffoEnabled) {
         return json(200, { ok: true, processor: "umg", cleffoEnabled: false, attempt: 1, ...pickDesc(descriptorFor("umg")) });
       }
-      const { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
+      let { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
       if (route.blocked) return json(200, { ok: true, processor: null, blocked: true, reason: route.reason, cleffoEnabled: true, attempt: route.attempt });
+      // Daily Cleffo cap: /route has no cart total (amount only if the page sends one), so it answers umg once the day's
+      // Cleffo total is used up or this buyer was already capped (then /charge agrees).
+      if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config, amount: body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
       return json(200, { ok: true, processor: route.processor, cleffoEnabled: true, attempt: route.attempt, reason: route.reason, ...pickDesc(descriptorFor(route.processor)) });
     }
 
@@ -564,13 +656,13 @@ export function createHandler(deps = {}) {
       const a = url.searchParams.get("a") || "";
       const t = url.searchParams.get("t") || "";
       if (!verifyReturnToken(o, a, t, cleffoSigKey())) {
-        process.stdout.write(`[cleffo] return with bad token for ${o.slice(0, 40)}\n`);
+        process.stdout.write(`[cleffo] return with bad token for ${logSafe(o, 40)}\n`);
         res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
         return res.end("Invalid payment return link.");
       }
       const r = await confirmCleffoAttempt(db, o, a, { cleffoDeps, onPaid: onCleffoPaid, via: "return" });
       const status = r.ok ? r.status : "pending";
-      res.writeHead(302, { Location: storefrontReturnUrl(r.order || { id: o }, a, t, status), "Cache-Control": "no-store" });
+      res.writeHead(302, { Location: storefrontReturnUrl(r.order || { id: o }, a, t, status, process.env, r.attempt?.returnPage), "Cache-Control": "no-store" });
       return res.end();
     }
 
@@ -605,7 +697,41 @@ export function createHandler(deps = {}) {
       const sigState = sig ? (verifySignature(raw, sig, cleffoSigKey()) ? "valid" : "invalid") : "absent";
       const d = body.data && typeof body.data === "object" ? body.data : body;
       const ref = String(d.transaction_reference_number || d.transactionReferenceNumber || "").replace(/[^A-Za-z0-9_-]/g, "");
-      const found = ref ? db.findAttempt("cleffo", ref) : null;
+      let found = ref ? db.findAttempt("cleffo", ref) : null;
+      // A link whose creation timed out has no reference number on our side: match it by the merchant_order_id we sent. The
+      // callback is unsigned and that id is guessable (<order>A<n>), so the reference is taken only when Cleffo's own status
+      // API confirms it belongs to exactly that merchant_order_id; an attempt that already has a reference is never re-pointed.
+      if (!found) {
+        const byMerchant = db.findAttemptByMerchantId("cleffo", d.merchant_order_id ?? d.merchantOrderId);
+        const where = byMerchant ? `${logSafe(byMerchant.order.id, 40)} attempt=${byMerchant.attempt.routingAttempt}` : "";
+        if (byMerchant && !ref) {
+          process.stdout.write(`[cleffo] callback ref_missing ${where} (no transaction reference in the callback)\n`);
+        } else if (byMerchant && byMerchant.attempt.processorTxnId) {
+          process.stdout.write(`[cleffo] callback ref_conflict ${where} (already has a reference, not replaced)\n`);
+        } else if (byMerchant && byMerchant.attempt.processorStatus === "LINK_UNKNOWN") {
+          const st = await getPaymentStatus(ref, cleffoDeps);
+          if (!st.ok) {
+            // Cleffo's own status API did not answer: nothing can be confirmed. Nothing is written; 503 so Cleffo can send it again.
+            const seen = `${byMerchant.order.id}#${ref}`;
+            if (!callbackUnverified.has(seen)) {
+              callbackUnverified.add(seen);
+              process.stdout.write(`[pay-alert] CLEFFO_CALLBACK_UNVERIFIED ${where} ref=${logSafe(ref, 60)}\n`);
+            }
+            return json(503, { ok: false, error: "verification_unavailable" });
+          }
+          if (st.merchantOrderId === byMerchant.attempt.merchantOrderId) {
+            const o = db.getOrder(byMerchant.order.id);
+            const i = o.attempts.findIndex((x) => x.attemptId === byMerchant.attempt.attemptId);
+            if (i !== -1 && !o.attempts[i].processorTxnId) {
+              o.attempts[i] = { ...o.attempts[i], processorTxnId: ref, processorStatus: "LINK_CREATED", reason: "link_recovered_by_callback" };
+              db.upsertOrder(o);
+              found = db.findAttempt("cleffo", ref);
+            }
+          } else {
+            process.stdout.write(`[cleffo] callback ref_rejected ${where} (Cleffo does not tie that reference to this merchant_order_id)\n`);
+          }
+        }
+      }
       process.stdout.write(`[cleffo] callback ref=${ref || "-"} signature=${sigState} known=${Boolean(found)}\n`);
       if (!found) return json(200, { ok: false, error: "unknown_transaction" });
       const r = await confirmCleffoAttempt(db, found.order.id, found.attempt.routingAttempt, { cleffoDeps, onPaid: onCleffoPaid, via: "callback" });
@@ -628,6 +754,9 @@ export function createHandler(deps = {}) {
       if (cryptoPricer && !(idemKey && db.getOrderByIdempotency(idemKey)) && Array.isArray(body?.items) && body.items.length) {
         pricing = await cryptoPricer(body);
         if (!pricing.ok) {
+          if (pricing.error === "shipping_mismatch") {
+            return json(400, { ok: false, error: "shipping_mismatch", charged: false, message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod });
+          }
           return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
         }
       }
@@ -1053,6 +1182,7 @@ export function startCrmServer(port = PORT, deps = {}) {
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   sharedInventoryStore();
+  recoverInFlight(store);
   startPoller(store, { intervalMs: Number(process.env.UMG_POLL_MS || 30000), adapters: liveAdapters() });
   if (process.env.STORE_FORWARD_ENABLED === "true") {
     // Picks up approvals that arrive via webhook/poll and retries failed forwards (backoff inside).
