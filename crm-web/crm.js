@@ -196,6 +196,7 @@
         { key: 'marketing-segments', icon: '🎯', label: 'Segments', m: 1 },
         { key: 'marketing-emails', icon: '📝', label: 'Emails', m: 1 },
         { key: 'marketing-journeys', icon: '🧭', label: 'Journeys', m: 1 },
+        { key: 'automations', icon: '⚡', label: 'Automations', m: 1 },
         { key: 'marketing-newsletter', icon: '📨', label: 'Newsletter', m: 1 },
         { key: 'reports', icon: '📈', label: 'Leads Reports', m: 1 }
       ] },

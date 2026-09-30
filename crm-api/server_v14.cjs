@@ -1670,6 +1670,16 @@ try {
   console.error('⚠️ customer-timeline.cjs not mounted:', e.message);
 }
 
+// Automations (2026-10-01): the live status of the shop's automations for the CRM page Automations, read only
+// (GET /api/automations/status). Staff only (requireAuth on the mount); the module reads a white list of .env keys, status
+// files and queue counts and sends nothing. Wrapped like the mounts above: a broken module must not take the login down.
+try {
+  app.use('/api/automations/status', requireAuth, require('./automations-status.cjs')({}));
+  console.log('✅ automations-status.cjs mounted (/api/automations/status)');
+} catch (e) {
+  console.error('⚠️ automations-status.cjs not mounted:', e.message);
+}
+
 // Unit costs (2026-09-30): the supplier price list for the gross margin on Finance Reports (GET /api/unit-costs).
 // Staff only; data/unit-costs.json is read per request. Wrapped like the mounts above.
 try {

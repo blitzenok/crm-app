@@ -2,120 +2,401 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<link rel="manifest" href="/crm/manifest.json">
-<meta name="theme-color" content="#1B2A4A">
-<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
-<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
 <title>BioLabs Research</title>
 <link rel="stylesheet" href="crm.css?v=05fa5a1bda">
 <style>
-/* automations-only styling; everything shared lives in crm.css */
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
-.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
-.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
-.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
-.empty{text-align:center;padding:48px 20px;color:#5A6685;}
-.empty-icon{font-size:36px;margin-bottom:10px;opacity:.6;}
-.empty-title{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
-.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
-thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
-tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
-.badge-green{background:#E8F5E9;color:#2E7D32;}
-.badge-gray{background:#E8ECF4;color:#5A6685;}
-.badge-amber{background:#FFF8EC;color:#D97706;}
-.badge-red{background:#FEF2F2;color:#C62828;}
-.health{width:10px;height:10px;border-radius:50%;display:inline-block;}
-.health.green{background:#0E9F6E;}
-.health.yellow{background:#F59E0B;}
-.health.red{background:#E02424;}
-.grid-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
-.auto-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;}
-.auto-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.auto-name{font-size:14px;font-weight:700;color:#1a1a2e;}
-.auto-desc{font-size:12px;color:#5A6685;line-height:1.5;margin:8px 0 14px;}
-.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
-.rule-row{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:8px;align-items:center;}
-.seg-list{display:flex;flex-direction:column;gap:8px;}
-.seg-item{border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
-.note{font-size:12px;color:#5A6685;margin-top:8px;}
-:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
-.coming-soon{ background:#FFF4E5; border:1px solid #F5C26B; color:#7A4B00; padding:10px 14px; border-radius:8px; margin:0 0 16px; font-size:13px; }
-/* page-only mobile rules (the shared mobile layout is in crm.css) */
-@media(max-width:768px){
-.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
-.grid-cards{grid-template-columns:1fr;}
-.rule-row{grid-template-columns:1fr;}
-}
+/* automations-only styling; everything shared lives in crm.css. No tables on purpose: crm.css hides the header and the
+   first column of every table on a phone, and cards read the same on both. No min-width anywhere. */
+.section{margin-bottom:26px;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#991B1B;margin-bottom:20px;}
+.banner-error b{display:block;margin-bottom:3px;font-size:13px;}
+.summary-ok{background:#EDFBF4;border:1px solid #A7E3C6;border-radius:12px;padding:12px 18px;font-size:12.5px;color:#0B6B4A;margin-bottom:20px;}
+.summary-warn{background:#FEF3C7;border:1px solid #FCD34D;border-radius:12px;padding:12px 18px;font-size:12.5px;color:#7A4B06;margin-bottom:20px;}
+.summary-warn div+div,.summary-ok div+div{margin-top:4px;}
+.counts{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+.count{background:#fff;border:1px solid #E8ECF4;border-radius:10px;padding:8px 14px;font-size:12px;color:#5A6685;}
+.count b{font-size:16px;color:#1B2A4A;margin-right:4px;}
+.muted{color:#7A869A;}
+.hint{font-size:11.5px;color:#7A869A;margin-top:6px;}
+.gtitle{font-size:14px;font-weight:700;color:#1B2A4A;margin:0 0 2px;}
+.gsub{font-size:12px;color:#7A869A;margin:0 0 12px;}
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;}
+.acard{background:#fff;border:1px solid #E8ECF4;border-left-width:4px;border-radius:12px;padding:14px 16px;min-width:0;}
+.acard.h-green{border-left-color:#0E9F6E;}
+.acard.h-yellow{border-left-color:#F59E0B;}
+.acard.h-red{border-left-color:#DC2626;}
+.acard.h-gray{border-left-color:#CBD5E1;}
+.ahead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+.aname{font-size:13.5px;font-weight:700;color:#1B2A4A;flex:1;min-width:0;overflow-wrap:anywhere;}
+.adesc{font-size:12px;color:#5A6685;line-height:1.5;margin-bottom:8px;overflow-wrap:anywhere;}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+.b-on{background:#E8F5E9;color:#2E7D32;}
+.b-test{background:#FFF8EC;color:#D97706;}
+.b-dry{background:#E8F0FE;color:#1D4ED8;}
+.b-off{background:#E8ECF4;color:#5A6685;}
+.b-unknown{background:#FEF2F2;color:#C62828;}
+.b-planned{background:#F3F5FB;color:#5A6685;border:1px dashed #CBD5E1;}
+.arow{display:flex;gap:8px;font-size:12.5px;color:#2D3654;margin-top:5px;overflow-wrap:anywhere;}
+.arow .k{flex:0 0 76px;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#7A869A;font-weight:600;padding-top:2px;}
+.arow .v{flex:1;min-width:0;}
+.arow .v small{color:#7A869A;}
+.aprob{border-radius:8px;padding:6px 10px;font-size:12px;margin-top:8px;overflow-wrap:anywhere;}
+.aprob.bad{background:#FEF2F2;color:#991B1B;border:1px solid #FCA5A5;}
+.aprob.warn{background:#FFF8EC;color:#7A5B18;border:1px solid #F5DFAE;}
+.aprob.info{background:#F3F5FB;color:#5A6685;border:1px solid #E8ECF4;}
+.alink{font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid #E8ECF4;color:#1B2A4A;text-decoration:none;display:inline-block;background:#fff;margin-top:8px;}
+.alink:hover{background:#E8ECF4;}
+.nb{border-style:dashed;}
 </style>
 </head>
 <body>
-<script src="crm-utils.js"></script>
-<script src="crm.js?v=d91d6eb09f"></script>
-<script src="auth.js"></script>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
 <div class="app-wrapper">
-<aside class="sidebar">
-  <div id="crm-nav" class="crm-nav"></div>
-</aside>
-<div class="main">
-  <header class="topbar">
-    <div class="topbar-title">⚡ Automations <span>Behavioral flows</span></div>
-  </header>
-  <div class="content">
-    <div class="coming-soon">Coming soon — this section is a preview and is not connected yet.</div>
-
-<div id="cio-empty" class="card empty" style="display:none">
-  <div class="empty-icon">⚡</div>
-  <div class="empty-title">Connect Customer.io to see automations.</div>
-  <div>Behavioral flows and pause/resume controls will appear here after Customer.io is connected.</div>
-</div>
-<div id="cio-ready" style="display:none">
-  <div class="grid-cards" id="auto-grid"></div>
-</div>
-
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Automations <span>&mdash; what runs by itself, and is it healthy</span></div>
+      <span class="muted" id="fetchedAt" style="font-size:12px"></span>
+      <button class="refresh-btn" onclick="loadAll(true)">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+      <div id="banner"></div>
+      <div id="summary"></div>
+      <div id="groups"><div class="muted">Loading&hellip;</div></div>
+      <div class="hint" id="footnote"></div>
+    </div>
   </div>
 </div>
-</div>
+
 <script>
 renderNav('automations');
-const API='/api';
-async function cioStatus(){
-  try{
-    // {toast:false}: a missing Customer.io is not an error here - the page shows its own "Connect Customer.io" card
-    const d=await api(API+'/cio/status',{toast:false});
-    return d || {configured:false};
-  }catch(e){ return {configured:false}; }
+
+var MIN = 60000, HOUR = 3600000, DAY = 86400000;
+var MAIL_KIND = { confirmation: 'mail_customer', paid: 'letter_paid', shipped: 'letter_shipped', in_transit: 'letter_in_transit', delivered: 'letter_delivered' };
+
+/* ── small helpers (pure; the page test runs them in a vm) ────────────────────────────────── */
+
+function ms(iso) { var t = typeof iso === 'string' && iso ? Date.parse(iso) : NaN; return isFinite(t) ? t : NaN; }   // a number or null is never a date
+function ago(iso, now) {
+  var t = ms(iso);
+  if (!isFinite(t)) return 'never';
+  var d = now - t;
+  if (d < 0) d = 0;
+  if (d < 90 * 1000) return 'just now';
+  if (d < HOUR) return Math.round(d / MIN) + ' min ago';
+  if (d < 2 * DAY) return Math.round(d / HOUR) + ' h ago';
+  return Math.round(d / DAY) + ' days ago';
+}
+function dur(d) {   // a length of time, for "oldest waiting" and thresholds
+  if (d < HOUR) return Math.max(1, Math.round(d / MIN)) + ' min';
+  if (d < 2 * DAY) return Math.round(d / HOUR) + ' h';
+  return Math.round(d / DAY) + ' days';
+}
+function stale(iso, limit, now) { var t = ms(iso); return !isFinite(t) || now - t > limit; }
+function badge(mode) {
+  if (mode === 'on') return { label: 'On', cls: 'b-on' };
+  if (mode === 'test') return { label: 'Test', cls: 'b-test' };
+  if (mode === 'dry') return { label: 'Dry-run', cls: 'b-dry' };
+  if (mode === 'off') return { label: 'Off', cls: 'b-off' };
+  if (mode === 'planned') return { label: 'Not built yet', cls: 'b-planned' };
+  return { label: 'Unknown', cls: 'b-unknown' };
+}
+function modeOf(st, key) {
+  if (!st.modes || (st.errors && st.errors.env)) return 'unknown';   // the settings file could not be read
+  var v = st.modes[key];
+  return v === null || v === undefined ? 'off' : v;
+}
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+
+/* ── the cards ────────────────────────────────────────────────────────────────────────────── */
+
+// A card: { id, name, desc, mode, since, last: {label, iso, note}, facts: [[key, text]], problems: [{level, text}], link }
+// mode is one of on|test|dry|off|unknown|planned; the health dot follows the problems, not the mode.
+function newCard(id, name, desc, mode) {
+  return { id: id, name: name, desc: desc, mode: mode, since: null, last: null, facts: [], problems: [], link: null };
+}
+function bad(c, t) { c.problems.push({ level: 'bad', text: t }); }
+function warn(c, t) { c.problems.push({ level: 'warn', text: t }); }
+function info(c, t) { c.problems.push({ level: 'info', text: t }); }   // a grey note: does not change the dot and is not counted as a thing to fix
+function health(c) {
+  if (c.mode === 'off' || c.mode === 'planned') return 'gray';
+  if (c.problems.some(function (p) { return p.level === 'bad'; })) return 'red';
+  if (c.problems.some(function (p) { return p.level === 'warn'; }) || c.mode === 'unknown') return 'yellow';
+  return 'green';
 }
 
-const FLOWS = [
-  {id:'welcome', name:'Welcome series', desc:'New lead nurture — research-use-only intro sequence.', health:'green'},
-  {id:'reengage', name:'Re-engagement', desc:'Quiet leads who have not opened in 30 days.', health:'yellow'},
-  {id:'post-order', name:'Post-order follow-up', desc:'After first PO — documentation and reorder timing.', health:'green'},
-  {id:'bounce-watch', name:'Bounce / suppress watch', desc:'Flags hard bounces and unsubscribes.', health:'red'}
-];
-function isAdmin(){
-  try{ const u=JSON.parse(localStorage.getItem('crm_user')||'{}'); return u.role==='admin'; }catch{return false;}
+// Mail-queue trouble for the queue kinds a card lives on: items waiting too long, items that failed for good.
+function queueProblems(c, st, kinds, now) {
+  var q = st.queue;
+  if (!q) return;
+  var waiting = 0, dead = 0, deadAll = 0;
+  kinds.forEach(function (k) {
+    waiting += (q.byKind && q.byKind[k]) || 0;
+    dead += (q.dead7dByKind && q.dead7dByKind[k]) || 0;
+    deadAll += (q.deadByKind && q.deadByKind[k]) || 0;
+  });
+  // red only for what failed in the last 7 days; older failures are a grey line, the list stays on the server
+  if (dead > 0) bad(c, plural(dead, 'message', 'messages') + ' gave up after all retries in the last 7 days (kept in the failed list on the server)');
+  if (deadAll > dead) info(c, plural(deadAll - dead, 'older failed message', 'older failed messages') + ' in the failed list (more than 7 days ago)');
+  if (waiting > 0 && q.oldestAt) {
+    var age = now - ms(q.oldestAt);
+    // the oldest waiting item in the whole queue is not necessarily ours; say "in the queue", and only colour it when it is old
+    if (age > 2 * HOUR) warn(c, plural(waiting, 'message is', 'messages are') + ' waiting in the queue; the oldest item of the queue is ' + dur(age) + ' old');
+  }
 }
-(async function(){
-  const st = await cioStatus();
-  if(!st.configured){ document.getElementById('cio-empty').style.display='block'; return; }
-  document.getElementById('cio-ready').style.display='block';
-  const admin = isAdmin();
-  document.getElementById('auto-grid').innerHTML = FLOWS.map(f=>`
-    <div class="auto-card">
-      <div class="auto-top">
-        <div class="auto-name">${esc(f.name)}</div>
-        <span class="health ${escAttr(f.health)}" title="${escAttr(f.health)}"></span>
-      </div>
-      <div class="auto-desc">${esc(f.desc)}</div>
-      <div>
-        <button class="btn btn-secondary" ${admin?'':'disabled'} onclick="showToast('Pause queued — Customer.io will apply this when live')">Pause</button>
-        <button class="btn btn-primary" ${admin?'':'disabled'} onclick="showToast('Resume queued — Customer.io will apply this when live')">Resume</button>
-      </div>
-    </div>`).join('');
-})();
+function needOutbox(c, st) {
+  if ((c.mode === 'on' || c.mode === 'test') && modeOf(st, 'MAIL_OUTBOX_MODE') !== 'on') bad(c, 'The email queue is off, so order letters, Telegram order alerts and restock letters are not sent at all (only the manager\'s e-mail and Customer.io events still go out directly)');
+}
+function sentFact(c, rec, label) {
+  if (!rec) return;
+  c.last = { label: label, iso: rec.lastSentAt, note: rec.count + ' in total' };
+  if (!rec.count) c.last = { label: label, iso: null, note: 'nothing sent yet' };
+}
 
+function buildGroups(st, now) {
+  var groups = [];
+  var LET = st.letters || null;
+
+  /* Order emails */
+  var g1 = { id: 'order-emails', title: 'Order emails', sub: 'Letters the buyer gets about an order.', cards: [] };
+  var lm = modeOf(st, 'ORDER_LETTERS_MODE');
+  [
+    ['confirmation', 'Order confirmation', 'Confirms the order right after it is placed.'],
+    ['paid', 'Payment received', 'Tells the buyer the payment arrived (card orders are covered by the confirmation).'],
+    ['shipped', 'Shipped', 'Sends the tracking number when the order is marked shipped.'],
+    ['in_transit', 'In transit', 'Tells the buyer the parcel is on its way.'],
+    ['delivered', 'Delivered', 'Tells the buyer the parcel arrived.']
+  ].forEach(function (d) {
+    var c = newCard('letter-' + d[0], d[1], d[2], lm);
+    c.since = st.since && st.since.ORDER_LETTERS_SINCE;
+    if (LET) sentFact(c, LET[d[0]], 'Last sent');
+    if (lm === 'test') c.facts.push(['Mode', 'Test: only the test addresses get these letters.']);
+    needOutbox(c, st);
+    queueProblems(c, st, [MAIL_KIND[d[0]]], now);
+    g1.cards.push(c);
+  });
+  var qm = modeOf(st, 'MAIL_OUTBOX_MODE');
+  var qc = newCard('mail-outbox', 'Email queue', 'Keeps every letter and alert until it is delivered, and retries for 48 hours if a service is down.', qm);
+  if (st.queue) {
+    qc.facts.push(['Waiting', st.queue.waiting + (st.queue.retrying ? ' (' + st.queue.retrying + ' retrying)' : '')]);
+    qc.facts.push(['Failed', st.queue.dead7d + ' in the last 7 days' + (st.queue.deadTotal > st.queue.dead7d ? ', ' + st.queue.deadTotal + ' in the list' : '')]);
+    var kinds = Object.keys(st.queue.byKind || {});
+    if (kinds.length) qc.facts.push(['By kind', kinds.map(function (k) { return k + ' ×' + st.queue.byKind[k]; }).join(', ')]);
+    if (st.queue.dead7d > 0) bad(qc, plural(st.queue.dead7d, 'message', 'messages') + ' gave up after all retries in the last 7 days' + (st.queue.lastDeadAt ? ' (latest ' + ago(st.queue.lastDeadAt, now) + ')' : ''));
+    else if (st.queue.deadTotal > 0) info(qc, plural(st.queue.deadTotal, 'older failed message', 'older failed messages') + ' in the failed list (more than 7 days ago)');
+    if (st.queue.waiting > 0 && st.queue.oldestAt) {
+      var qa = now - ms(st.queue.oldestAt);
+      if (qa > 6 * HOUR) bad(qc, 'The oldest message has waited ' + dur(qa));
+      else if (qa > 2 * HOUR) warn(qc, 'The oldest message has waited ' + dur(qa));
+    }
+  }
+  if (qm === 'off') qc.facts.push(['Note', 'Off: order letters, Telegram order alerts and restock letters are not sent. Only the manager\'s e-mail and Customer.io events go out directly, once, without retries.']);
+  g1.cards.push(qc);
+  groups.push(g1);
+
+  /* Restock */
+  var g2 = { id: 'restock', title: 'Restock alerts', sub: 'Tells people who clicked "Notify me" when a product is back.', cards: [] };
+  var rc = newCard('restock', 'Back-in-stock letter', 'One letter per person and product when it returns to stock.', modeOf(st, 'RESTOCK_MODE'));
+  if (st.restock) {
+    rc.facts.push(['Waiting', plural(st.restock.pending, 'person', 'people') + ' waiting for a product']);
+    rc.last = st.restock.sent ? { label: 'Last sent', iso: st.restock.lastSentAt, note: st.restock.sent + ' in total' } : { label: 'Last sent', iso: null, note: 'nothing sent yet' };
+  }
+  if (rc.mode === 'test') rc.facts.push(['Mode', 'Test: only the test addresses get the letter.']);
+  needOutbox(rc, st);
+  queueProblems(rc, st, ['letter_restock'], now);
+  g2.cards.push(rc);
+  groups.push(g2);
+
+  /* Reviews */
+  var g3 = { id: 'reviews', title: 'Reviews & ratings', sub: 'Product reviews from verified buyers.', cards: [] };
+  var vc = newCard('reviews', 'Reviews & ratings', 'Buyers rate a product and may leave a text review; text reviews are published after approval.', modeOf(st, 'REVIEWS_MODE'));
+  if (vc.mode === 'off' && st.modes && st.modes.REVIEWS_MODE === null) vc.facts.push(['Note', 'No setting for this yet: the module may not be installed.']);
+  if (vc.mode === 'on' || vc.mode === 'test') vc.link = { href: 'reviews.html', label: 'Open Reviews' };   // the page comes with the reviews module
+  g3.cards.push(vc);
+  groups.push(g3);
+
+  /* Telegram */
+  var g4 = { id: 'telegram', title: 'Telegram alerts & daily summary', sub: 'What the team sees in the Telegram group.', cards: [] };
+  var tm = modeOf(st, 'TG_ALERTS_MODE');
+  var t1 = newCard('tg-order', 'New order alert', 'A message in the group for every new order (no name, e-mail or address).', tm);
+  t1.since = st.since && st.since.TG_ALERTS_SINCE;
+  if (st.alerts) sentFact(t1, st.alerts.order, 'Last sent');
+  queueProblems(t1, st, ['tg_order', 'tg_contact'], now); needOutbox(t1, st);
+  var t2 = newCard('tg-paid', 'Payment alert', 'A reply under the order message when the payment arrives.', tm);
+  t2.since = st.since && st.since.TG_ALERTS_SINCE;
+  if (st.alerts) sentFact(t2, st.alerts.paid, 'Last sent');
+  queueProblems(t2, st, ['tg_paid'], now); needOutbox(t2, st);
+  var t3 = newCard('tg-daily', 'Daily summary', 'One summary message every morning.', modeOf(st, 'TG_DAILY_MODE'));
+  if (st.tgDaily) t3.last = { label: 'Last sent', iso: st.tgDaily.sentAt, note: st.tgDaily.lastDay ? 'for ' + st.tgDaily.lastDay : '' };
+  if (t3.mode === 'on' && st.tgDaily && stale(st.tgDaily.sentAt, 36 * HOUR, now)) bad(t3, 'No summary for more than 36 hours');
+  var t4 = newCard('tg-stock', 'Stock table', 'A pinned table with stock levels, refreshed every hour.', modeOf(st, 'TG_STOCK_MODE'));
+  if (st.stock) t4.last = { label: 'Refreshed', iso: st.stock.updatedAt, note: '' };
+  if (t4.mode === 'on' && st.stock && stale(st.stock.updatedAt, 3 * HOUR, now)) bad(t4, 'Not refreshed for more than 3 hours');
+  g4.cards.push(t1, t2, t3, t4);
+  groups.push(g4);
+
+  /* Card / crypto import */
+  var g5 = { id: 'imports', title: 'Card & crypto import', sub: 'Brings payments made on the payment page into the CRM as orders.', cards: [] };
+  var i1 = newCard('card-import', 'Card payments', 'Creates or updates the order when a card payment is confirmed by the provider.', modeOf(st, 'CARD_IMPORT_MODE'));
+  i1.since = st.since && st.since.CARD_IMPORT_EVENTS_SINCE;
+  if (st.cardImport) i1.last = { label: 'Last change of import journal', iso: st.cardImport.lastImportAt, note: '' };
+  var i2 = newCard('crypto-import', 'Crypto payments', 'Checks a crypto payment against the order (e-mail, items, amount) and books it.', modeOf(st, 'CRYPTO_IMPORT_MODE'));
+  i2.since = st.since && st.since.CRYPTO_IMPORT_SINCE;
+  if (i2.mode === 'dry') i2.facts.push(['Mode', 'Dry-run: matches are only written to the log, no order is changed.']);
+  g5.cards.push(i1, i2);
+  groups.push(g5);
+
+  /* Win-back */
+  var g6 = { id: 'winback', title: 'Win-back', sub: 'Brings back customers who stopped ordering.', cards: [] };
+  var wc = newCard('winback', 'Inactive customers', 'Once a day, sends Customer.io the "user_inactive" event for customers whose last order is 90 days old.', modeOf(st, 'WINBACK_MODE'));
+  var wb = st.winback;
+  if (wb) {
+    wc.last = { label: 'Last run', iso: wb.lastRunAt, note: '' };
+    if (wb.eligible !== null) wc.facts.push(['Found', plural(wb.eligible, 'customer', 'customers') + ' at the last run' + (wb.sent !== null ? ', ' + wb.sent + ' events sent' : '')]);
+    if (wb.error) bad(wc, 'The last run reported an error (see /var/log/cio-winback.log on the server)');
+  }
+  if (wc.mode === 'dry') wc.facts.push(['Mode', 'Dry-run: counts only, nothing is sent.']);
+  if ((wc.mode === 'on' || wc.mode === 'dry') && wb && stale(wb.lastRunAt, 36 * HOUR, now)) bad(wc, 'No run for more than 36 hours');
+  g6.cards.push(wc);
+  groups.push(g6);
+
+  /* Customer.io journeys */
+  var g7 = { id: 'journeys', title: 'Customer.io journeys', sub: 'The automatic flows inside Customer.io. Details are on the Journeys page.', cards: [] };
+  var mc = st.mailCheck;
+  var j1 = newCard('journey-check', 'Daily journey check', 'Every morning, looks for journeys that wait for an event the shop never sends, and letters that changed.', mc ? 'on' : 'unknown');
+  if (mc) {
+    j1.last = { label: 'Last check', iso: mc.checkedAt, note: '' };
+    if (stale(mc.checkedAt, 30 * HOUR, now)) bad(j1, 'No check for more than 30 hours');
+    if (mc.problems > 0) warn(j1, plural(mc.problems, 'issue', 'issues') + ' found by the last check');
+  } else warn(j1, 'No status file for the check');
+  j1.link = { href: 'marketing-journeys.html', label: 'Open Journeys' };
+  var ow = st.opsWatch;
+  var j2 = newCard('cio-probe', 'Customer.io connection', 'Hourly test that the shop can send letters and events to Customer.io.', ow && ow.cioProbeAt ? 'on' : 'unknown');
+  if (ow && ow.cioProbeAt) {
+    j2.last = { label: 'Last test', iso: ow.cioProbeAt, note: '' };
+    if (stale(ow.cioProbeAt, 3 * HOUR, now)) bad(j2, 'No test for more than 3 hours');
+    if (ow.cioProbeProblems > 0) bad(j2, plural(ow.cioProbeProblems, 'problem', 'problems') + ' at the last test');
+  } else warn(j2, 'No result of the test yet');
+  g7.cards.push(j1, j2);
+  groups.push(g7);
+
+  /* Backups & watchdog */
+  var g8 = { id: 'backups', title: 'Backups & watchdog', sub: 'Safety nets that run all the time.', cards: [] };
+  var jobs = st.jobs || {};
+  [['backup-daily', 'Daily backup', 'Full copy of the site, CRM data and settings every night.', 26 * HOUR, '26 hours'],
+   ['backup-data', 'Data backup', 'Copy of orders, CRM and chat data every 6 hours.', 7 * HOUR, '7 hours']].forEach(function (d) {
+    var j = jobs[d[0]];
+    var c = newCard(d[0], d[1], d[2], j ? 'on' : 'unknown');
+    if (j) {
+      c.last = { label: 'Last success', iso: j.finishedAt, note: '' };
+      if (stale(j.finishedAt, d[3], now)) bad(c, 'No successful run for more than ' + d[4]);
+      if (j.lastOk === false) bad(c, 'The latest run failed' + (j.lastFinishedAt ? ' (' + ago(j.lastFinishedAt, now) + ')' : ''));
+    } else warn(c, 'No status file for this job');
+    g8.cards.push(c);
+  });
+  var wd = newCard('ops-watch', 'Watchdog', 'Checks the server every 5 minutes and writes to Telegram when something breaks.', ow ? 'on' : 'unknown');
+  if (ow) {
+    wd.last = { label: 'Last run', iso: ow.lastRunAt, note: '' };
+    if (stale(ow.lastRunAt, 15 * MIN, now)) bad(wd, 'The watchdog has not run for more than 15 minutes');
+    if (ow.openProblems > 0) warn(wd, plural(ow.openProblems, 'problem', 'problems') + ' reported to Telegram and not yet resolved');
+  } else warn(wd, 'No status file for the watchdog');
+  g8.cards.push(wd);
+  groups.push(g8);
+
+  /* Not built yet */
+  var g9 = { id: 'planned', title: 'Not built yet', sub: 'On the retention list, no code on the server.', cards: [] };
+  g9.cards.push(newCard('loyalty', 'Loyalty points', 'Points for orders that turn into a discount.', 'planned'));
+  g9.cards.push(newCard('buy-again', 'Buy-again reminder', 'A reminder to reorder when a vial should be running out.', 'planned'));
+  groups.push(g9);
+
+  return groups;
+}
+
+/* ── rendering ────────────────────────────────────────────────────────────────────────────── */
+
+function cardHtml(c, now) {
+  var b = badge(c.mode), h = health(c);
+  var out = '<div class="acard h-' + escAttr(h) + (c.mode === 'planned' ? ' nb' : '') + '" id="c-' + escAttr(c.id) + '">';
+  out += '<div class="ahead"><div class="aname">' + esc(c.name) + '</div><span class="badge ' + escAttr(b.cls) + '">' + esc(b.label) + '</span></div>';
+  out += '<div class="adesc">' + esc(c.desc) + '</div>';
+  if (c.mode !== 'planned') {
+    if (c.since && (c.mode === 'on' || c.mode === 'test' || c.mode === 'dry')) out += '<div class="arow"><span class="k">Since</span><span class="v">' + esc(ago(c.since, now)) + ' <small>(counts from ' + esc(c.since.slice(0, 16).replace('T', ' ')) + ' UTC)</small></span></div>';
+    if (c.last) out += '<div class="arow"><span class="k">' + esc(c.last.label) + '</span><span class="v">' + (c.last.iso ? esc(ago(c.last.iso, now)) + (c.last.note ? ' <small>(' + esc(c.last.note) + ')</small>' : '') : esc(c.last.note || 'never')) + '</span></div>';
+    c.facts.forEach(function (f) { out += '<div class="arow"><span class="k">' + esc(f[0]) + '</span><span class="v">' + esc(f[1]) + '</span></div>'; });
+    if (c.mode === 'unknown' && !c.problems.length) out += '<div class="aprob warn">The setting has a value the shop does not recognise, or could not be read.</div>';
+    c.problems.forEach(function (p) { out += '<div class="aprob ' + escAttr(p.level) + '">' + esc(p.text) + '</div>'; });
+    if (c.link) out += '<a class="alink" href="' + escAttr(safeUrl(c.link.href)) + '">' + esc(c.link.label) + '</a>';
+  }
+  return out + '</div>';
+}
+function groupsHtml(groups, now) {
+  return groups.map(function (g) {
+    return '<div class="section"><h3 class="gtitle">' + esc(g.title) + '</h3><p class="gsub">' + esc(g.sub) + '</p><div class="agrid">' +
+      g.cards.map(function (c) { return cardHtml(c, now); }).join('') + '</div></div>';
+  }).join('');
+}
+function summarize(groups) {
+  var n = { on: 0, test: 0, dry: 0, off: 0, unknown: 0 }, issues = [];
+  groups.forEach(function (g) {
+    g.cards.forEach(function (c) {
+      if (c.mode !== 'planned') n[c.mode] = (n[c.mode] || 0) + 1;
+      c.problems.forEach(function (p) { if (p.level !== 'info') issues.push({ card: c.name, id: c.id, level: p.level, text: p.text }); });
+    });
+  });
+  issues.sort(function (a, b) { return (a.level === 'bad' ? 0 : 1) - (b.level === 'bad' ? 0 : 1); });
+  return { n: n, issues: issues };
+}
+function summaryHtml(s, st) {
+  var out = '<div class="counts">' +
+    '<div class="count"><b>' + s.n.on + '</b>On</div><div class="count"><b>' + s.n.test + '</b>Test</div>' +
+    '<div class="count"><b>' + s.n.dry + '</b>Dry-run</div><div class="count"><b>' + s.n.off + '</b>Off</div>' +
+    (s.n.unknown ? '<div class="count"><b>' + s.n.unknown + '</b>Unknown</div>' : '') + '</div>';
+  var errs = st && st.errors ? Object.keys(st.errors) : [];
+  if (errs.length) out += '<div class="banner-error"><b>Some status could not be read</b>' + esc(errs.join(', ')) + ' &mdash; the cards that depend on it show no data. Check the server log.</div>';
+  if (s.issues.length) {
+    out += '<div class="summary-warn"><div><b>' + plural(s.issues.length, 'thing needs', 'things need') + ' attention</b></div>' +
+      s.issues.slice(0, 8).map(function (i) { return '<div><a href="#c-' + escAttr(i.id) + '" style="color:inherit;font-weight:600">' + esc(i.card) + '</a>: ' + esc(i.text) + '</div>'; }).join('') +
+      (s.issues.length > 8 ? '<div>and ' + (s.issues.length - 8) + ' more below</div>' : '') + '</div>';
+  } else if (!errs.length) out += '<div class="summary-ok">Everything that is switched on is running and nothing is stuck.</div>';
+  return out;
+}
+
+function render(st, now) {
+  var groups = buildGroups(st, now), s = summarize(groups);
+  document.getElementById('summary').innerHTML = summaryHtml(s, st);
+  document.getElementById('groups').innerHTML = groupsHtml(groups, now);
+  document.getElementById('fetchedAt').textContent = 'Updated ' + fmtDate(st.generatedAt);
+  document.getElementById('footnote').textContent = 'The mode shown is the setting in the server file; a change there takes effect after the shop service restarts. The numbers are read from the server and cached for up to a minute.';
+}
+
+async function loadAll(fresh) {
+  var banner = document.getElementById('banner');
+  banner.innerHTML = '';
+  try {
+    var st = await api('/api/automations/status' + (fresh ? '?fresh=1' : ''), { toast: false });
+    if (!st || st.ok !== true) throw new Error('bad answer');
+    render(st, Date.now());
+  } catch (e) {
+    banner.innerHTML = '<div class="banner-error"><b>Could not load the status</b>The server did not answer. Try Refresh in a minute; if it keeps failing, tell the developer.</div>';
+    document.getElementById('groups').innerHTML = '';
+    document.getElementById('summary').innerHTML = '';
+  }
+}
+loadAll(false);
 </script>
 </body>
 </html>
