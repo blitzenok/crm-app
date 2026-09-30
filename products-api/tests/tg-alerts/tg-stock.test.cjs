@@ -302,6 +302,20 @@ test('stockStatus: no intake, no SKU in the map and gifts are "unknown": not in 
   assert.deepEqual(S.stockStatus([R2('RC02-500', 30, 30)], S.skuMap({}, inv.skus), 0).items, {});
 });
 
+test('stockStatus: a SKU at 0 with a purchase-order line still open (not RECEIVED) is unknown, not out: the goods may be on the shelf before the warehouse marks them (PVC-092326, 30.09)', () => {
+  const inv = Object.assign(inventory(), {
+    purchase_orders: [{ id: 'PVC', status: 'PAID_IN_TRANSIT' }, { id: 'OLD', status: 'RECEIVED' }],
+    purchase_order_lines: [{ po_id: 'PVC', sku_id: 'sku:TES-10', qty: 10 }, { po_id: 'PVC', sku_id: null, qty: 10 }, { po_id: 'OLD', sku_id: 'sku:G3-R-10', qty: 100 }]
+  });
+  const map = S.skuMap(MAP, inv.skus);
+  const res = S.compute({ inventory: inv, map, records: OM.load([order({ items: [{ slug: 'tesamorelin', mg: '10mg', qty: 5 }] }), order({ items: [{ slug: 'g3-r', mg: '10mg', qty: 100 }] })]) });
+  assert.deepEqual(res.inTransit, ['TES-10']);
+  const st = S.stockStatus(res.rows, map, 0, res.inTransit);
+  assert.equal(st.items['tesamorelin-10mg'], undefined, 'TES-10 is at 0 but more is on its way');
+  assert.equal(st.items['g3-r-10mg'], 'out', 'G3-R-10 at 0, its only order was received: out');
+  assert.deepEqual(S.stockStatus(res.rows, map, 0).items, { 'g3-r-10mg': 'out', 'nad-plus-500mg': 'in', 'tesamorelin-10mg': 'out' }, 'without the list the old rule');
+  assert.deepEqual(S.compute({ inventory: inventory(), map, records: [] }).inTransit, [], 'a warehouse file without purchase orders');
+});
 test('writeStatus: atomic (temp + rename), readable JSON, no temp file left; a failed write leaves the old file alone', () => {
   const fs = require('fs'), os = require('os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-status-'));

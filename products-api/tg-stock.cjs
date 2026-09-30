@@ -117,8 +117,17 @@ function compute(opts) {
     }
   }
   for (const r of rows) r.left = r.received - r.sold;
+  // SKUs with a purchase-order line not received yet: goods can be on the shelf before the warehouse marks the order
+  // (PVC-092326 reached Rapid 30.09 while still PAID_IN_TRANSIT), so a 0 there is not "out of stock" for the storefront.
+  const poStatus = new Map((Array.isArray(inv.purchase_orders) ? inv.purchase_orders : []).filter(p => p && p.id !== undefined).map(p => [String(p.id), text(p.status)]));
+  const open = new Set();
+  for (const l of Array.isArray(inv.purchase_order_lines) ? inv.purchase_order_lines : []) {
+    if (l && l.sku_id && poStatus.get(String(l.po_id)) !== 'RECEIVED') open.add(l.sku_id);
+  }
+  const inTransit = skus.filter(s => open.has(s.id)).map(s => text(s.code));
   return {
     rows,
+    inTransit,
     negative: rows.filter(r => r.left < 0).map(r => r.code),
     unmatched: [...unmatched.values()].sort((a, b) => b.sold - a.sold || a.label.localeCompare(b.label)),
     paidOrders
@@ -173,9 +182,14 @@ function message(res, opts) {
 
 // ---- stock-status.json ----
 // rows: compute().rows; map: skuMap(). Every shop key that points at a SKU with an intake gets that SKU's state (several keys can share one SKU).
-function stockStatus(rows, map, nowMs) {
+function stockStatus(rows, map, nowMs, inTransit) {
+  const coming = new Set(Array.isArray(inTransit) ? inTransit : []);
   const state = new Map();
-  for (const r of rows) if (r.received > 0 && r.left >= 0) state.set(r.code, r.left > 0 ? 'in' : 'out');   // below zero: unknown, never out
+  for (const r of rows) {
+    if (!(r.received > 0) || r.left < 0) continue;                 // below zero: unknown, never out
+    if (r.left > 0) state.set(r.code, 'in');
+    else if (!coming.has(r.code)) state.set(r.code, 'out');       // at 0 with an order on its way: unknown
+  }
   const items = {};
   for (const key of [...map.codes.keys()].sort()) { const s = state.get(map.codes.get(key)); if (s) items[key] = s; }
   return { updatedAt: new Date(nowMs).toISOString(), items };
@@ -306,7 +320,7 @@ function main() {
     const OM = require(path.join(CRM_DIR, 'orders-model.js'));
     const alertsCfg = A.parseConfig(Object.assign({}, env, { TG_ALERTS_MODE: 'off' }));
     res = compute({ inventory, map, records: OM.load(readJson(ORDERS)), ownAddresses: alertsCfg.ownAddresses, sinceMs: cfg.sinceMs });
-    status = stockStatus(res.rows, map, Date.now());
+    status = stockStatus(res.rows, map, Date.now(), res.inTransit);
   } catch (e) { log('ERROR data not read, table left as it was: ' + String((e && e.message) || e).slice(0, 200)); process.exitCode = 1; return; }
   if (dry) console.log('stock-status: would write ' + STATUS + ' ' + JSON.stringify(status));
   else {
