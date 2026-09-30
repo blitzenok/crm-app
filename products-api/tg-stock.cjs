@@ -13,6 +13,11 @@
 // Alerts in the same topic (owner 30.09), one message per run: new stock came in (the SKU's intake grew), running low (left at
 // or under TG_STOCK_LOW_PCT %, default 20, of what was there right after its last intake; 0 = off), out of stock. Each once,
 // until the next intake or a cancelled order lifts it back. The first run only remembers the figures.
+// Restock alerts (services/restock): every run also writes stock-status.json (TG_STOCK_STATUS_FILE, default
+// /var/lib/biolabs-ops/stock-status.json): per shop key of a SKU that ever had an intake, "in" (left > 0) or "out" (left = 0).
+// products-api reads it for the storefront's "notify me" button; it is written before anything goes to Telegram and whatever
+// TG_STOCK_MODE says (the table and the alerts need on), so neither a Telegram outage nor the table being off ages it. No intake, no SKU,
+// or left below zero (more sold than came in: the count is not reliable) = not listed; an unreadable warehouse = file left as it was.
 // Source: services/tg-alerts/ in biofirst-hosting; install — deploy/INSTALL.md.
 const fs = require('fs');
 const path = require('path');
@@ -166,6 +171,24 @@ function message(res, opts) {
   return { type: 'stock', text: lines.join('\n').slice(0, 4096), rich: { blocks, skip_entity_detection: true } };
 }
 
+// ---- stock-status.json ----
+// rows: compute().rows; map: skuMap(). Every shop key that points at a SKU with an intake gets that SKU's state (several keys can share one SKU).
+function stockStatus(rows, map, nowMs) {
+  const state = new Map();
+  for (const r of rows) if (r.received > 0 && r.left >= 0) state.set(r.code, r.left > 0 ? 'in' : 'out');   // below zero: unknown, never out
+  const items = {};
+  for (const key of [...map.codes.keys()].sort()) { const s = state.get(map.codes.get(key)); if (s) items[key] = s; }
+  return { updatedAt: new Date(nowMs).toISOString(), items };
+}
+// Temp file next to the target, then rename: a reader never sees half a file. 0644: nothing personal in it; the directory is root's 0700.
+function writeStatus(file, status) {
+  const tmp = file + '.tmp.' + process.pid;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(status) + '\n', { mode: 0o644 });
+    fs.renameSync(tmp, file);
+  } catch (e) { try { fs.unlinkSync(tmp); } catch (e2) { /* nothing to clean */ } throw e; }
+}
+
 // ---- alerts ----
 // rows: compute().rows; prev: what the last run remembered ({received, peak, level} by SKU code), none on the first run.
 // peak = what was there right after the SKU's last intake (or the most since: a cancelled order adds back); the low line is a
@@ -267,14 +290,14 @@ function main() {
   const CRM_DIR = process.env.CRM_DIR || '/var/www/mastersol/html/CRM';
   const UMG = process.env.CRM_UMG_DIR || '/opt/crm-umg/server';
   const STATE = process.env.TG_STOCK_STATE || '/var/lib/biolabs-ops/tg-stock.json';
+  const STATUS = process.env.TG_STOCK_STATUS_FILE || '/var/lib/biolabs-ops/stock-status.json';
   const log = (s) => console.log(new Date().toISOString() + ' [tg-stock] ' + s);
   const env = readEnv(ENV_FILE);
   const cfg = parseStock(env);
   for (const p of cfg.problems) log('ERROR ' + p);
-  if (cfg.mode !== 'on' && !dry) return;
   // Unreadable warehouse or orders (the agents' file is written in place, a read can land mid-write): the pinned table
   // keeps its last figures and the next hour tries again. Never publish a table built from half a file.
-  let res;
+  let res, status;
   try {
     const inventory = readJson(path.join(UMG, 'data', 'inventory.json'));
     const mapFile = ['rapid-sku-map.json', 'rapid-sku-map.draft.json'].map(f => path.join(UMG, 'config', f)).find(f => fs.existsSync(f));
@@ -283,7 +306,14 @@ function main() {
     const OM = require(path.join(CRM_DIR, 'orders-model.js'));
     const alertsCfg = A.parseConfig(Object.assign({}, env, { TG_ALERTS_MODE: 'off' }));
     res = compute({ inventory, map, records: OM.load(readJson(ORDERS)), ownAddresses: alertsCfg.ownAddresses, sinceMs: cfg.sinceMs });
+    status = stockStatus(res.rows, map, Date.now());
   } catch (e) { log('ERROR data not read, table left as it was: ' + String((e && e.message) || e).slice(0, 200)); process.exitCode = 1; return; }
+  if (dry) console.log('stock-status: would write ' + STATUS + ' ' + JSON.stringify(status));
+  else {
+    try { writeStatus(STATUS, status); log('stock-status: ' + Object.keys(status.items).length + ' items'); }
+    catch (e) { log('ERROR stock-status not written (the storefront button keeps the old one until it ages out): ' + String((e && e.message) || e).slice(0, 200)); process.exitCode = 1; }
+  }
+  if (cfg.mode !== 'on' && !dry) return;   // the table and the alerts need TG_STOCK_MODE=on; the status file above does not
   const msg = message(res, { nowMs: Date.now(), tz: cfg.tz });
   let state = {};
   try { state = readJson(STATE) || {}; } catch (e) { state = {}; }
@@ -321,4 +351,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { parseStock, shopKey, skuMap, compute, message, publish, stockEvents, alertMessage, PAID_GROUPS };
+module.exports = { parseStock, shopKey, skuMap, compute, stockStatus, writeStatus, message, publish, stockEvents, alertMessage, PAID_GROUPS };

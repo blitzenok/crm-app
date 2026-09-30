@@ -1959,6 +1959,19 @@ function handleRequest(req, res) {
     return;
   }
 
+  // Restock alerts (2026-09-30, services/restock/): the storefront's "notify me when it is back in stock".
+  if (req.method === 'GET' && pathname === '/msolpeptides-api/stock-status') { restockReplyStatus(res); return; }
+  if (req.method === 'GET' && pathname === '/msolpeptides-api/restock-unsubscribe') { restockReplyUnsubscribePage(req, res); return; }
+  if (req.method === 'POST' && pathname === '/msolpeptides-api/restock-unsubscribe') { restockReplyUnsubscribe(req, res); return; }
+  if (req.method === 'POST' && pathname === '/msolpeptides-api/restock-subscribe') {
+    // JSON only: a plain HTML form on another site (text/plain, urlencoded, multipart) must not be able to subscribe anybody.
+    if (restockContentType(req) !== 'application/json') { req.resume(); jsonReply(res, 415, {error:'Content-Type must be application/json'}); return; }
+    readBody(req, (err, data) => {
+      if (err) { jsonReply(res, 400, {error:'Invalid request'}); return; }
+      restockReplySubscribe(req, res, data);
+    });
+    return;
+  }
   if (req.method === 'POST' && pathname === '/msolpeptides-api/subscribe') {
     readBody(req, (err, data) => {
       if (err || !data || typeof data !== 'object' || Array.isArray(data)) { jsonReply(res, 400, {error:'Invalid subscription'}); return; }
@@ -3915,7 +3928,11 @@ const PUBLIC_ROUTES = new Set([
   'GET /msolpeptides-api/checkout-identify'
   ,'POST /msolpeptides-api/coupon-quote',
   'GET /msolpeptides-api/coupon-quote',
-  'GET /msolpeptides-api/site-copy'
+  'GET /msolpeptides-api/site-copy',
+  'GET /msolpeptides-api/stock-status',            // restock (2026-09-30): out-of-stock list, no numbers
+  'POST /msolpeptides-api/restock-subscribe',
+  'GET /msolpeptides-api/restock-unsubscribe',          // the page with the button; the POST cancels
+  'POST /msolpeptides-api/restock-unsubscribe'
 ]);
 function routeKey(req) { return req.method + ' ' + String(req.url || '').split('?')[0]; }
 function isPublicRoute(req) { return PUBLIC_ROUTES.has(routeKey(req)); }
@@ -4135,6 +4152,7 @@ function mailOutboxSend(item, order, cb) {
   const skipped = () => cb({ ok: true, status: 'skipped' });
   const ref = order.ref || '';
   if (tgAlertsHandles(item.kind)) return tgAlertsSend(item, order, cb);   // tg-alerts: Telegram, not Customer.io
+  if (item.kind === 'letter_restock') return restockSend(item, order, cb);   // restock: 'order' is the subscription record here
   if (orderLettersHandles(item.kind, order)) return orderLettersSend(item, order, cb);   // stage 1 RET: the four status letters and, with letters on, the confirmation
   if (item.kind === 'mail_manager') {
     if (!CIO_READY || !CIO_ORDER_MANAGER_MSG_ID || !CIO_MANAGER_TO) return skipped();
@@ -4180,6 +4198,7 @@ try {
       readDead: () => readJsonOrFallback(MAIL_OUTBOX_DEAD, []),
       writeDead: (list) => mailOutboxWrite(MAIL_OUTBOX_DEAD, list),
       readOrders: mailOutboxReadOrders,
+      findRecord: (kind, ref) => restockFind(ref),   // restock (2026-09-30): the record of a letter_restock item is a subscription
       send: mailOutboxSend,
       intervalMs: Number(outboxEnv.MAIL_OUTBOX_INTERVAL_MS) || 60000
     });
@@ -4368,6 +4387,228 @@ function tgAlertsSend(item, order, cb) {
     // The alert reached the group but not as meant: plain text (the rich layout needs fixing) or General (its topic is gone).
     if (r.ok && r.richRefused) console.error('[mail-alert] TG RICH REFUSED ' + tgAlerts.safeRef(order.ref) + ', sent as plain text: ' + r.richRefused);
     cb({ ok: r.ok, status: r.status, error: r.error });
+  });
+}
+// Restock alerts (2026-09-30): "notify me when it is back in stock". The rules are in restock.cjs (services/restock/ in
+// biofirst-hosting; spec docs/superpowers/specs/2026-09-30-restock-alerts.md). Here: the routes, the files and the letter.
+// restock-subscriptions.json (0600) holds the subscriptions; restock-meta.json (0600) the random salt and the hashes of addresses
+// that unsubscribed (the refusal is kept, the address is not). tg-stock.cjs (cron, hourly) writes the stock state to
+// TG_STOCK_STATUS_FILE; this process only reads it. A subscription is taken only for a key that is out now. The letter goes through
+// the mail queue (kind letter_restock) to a Customer.io transactional template, once per subscription (status sent + sentAt).
+// RESTOCK_MODE (off|test|on), CIO_LETTER_RESTOCK_MSG_ID and ORDER_LETTERS_TEST_TO live in ENV_FILE; a change needs a restart.
+// With off (or a module that fails to start) no letter is ever sent. No address goes to a log line.
+let restock = null;
+let RESTOCK_CFG = { mode: 'off', testTo: new Set() };
+let RESTOCK_ID = '';
+const RESTOCK_FILE = path.join(__dirname, 'restock-subscriptions.json');
+const RESTOCK_META_FILE = path.join(__dirname, 'restock-meta.json');
+const RESTOCK_STATUS_FILE = String(process.env.TG_STOCK_STATUS_FILE || readEnvFile(ENV_FILE).TG_STOCK_STATUS_FILE || '/var/lib/biolabs-ops/stock-status.json');
+const restockSentIds = new Set();        // sent by this process: a record that could not be marked must not go out again
+const restockWouldLogged = new Set();    // test mode: "would send" once per subscription, not every tick
+const restockCapAlertAt = {};            // one [mail-alert] RESTOCK CAP per kind and hour
+let restockStatusReason = '';            // why the stock file is not believed, logged when it changes
+let restockTickFailed = false;
+try {
+  const restockEnv = readEnvFile(ENV_FILE);
+  restock = require('./restock.cjs');
+  const restockCfg = restock.parseConfig(restockEnv);
+  for (const p of restockCfg.problems) console.error('[restock] ERROR ' + p);
+  if (restockCfg.mode !== 'off' && !mailOutbox) { console.error('[restock] ERROR outbox off (MAIL_OUTBOX_MODE is not on), letters are off'); restockCfg.mode = 'off'; }
+  RESTOCK_ID = restock.templateId(restockEnv, process.env);
+  if (restockCfg.mode !== 'off' && !RESTOCK_ID) console.error('[restock] ERROR no template id (CIO_LETTER_RESTOCK_MSG_ID), letters wait');
+  RESTOCK_CFG = restockCfg;
+  console.log('[restock] ' + restockCfg.mode);
+  const restockEvery = Number(restockEnv.RESTOCK_INTERVAL_MS) > 0 ? Number(restockEnv.RESTOCK_INTERVAL_MS) : 5 * 60 * 1000;
+  const restockFirst = setTimeout(restockTick, Math.min(15000, restockEvery));
+  const restockTimer = setInterval(restockTick, restockEvery);
+  if (restockFirst.unref) restockFirst.unref();
+  if (restockTimer.unref) restockTimer.unref();
+} catch (e) {
+  restock = null;
+  RESTOCK_CFG = { mode: 'off', testTo: new Set() };
+  console.error('[restock] ERROR module not started: ' + ((e && e.message) || e));
+}
+function restockErr(e) { return restock ? restock.safeId((e && e.message) || e) : 'error'; }
+function restockContentType(req) { return String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase(); }
+// nginx puts the visitor's address in X-Real-IP (and overwrites anything the visitor sent); this process listens on 127.0.0.1 only.
+function restockClientIp(req) {
+  const v = String(req.headers['x-real-ip'] || '').trim();
+  if (/^[0-9a-fA-F:.]{3,45}$/.test(v)) return v;
+  return String((req.socket && req.socket.remoteAddress) || '');
+}
+function restockReadList() {
+  const list = readJsonOrFallback(RESTOCK_FILE, []);
+  if (!Array.isArray(list)) throw new Error('restock-subscriptions.json is not an array');
+  return list;
+}
+function restockWrite(list) { mailOutboxWrite(RESTOCK_FILE, list); }   // 0600, like the queue: the file holds addresses
+function restockFind(ref) { return restockReadList().find(s => s && s.id === ref) || null; }
+// The salt and the suppressed hashes. A missing file is made; a broken one throws (a new salt would silently forget every refusal).
+function restockMeta() {
+  const m = readJsonOrFallback(RESTOCK_META_FILE, null);
+  if (m === null) {
+    const made = { salt: crypto.randomBytes(16).toString('hex'), suppressed: [] };
+    mailOutboxWrite(RESTOCK_META_FILE, made);
+    return made;
+  }
+  if (!m || typeof m !== 'object' || typeof m.salt !== 'string' || !m.salt || !Array.isArray(m.suppressed)) throw new Error('restock-meta.json is malformed');
+  return m;
+}
+function restockSuppressedCheck(meta) {
+  const set = new Set(meta.suppressed);
+  return (email) => set.has(restock.hashEmail(meta.salt, email));
+}
+function restockCapAlert(kind, text) {
+  const now = Date.now();
+  if (restockCapAlertAt[kind] && now - restockCapAlertAt[kind] < 3600 * 1000) return;
+  restockCapAlertAt[kind] = now;
+  console.error('[mail-alert] RESTOCK CAP ' + kind + ' ' + text);
+}
+// The stock file as it is now. Leaving a good state is logged once: with the mode on or test as an alert (no button, no letters until
+// tg-stock writes a fresh file), with off as a plain line; coming back is "status fresh again".
+function restockStatusNow(nowMs) {
+  let raw;
+  try { raw = fs.readFileSync(RESTOCK_STATUS_FILE, 'utf8'); } catch (e) { raw = undefined; }
+  const st = restock.parseStatus(raw, nowMs);
+  const reason = st.ok ? '' : st.reason;
+  if (reason !== restockStatusReason) {
+    const was = restockStatusReason;
+    restockStatusReason = reason;
+    if (!reason) console.log('[restock] status fresh again');
+    else if (was) console.error('[restock] stock status still not usable (' + reason + ')');
+    else if (RESTOCK_CFG.mode !== 'off') console.error('[mail-alert] RESTOCK STATUS STALE (' + reason + '): no button and no letters until tg-stock writes a fresh file');
+    else console.error('[restock] stock status not usable (' + reason + ')');
+  }
+  return st;
+}
+function restockReplyStatus(res) {
+  const out = restock ? restock.publicOut(restockStatusNow(Date.now())) : { out: [] };
+  res.setHeader('Cache-Control', 'public, max-age=300');   // here, not in nginx: add_header in a location drops the server's security headers
+  jsonReply(res, 200, out);
+}
+// Every answer to a good or a refused-quietly body is the same {ok:true}: the page never learns whether an address was known, excluded, suppressed, capped or in stock.
+function restockReplySubscribe(req, res, data) {
+  if (!restock) { jsonReply(res, 503, {error:'Unavailable'}); return; }
+  const products = readProducts();
+  if (catalogUnreadable) { jsonReply(res, 503, {error:'Unavailable'}); return; }
+  try {
+    const now = Date.now();
+    const meta = restockMeta();
+    const v = restock.validateSubscribe(data, { products: products, status: restockStatusNow(now), looksLikeEmail: looksLikeEmail, isExcluded: (email) => isExcludedIdentity(email), isSuppressed: restockSuppressedCheck(meta), cfg: RESTOCK_CFG });
+    if (!v.ok) { jsonReply(res, 400, {error: v.error}); return; }
+    if (v.ignore) { if (v.ignore === 'excluded') console.log('[restock] ignored an excluded address'); jsonReply(res, 200, {ok:true}); return; }
+    const list = restockReadList();
+    const r = restock.addSubscription(list, Object.assign({}, v.sub, { ipHash: restock.hashIp(meta.salt, restockClientIp(req)) }), now);
+    if (r.result === 'created') { restockWrite(list); console.log('[restock] subscribed ' + r.sub.id + ' ' + r.sub.key); }
+    else if (r.result === 'cap_email') console.error('[restock] CAP per address (' + restock.MAX_PENDING_PER_EMAIL + '), nothing written');
+    else if (r.result === 'cap_ip') restockCapAlert('ip', 'one visitor made ' + restock.MAX_PER_IP_24H + ' new subscriptions in 24 h, more are not taken');
+    else if (r.result === 'cap_total') restockCapAlert('total', restock.MAX_PENDING_TOTAL + ' pending subscriptions, new ones are not taken');
+    jsonReply(res, 200, {ok:true});
+  } catch (e) {
+    console.error('[restock] ERROR subscription not saved: ' + restockErr(e));
+    jsonReply(res, 500, {error:'Could not save, please try again'});
+  }
+}
+// GET of the link in the letter: only a page with a button, nothing is cancelled (a mail scanner opens links). The token is echoed only if it has the shape of one.
+function restockReplyUnsubscribePage(req, res) {
+  if (!restock) { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.writeHead(503); res.end('Please try again later.'); return; }
+  let token = '';
+  try { token = new URL(String(req.url || ''), 'http://localhost').searchParams.get('t') || ''; } catch (e) { token = ''; }
+  restockHtml(res, restock.unsubscribePage(token));
+}
+function restockHtml(res, html) {
+  // The token is in the address or the form, so nothing is cached or passed on.
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.writeHead(200);
+  res.end(html);
+}
+// POST of our own page's form (urlencoded, nothing else): the token of any record of the address cancels all its pending subscriptions and
+// the address is remembered as a hash, so it cannot be subscribed again. The same page for a known, an unknown and a used token.
+function restockReplyUnsubscribe(req, res) {
+  if (restockContentType(req) !== 'application/x-www-form-urlencoded') { req.resume(); res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.writeHead(415); res.end('Unsupported Media Type'); return; }
+  let body = '';
+  req.on('data', c => { if (body.length < 4096) body += c; });
+  req.on('end', () => {
+    if (!restock) { res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.writeHead(503); res.end('Please try again later.'); return; }
+    let token = '';
+    try { token = new URLSearchParams(body).get('t') || ''; } catch (e) { token = ''; }
+    try {
+      const list = restockReadList();
+      const hit = restock.findByToken(list, token);
+      if (hit) {
+        const meta = restockMeta();
+        const hash = restock.hashEmail(meta.salt, hit.email);
+        if (hash && !meta.suppressed.includes(hash)) { meta.suppressed.push(hash); mailOutboxWrite(RESTOCK_META_FILE, meta); }
+        if (restock.unsubscribe(list, token, Date.now())) restockWrite(list);
+        console.log('[restock] cancelled by the page');
+      }
+    } catch (e) {
+      console.error('[restock] ERROR cancel not saved: ' + restockErr(e));
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8'); res.writeHead(500); res.end('Please try again later.');
+      return;
+    }
+    restockHtml(res, restock.unsubscribedPage());
+  });
+}
+// Every 5 minutes: expire old subscriptions, drop finished ones older than 60 days, and queue the letter for each pending one whose item
+// is in stock now. queuedAt is written BEFORE anything is queued (a crash in between means one letter less, never two), and a subscription
+// whose item died in the queue is not queued again for 49 hours, so a refusing provider does not raise an alert every tick.
+function restockTick() {
+  try {
+    if (!restock) return;
+    const now = Date.now();
+    const list = restockReadList();
+    let dirty = restock.expireOld(list, now) > 0;
+    if (restock.pruneFinished(list, now) > 0) dirty = true;
+    let toQueue = [];
+    if (RESTOCK_CFG.mode !== 'off' && mailOutbox && CIO_READY && RESTOCK_ID) {
+      const st = restockStatusNow(now);
+      if (st.ok) {
+        const due = restock.dueForLetter(list, st.items, RESTOCK_CFG, now, { looksLikeEmail: looksLikeEmail, isExcluded: (email) => isExcludedIdentity(email), isSuppressed: restockSuppressedCheck(restockMeta()), sentIds: restockSentIds });
+        for (const s of due.would) if (!restockWouldLogged.has(s.id)) { restockWouldLogged.add(s.id); console.log('[restock] would send ' + restock.safeId(s.id)); }
+        toQueue = due.send.map(s => s.id);
+        if (toQueue.length) { restock.markQueued(list, toQueue, now); dirty = true; }
+      }
+    }
+    if (dirty) restockWrite(list);
+    for (const id of toQueue) mailOutbox.enqueue(restock.KIND, id);
+    if (restockTickFailed) { restockTickFailed = false; console.log('[restock] tick works again'); }
+  } catch (e) {
+    if (!restockTickFailed) { restockTickFailed = true; console.error('[mail-alert] RESTOCK TICK FAILED, no letter goes until the files are fixed: ' + restockErr(e)); }
+  }
+}
+// After a 2xx: note it on the record. Remembered in memory first, so a failed write cannot send the same letter every tick.
+function restockMark(id) {
+  restockSentIds.add(id);
+  try {
+    const list = restockReadList();
+    if (restock.markSent(list, id, Date.now())) restockWrite(list);
+  } catch (e) { console.error('[mail-alert] RESTOCK NOT RECORDED ' + restock.safeId(id) + ' was sent but not marked (it is not sent again while this process runs): ' + restockErr(e)); }
+}
+// The queue's sender for letter_restock: sub is the record from the file as it is now, so the rules are asked again (cancelled
+// meanwhile, unsubscribed, mode switched); what may not go answers skipped, never a failure to retry. A module that did not start answers skipped too.
+function restockSend(item, sub, cb) {
+  const skipped = () => cb({ ok: true, status: 'skipped' });
+  if (!restock) return skipped();
+  const id = restock.safeId(sub && sub.id);
+  let suppressed;
+  try { suppressed = restockSuppressedCheck(restockMeta()); }
+  catch (e) { return cb({ ok: false, status: 'meta_unreadable', error: restockErr(e) }); }
+  const verdict = restock.letterAllowed(sub, RESTOCK_CFG, { looksLikeEmail: looksLikeEmail, isExcluded: (email) => isExcludedIdentity(email), isSuppressed: suppressed });
+  if (!verdict.ok) {
+    console.log('[restock] ' + (verdict.reason === 'not_test_recipient' ? 'would send ' + id : 'skip ' + id + ': ' + verdict.reason));
+    return skipped();
+  }
+  if (!CIO_READY || !RESTOCK_ID) return skipped();
+  let data;
+  try { data = restock.letterData(sub, { mailSafe: mailSafe }); }
+  catch (e) { return cb({ ok: false, status: 'not_built', error: 'letter data: ' + restockErr(e) }); }
+  cioSendEmail(RESTOCK_ID, sub.email, sub.email, data, 'letter-restock', id, (ok, status, errorText) => {
+    if (ok) restockMark(sub.id);
+    cb({ ok: ok, status: status, error: errorText });
   });
 }
 const server = http.createServer((req, res) => {

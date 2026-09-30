@@ -14,7 +14,10 @@ const crypto = require('crypto');
 // letter_* (stage 1 RET, 30.09): the status letters of services/order-letters, one queue item per letter type and order.
 // cio_order_delivered (services/cio-events, 30.09): the event the post-delivery journeys start on.
 // tg_order / tg_paid (services/tg-alerts, 30.09): the team's Telegram alerts about a new order and a payment received.
-const KINDS = ['mail_manager', 'mail_customer', 'cio_order_placed', 'cio_order_status', 'letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'cio_order_delivered', 'tg_order', 'tg_paid'];
+// letter_restock (services/restock, 30.09): "back in stock" letter; its ref is a subscription id, not an order ref — RECORD_KINDS are
+// looked up with deps.findRecord(kind, ref) instead of in orders.json, and the record goes to send() where an order goes.
+const KINDS = ['mail_manager', 'mail_customer', 'cio_order_placed', 'cio_order_status', 'letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'cio_order_delivered', 'tg_order', 'tg_paid', 'letter_restock'];
+const RECORD_KINDS = ['letter_restock'];
 const RETRY_MIN = [1, 5, 15, 60, 180, 360];      // after the 1st, 2nd, ... failure; the last step repeats
 const GIVE_UP_MS = 48 * 3600 * 1000;
 const STUCK_AFTER_MS = 30 * 60 * 1000;
@@ -79,7 +82,11 @@ function createMailOutbox(deps) {
     catch (e) { logError('[mail-alert] QUEUE WRITE FAILED ' + safe((e && e.message) || e, 80)); return false; }
   }
 
-  function findOrder(ref) {
+  function findOrder(ref, kind) {
+    if (RECORD_KINDS.includes(kind)) {
+      if (typeof deps.findRecord !== 'function') throw new Error('no record reader for ' + kind);
+      return deps.findRecord(kind, ref) || null;
+    }
     const orders = deps.readOrders();
     if (!Array.isArray(orders)) throw new Error('orders are not an array');
     return orders.find(o => o && o.ref === ref) || null;
@@ -157,7 +164,7 @@ function createMailOutbox(deps) {
       // "thanks for your order" a week later does more harm than none. It is buried unsent, not tried once more.
       if (now() - Date.parse(item.createdAt) >= GIVE_UP_MS) { settle({ expired: true }); return; }
       let order;
-      try { order = findOrder(item.ref); }
+      try { order = findOrder(item.ref, item.kind); }
       catch (e) { settle({ ok: false, status: 'orders_unreadable', error: 'orders.json: ' + ((e && e.message) || e) }); return; }
       if (!order) { settle({ gone: true }); return; }
       // The senders time out on their own after 5 s; this only keeps a sender that never answers from blocking the queue.
@@ -173,7 +180,7 @@ function createMailOutbox(deps) {
   function direct(kind, ref, data) {
     logError('[mail-alert] ' + (unreadable ? 'QUEUE UNREADABLE' : 'QUEUE WRITE FAILED') + ', sent once without retry: ' + kind + ' ' + safe(ref, 64));
     let order;
-    try { order = findOrder(ref); } catch (e) { logError('[mail-alert] orders unreadable, not sent: ' + kind + ' ' + safe(ref, 64)); return; }
+    try { order = findOrder(ref, kind); } catch (e) { logError('[mail-alert] orders unreadable, not sent: ' + kind + ' ' + safe(ref, 64)); return; }
     if (!order) return;
     try {
       deps.send({ id: 'direct', kind, ref, data }, order, r => {
@@ -263,4 +270,4 @@ function createMailOutbox(deps) {
   return { enqueue, tick, start, stop };
 }
 
-module.exports = { createMailOutbox, KINDS, RETRY_MIN, GIVE_UP_MS, STUCK_AFTER_MS, STUCK_REPEAT_MS, MAX_PER_TICK, DEAD_KEEP, retryable };
+module.exports = { createMailOutbox, KINDS, RECORD_KINDS, RETRY_MIN, GIVE_UP_MS, STUCK_AFTER_MS, STUCK_REPEAT_MS, MAX_PER_TICK, DEAD_KEEP, retryable };
