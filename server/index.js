@@ -544,7 +544,7 @@ export function createHandler(deps = {}) {
           });
         }
       }
-      // Daily Cleffo cap (CLEFFO_DAILY_CAP_USD): today's PAID Cleffo total + open links of the last 30 min + this order's
+      // Daily Cleffo cap (CLEFFO_DAILY_CAP_USD): today's PAID Cleffo total + open links younger than CLEFFO_CAP_PENDING_MIN (default 60) + this order's
       // server total over the cap -> this new Cleffo payment goes to UMG instead (reason "cap"). docs/CLEFFO_DAILY_CAP.md.
       if (route.processor === "cleffo") {
         route = capDecision(route, {
@@ -624,7 +624,8 @@ export function createHandler(deps = {}) {
       return out;
     }
 
-    // Which processor the next card attempt goes to (no side effects), so checkout can show card fields (UMG) or the
+    // Which processor the next card attempt goes to (creates no order and no charge; it does ask Cleffo about this buyer's open
+    // links, may mark a stale one abandoned, and remembers a capped buyer for the cap), so checkout can show card fields (UMG) or the
     // "continue to secure payment page" step (Cleffo) and the matching statement line.
     if (path === "/api/checkout/route" && req.method === "POST") {
       const body = await readBody(req);

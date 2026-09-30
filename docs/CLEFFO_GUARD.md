@@ -36,8 +36,10 @@ them when you edit `index.js`, `lib/cleffo-checkout.js`, `lib/routing.js`, `lib/
   store → the broken file is renamed `store.json.corrupt-<ts>`, `.prev` is loaded (`STORE_FROM_PREV`); the file mode is kept; both unreadable → `STORE_UNREADABLE` and exit (never start empty: the order
   counter would restart and BLR numbers would repeat).
 
-## Daily cap
-`CLEFFO_DAILY_CAP_USD` (2000): over the day's Cleffo total, new Cleffo attempts go to UMG (reason `cap`). See `CLEFFO_DAILY_CAP.md`.
+## Daily cap (owner's agents, 2026-09-29)
+`CLEFFO_DAILY_CAP_USD` (docs/CLEFFO_DAILY_CAP.md) moves new buyers to UMG once the day's Cleffo total is used — but never a
+buyer who still has an open Cleffo link (`LINK_CREATED` / `LINK_UNKNOWN`, any order, 72 h): a slightly exceeded cap is
+better than a second payment. Log: `[routing] cap: skipped open_cleffo_link`.
 
 ## Alerts (`[pay-alert] ` lines, sent to Telegram by ops-watch)
 `CLEFFO_REVIEW`, `CLEFFO_LINK_ERROR` (≤ 1 per 10 min), `CLEFFO_STUCK_SUMMARY` (once a day: customers came back from

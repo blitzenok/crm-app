@@ -25,9 +25,10 @@ function capUsd(v) {
   return String(v ?? "").trim() !== "" && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-function capPendingMinutes(v) {
+// Default = the link lifetime (CLEFFO_LINK_TTL_MIN): a link stays payable that long, so it must count that long.
+function capPendingMinutes(v, dflt = 30) {
   const n = Number(String(v ?? "").trim());
-  return String(v ?? "").trim() !== "" && Number.isFinite(n) && n >= 0 ? n : 30;
+  return String(v ?? "").trim() !== "" && Number.isFinite(n) && n >= 0 ? n : dflt;
 }
 
 function capTimeZone(v) {
@@ -54,7 +55,7 @@ export function routingConfig(env = process.env) {
     cleffoOnly: flag(env.CLEFFO_ONLY),
     // Daily Cleffo cap (USD, Asia/Jerusalem calendar day). 0 / empty / invalid = no cap. See capDecision() below.
     dailyCapUsd: capUsd(env.CLEFFO_DAILY_CAP_USD),
-    capPendingMin: capPendingMinutes(env.CLEFFO_CAP_PENDING_MIN),
+    capPendingMin: capPendingMinutes(env.CLEFFO_CAP_PENDING_MIN, ttl),
     capTz: capTimeZone(env.CLEFFO_CAP_TZ),
     linkTtlMin: ttl,
     sweepHours,
@@ -212,13 +213,15 @@ export function splitStats(emails, splitPct = 50) {
  *  used today = sum of Cleffo attempts with processorStatus PAID whose paid time (finishedAt) falls on the current
  *               calendar day in CLEFFO_CAP_TZ (default Asia/Jerusalem)
  *             + open Cleffo links (LINK_CREATED / LINK_UNKNOWN, no outcome yet) created in the last CLEFFO_CAP_PENDING_MIN
- *               minutes (default 30), so a burst of checkouts cannot overshoot the cap while the buyers are still paying.
+ *               minutes (default = CLEFFO_LINK_TTL_MIN, 60), so a burst of checkouts cannot overshoot the cap while the buyers are still paying.
  *               The buyer's own order (same idempotency key) is not counted twice.
  *  If used + this order's total > cap (or used >= cap), the attempt that would open a NEW Cleffo payment (first attempt "bucket", or the
  *  one-time soft-decline switch "retry_switch_soft") goes to UMG instead, reason "cap". Retries of an existing Cleffo
  *  payment (hard / pending) are not moved (a Cleffo link that may still be paid must never be paid again on UMG).
  *  A capped buyer stays on UMG for CLEFFO_CAP_PENDING_MIN minutes (min 30), so /route and /charge agree even though
  *  /route does not know the cart total.
+ *  Never to UMG while a Cleffo link of this buyer (e-mail or cart session, CLEFFO_SWEEP_HOURS back, counted attempt or not)
+ *  is still open (LINK_CREATED / LINK_UNKNOWN): that payment may still arrive, a UMG charge on top would be a double payment.
  * ---------------------------------------------------------------------------------------------------------------- */
 const CAP_ROUTE_REASONS = new Set(["bucket", "retry_switch_soft"]);
 const capMemo = new Map(); // "e:<email>" | "s:<session>" -> expiry ms
@@ -266,6 +269,24 @@ export function cleffoDailyUsage(store, { now = Date.now(), tz = "Asia/Jerusalem
   return { day, paidUsd: paid / 100, pendingUsd: pending / 100, usedUsd: (paid + pending) / 100, paidCount, pendingCount };
 }
 
+/** An open Cleffo link (LINK_CREATED / LINK_UNKNOWN, abandoned or not) of this buyer inside the sweep window -> { orderId, attempt } | null. */
+function openCleffoLinkOf(store, { email, sessionId, now, hours }) {
+  const em = normalizeEmail(email);
+  const sid = String(sessionId || "").trim();
+  if (!em && !sid) return null;
+  const since = now - hours * 3600 * 1000;
+  for (const o of store.listOrders()) {
+    const mine = (em && normalizeEmail(o.customer?.email) === em) || (sid && String(o.session_id || "") === sid);
+    if (!mine) continue;
+    for (const a of o.attempts || []) {
+      if (a?.processor !== "cleffo" || (a.processorStatus !== "LINK_CREATED" && a.processorStatus !== "LINK_UNKNOWN")) continue;
+      if ((Date.parse(a.startedAt || "") || 0) < since) continue;
+      return { orderId: o.id, attempt: a.routingAttempt, status: a.processorStatus };
+    }
+  }
+  return null;
+}
+
 function memoKeys(email, sessionId) {
   const out = [];
   const em = normalizeEmail(email);
@@ -293,6 +314,11 @@ export function capDecision(route, { store, config, amount = 0, email = "", sess
   // Over when this order would take the day past the cap, or nothing is left at all (/route knows no total).
   const over = usedCents + orderCents > capCents || usedCents >= capCents;
   if (!over && !sticky) return { route, capped: false, usage };
+  const open = openCleffoLinkOf(store, { email, sessionId, now, hours: Number(config.sweepHours) > 0 ? Number(config.sweepHours) : 72 });
+  if (open) {
+    write(`[routing] cap: skipped open_cleffo_link ${open.orderId} attempt=${open.attempt} status=${open.status} day=${usage.day} paid=${usage.paidUsd.toFixed(2)} was=${route.reason} -> stays cleffo\n`);
+    return { route, capped: false, usage, openLink: open };
+  }
   if (remember) {
     const exp = now + Math.max(30, Number(config.capPendingMin) || 0) * 60 * 1000;
     for (const k of keys) capMemo.set(k, exp);

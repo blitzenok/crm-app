@@ -56,14 +56,14 @@ const iso = (ms) => new Date(ms).toISOString();
 
 // ---------- config ----------
 
-test("routingConfig: CLEFFO_DAILY_CAP_USD parsed (empty/0/garbage = no cap), pending window 30 min, tz Asia/Jerusalem", () => {
+test("routingConfig: CLEFFO_DAILY_CAP_USD parsed (empty/0/garbage = no cap), pending window = link lifetime (60), tz Asia/Jerusalem", () => {
   assert.equal(routingConfig({}).dailyCapUsd, 0);
   assert.equal(routingConfig({ CLEFFO_DAILY_CAP_USD: "" }).dailyCapUsd, 0);
   assert.equal(routingConfig({ CLEFFO_DAILY_CAP_USD: "abc" }).dailyCapUsd, 0);
   assert.equal(routingConfig({ CLEFFO_DAILY_CAP_USD: "-5" }).dailyCapUsd, 0);
   const c = routingConfig({ CLEFFO_DAILY_CAP_USD: "2000" });
   assert.equal(c.dailyCapUsd, 2000);
-  assert.equal(c.capPendingMin, 30);
+  assert.equal(c.capPendingMin, 60); // round 6: defaults to CLEFFO_LINK_TTL_MIN
   assert.equal(c.capTz, "Asia/Jerusalem");
   assert.equal(routingConfig({ CLEFFO_CAP_PENDING_MIN: "0", CLEFFO_CAP_TZ: "Not/AZone" }).capPendingMin, 0);
   assert.equal(routingConfig({ CLEFFO_CAP_TZ: "Not/AZone" }).capTz, "Asia/Jerusalem");
