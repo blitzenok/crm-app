@@ -235,7 +235,90 @@
     };
   }
 
-  var api = { select: select, aov: aov, products: products, sources: sources, sourceOf: sourceOf, repeat: repeat, whenOf: whenOf };
+  // Gross margin (2026-09-30). Unit costs come from GET /api/unit-costs ({ items: [{ id, cost, source, match: [{ slug, mg }] }] }):
+  // source 'purchase' = weighted average purchase price of the warehouse stock (orders ship from the warehouse), 'pod' = the
+  // supplier's POD price where no purchase is recorded. A line is matched by slug + strength only; a strength missing from
+  // the list is reported as missing, never guessed from a neighbour.
+  function mgKey(mg) { return String(mg || '').toLowerCase().replace(/\s+/g, ''); }
+  function slugKey(slug) { return String(slug || '').trim().toLowerCase(); }
+
+  function costIndex(data) {
+    var map = new Map();
+    var items = data && Array.isArray(data.items) ? data.items : [];
+    items.forEach(function (row) {
+      if (!row || typeof row !== 'object') return;
+      var cost = Number(row.cost);
+      if (typeof row.cost !== 'number' || !(cost > 0) || !Array.isArray(row.match)) return;
+      row.match.forEach(function (m) {
+        if (!m || !slugKey(m.slug) || !mgKey(m.mg)) return;
+        map.set(slugKey(m.slug) + '|' + mgKey(m.mg), { unit: cost, id: String(row.id || ''), source: typeof row.source === 'string' ? row.source : '' });
+      });
+    });
+    return map;
+  }
+
+  function itemCost(i, index) {
+    var slug = slugKey(i && i.slug);
+    if (!slug || !index || typeof index.get !== 'function') return null;
+    var hit = index.get(slug + '|' + mgKey(i.mg));
+    return hit ? { unit: hit.unit, id: hit.id, source: hit.source } : null;
+  }
+
+  // Product revenue of an order = amount due minus the shipping and card fee it charged (their cost to us is unknown,
+  // so both sides leave them out); the discount is already inside the amount due. Only orders whose every line has a
+  // cost go into the totals; product rows count every costed line.
+  function margin(list, index) {
+    var src = Array.isArray(list) ? list : [];
+    var rows = Object.create(null), rowKeys = [];
+    var miss = Object.create(null), missKeys = [];
+    var costed = 0, revenueC = 0, costC = 0;
+    src.forEach(function (r, idx) {
+      var items = Array.isArray(r && r.items) ? r.items : [];
+      var orderId = r && r.id != null && r.id !== '' ? String(r.id) : '#' + idx;
+      var orderCostC = 0, complete = items.length > 0;
+      items.forEach(function (i) {
+        var c = itemCost(i, index);
+        var qty = i.qty || 0;
+        if (!c) {
+          complete = false;
+          var mk = slugKey(i.slug) ? slugKey(i.slug) + '|' + mgKey(i.mg) : productKey(i);
+          var me = miss[mk];
+          if (!me) { me = miss[mk] = { key: mk, name: productName(i), mg: String(i.mg || '').trim(), units: 0, orderSet: Object.create(null) }; missKeys.push(mk); }
+          me.units += qty;
+          me.orderSet[orderId] = 1;
+          return;
+        }
+        var lineCostC = cents(c.unit * qty);
+        orderCostC += lineCostC;
+        var key = slugKey(i.slug) + '|' + mgKey(i.mg);
+        var e = rows[key];
+        if (!e) { e = rows[key] = { key: key, id: c.id, source: c.source, name: productName(i), mg: String(i.mg || '').trim(), units: 0, valueC: 0, costC: 0 }; rowKeys.push(key); }
+        e.units += qty;
+        e.valueC += cents(i.sum || 0);
+        e.costC += lineCostC;
+      });
+      if (!complete) return;
+      costed++;
+      costC += orderCostC;
+      revenueC += Math.max(0, cents(r.toPay || 0) - cents(r.shipCost || 0) - cents(r.cardFee || 0));
+    });
+    var products = rowKeys.map(function (k) {
+      var e = rows[k];
+      var profitC = e.valueC - e.costC;
+      return { key: e.key, id: e.id, source: e.source, name: e.name, mg: e.mg, units: e.units, value: e.valueC / 100, cost: e.costC / 100,
+        profit: profitC / 100, pct: e.valueC > 0 ? profitC / e.valueC : null };
+    }).sort(function (a, b) { return b.profit - a.profit || b.units - a.units; });
+    var missing = missKeys.map(function (k) {
+      var e = miss[k];
+      return { key: e.key, name: e.name, mg: e.mg, units: e.units, orders: Object.keys(e.orderSet).length };
+    }).sort(function (a, b) { return b.units - a.units || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0); });
+    var profitC = revenueC - costC;
+    return { orders: src.length, costed: costed, revenue: revenueC / 100, cost: costC / 100, profit: profitC / 100,
+      pct: revenueC > 0 ? profitC / revenueC : null, products: products, missing: missing };
+  }
+
+  var api = { select: select, aov: aov, products: products, sources: sources, sourceOf: sourceOf, repeat: repeat, whenOf: whenOf,
+    costIndex: costIndex, itemCost: itemCost, margin: margin };
   global.FinanceModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : global);
