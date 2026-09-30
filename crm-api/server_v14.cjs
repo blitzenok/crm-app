@@ -1660,6 +1660,15 @@ try {
   console.error('⚠️ customer-timeline.cjs not mounted:', e.message);
 }
 
+// Unit costs (2026-09-30): the supplier price list for the gross margin on Finance Reports (GET /api/unit-costs).
+// Staff only; data/unit-costs.json is read per request. Wrapped like the mounts above.
+try {
+  app.use('/api/unit-costs', requireAuth, require('./unit-costs.cjs')({ file: path.join(DATA_DIR, 'unit-costs.json') }));
+  console.log('✅ unit-costs.cjs mounted (/api/unit-costs)');
+} catch (e) {
+  console.error('⚠️ unit-costs.cjs not mounted:', e.message);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL ERROR HANDLER — catch-all, always returns JSON
 // Last middleware in the stack, so it also answers for the modules mounted above.
