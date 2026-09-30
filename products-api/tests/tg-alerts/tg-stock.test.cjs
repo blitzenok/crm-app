@@ -6,6 +6,14 @@ const path = require('path');
 const S = require('../../tg-stock.cjs');
 
 const OM = require('../load-crm-model.cjs')('orders-model.js');
+// The cron script requires <CRM_DIR>/orders-model.js; the repo root says "type": "module", so it gets a CommonJS copy of crm-web's.
+const CRM_DIR = (() => {
+  const fs = require('fs'), os = require('os');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'crm-dir-'));
+  fs.writeFileSync(path.join(d, 'package.json'), '{"type":"commonjs"}');
+  fs.copyFileSync(path.join(__dirname, '..', '..', '..', 'crm-web', 'orders-model.js'), path.join(d, 'orders-model.js'));
+  return d;
+})();
 
 // The agents' warehouse file (/opt/crm-umg/server/data/inventory.json), trimmed to what the table reads.
 function inventory() {
@@ -270,4 +278,106 @@ test('alertMessage: nothing to say -> null; intake and low in one message, rich 
   const m3 = S.alertMessage({ intakes: [{ code: 'A', name: 'X', added: 1, left: 1 }], low: [{ code: 'B', name: 'Y', left: 0, peak: 5, out: true }] });
   assert.match(m3.text, /^📦 Stock update/);
   assert.equal(m3.type, 'stock'); assert.equal(m3.rich.skip_entity_detection, true); assert.equal(m3.rich.blocks[0].size, 6);
+});
+
+// ---- stock-status.json (restock alerts, services/restock) ----
+const R2 = (code, received, left) => ({ code, name: code, received, sold: received - left, left });
+
+test('stockStatus: only SKUs that ever had an intake, every shop key of a SKU, in = left above 0, out = exactly 0; below zero is unknown (not listed)', () => {
+  const inv = inventory();
+  const map = S.skuMap(Object.assign({}, MAP, { 'g3-r-10mg-pack': { inventory_code: 'G3-R-10' }, 'g3-r': { inventory_code: 'G3-R-10' } }), inv.skus);
+  const rows = [R2('G3-R-10', 100, 40), R2('TES-10', 5, 0), R2('RC02-500', 30, -2), R2('WOL-10', 0, 0), R2('G1-S-10', 0, 0)];
+  const st = S.stockStatus(rows, map, Date.parse('2026-09-30T12:00:00Z'));
+  assert.equal(st.updatedAt, '2026-09-30T12:00:00.000Z');
+  assert.deepEqual(st.items, { 'g3-r': 'in', 'g3-r-10mg': 'in', 'g3-r-10mg-pack': 'in', 'tesamorelin-10mg': 'out' }, 'below zero (RC02-500, left -2) is unknown, not out');
+});
+
+test('stockStatus: no intake, no SKU in the map and gifts are "unknown": not in items; empty warehouse gives empty items', () => {
+  const inv = inventory();
+  const map = S.skuMap(MAP, inv.skus);
+  const st = S.stockStatus([R2('G3-R-10', 0, 0), R2('TES-10', 0, 0)], map, 0);
+  assert.deepEqual(st.items, {});
+  assert.equal(S.stockStatus([], map, 0).updatedAt, '1970-01-01T00:00:00.000Z');
+  // a SKU that has stock but no shop key points at it: nothing is invented for it
+  assert.deepEqual(S.stockStatus([R2('RC02-500', 30, 30)], S.skuMap({}, inv.skus), 0).items, {});
+});
+
+test('writeStatus: atomic (temp + rename), readable JSON, no temp file left; a failed write leaves the old file alone', () => {
+  const fs = require('fs'), os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-status-'));
+  try {
+    const f = path.join(dir, 'stock-status.json');
+    S.writeStatus(f, { updatedAt: 'A', items: { x: 'in' } });
+    assert.deepEqual(JSON.parse(fs.readFileSync(f, 'utf8')), { updatedAt: 'A', items: { x: 'in' } });
+    S.writeStatus(f, { updatedAt: 'B', items: { x: 'out' } });
+    assert.equal(JSON.parse(fs.readFileSync(f, 'utf8')).updatedAt, 'B');
+    assert.deepEqual(fs.readdirSync(dir), ['stock-status.json']);
+    assert.throws(() => S.writeStatus(path.join(dir, 'no', 'such', 'dir', 'f.json'), {}));
+    assert.equal(JSON.parse(fs.readFileSync(f, 'utf8')).updatedAt, 'B');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('cron entry: writes the status file every run, even with no bot token; --dry only prints what it would write; unreadable warehouse leaves the file alone', () => {
+  const fs = require('fs'), os = require('os');
+  const { spawnSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-main-'));
+  try {
+    const umg = path.join(dir, 'umg');
+    fs.mkdirSync(path.join(umg, 'data'), { recursive: true }); fs.mkdirSync(path.join(umg, 'config'));
+    fs.writeFileSync(path.join(umg, 'data', 'inventory.json'), JSON.stringify(inventory()));
+    fs.writeFileSync(path.join(umg, 'config', 'rapid-sku-map.json'), JSON.stringify(MAP));
+    fs.writeFileSync(path.join(dir, 'env'), 'TG_STOCK_MODE=on\n');
+    fs.writeFileSync(path.join(dir, 'orders.json'), JSON.stringify([order({ items: [{ slug: 'tesamorelin', name: 'Tesamorelin', mg: '10mg', qty: 5, price: 99 }] })]));
+    const out = path.join(dir, 'stock-status.json');
+    const env = Object.assign({}, process.env, { ENV_FILE: path.join(dir, 'env'), ORDERS_FILE: path.join(dir, 'orders.json'), CRM_DIR,
+      CRM_UMG_DIR: umg, TG_STOCK_STATE: path.join(dir, 'state.json'), TG_STOCK_STATUS_FILE: out });
+    const script = path.join(__dirname, '..', '..', 'tg-stock.cjs');
+    const dry = spawnSync(process.execPath, [script, '--dry'], { env, encoding: 'utf8' });
+    assert.equal(dry.status, 0, dry.stderr);
+    assert.match(dry.stdout, /stock-status/);
+    assert.equal(fs.existsSync(out), false, '--dry writes nothing');
+    const real = spawnSync(process.execPath, [script], { env, encoding: 'utf8' });     // no bot token: Telegram part stops with an error, the file is already written
+    assert.equal(real.status, 1);
+    const st = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.equal(st.items['tesamorelin-10mg'], 'out');
+    assert.equal(st.items['g3-r-10mg'], 'in');
+    assert.equal(st.items['bpc-157-10mg'], undefined);
+    assert.ok(Math.abs(Date.now() - Date.parse(st.updatedAt)) < 60000);
+    const before = fs.readFileSync(out, 'utf8');
+    fs.writeFileSync(path.join(umg, 'data', 'inventory.json'), '{ half a file');
+    const broken = spawnSync(process.execPath, [script], { env, encoding: 'utf8' });
+    assert.equal(broken.status, 1);
+    assert.equal(fs.readFileSync(out, 'utf8'), before, 'data not read: the file is not touched');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('cron entry: the status file is written whatever TG_STOCK_MODE says (the table and the alerts need on), so the storefront button does not depend on the Telegram table', () => {
+  const fs = require('fs'), os = require('os');
+  const { spawnSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-main-off-'));
+  try {
+    const umg = path.join(dir, 'umg');
+    fs.mkdirSync(path.join(umg, 'data'), { recursive: true }); fs.mkdirSync(path.join(umg, 'config'));
+    fs.writeFileSync(path.join(umg, 'data', 'inventory.json'), JSON.stringify(inventory()));
+    fs.writeFileSync(path.join(umg, 'config', 'rapid-sku-map.json'), JSON.stringify(MAP));
+    fs.writeFileSync(path.join(dir, 'orders.json'), JSON.stringify([order({ items: [{ slug: 'tesamorelin', name: 'Tesamorelin', mg: '10mg', qty: 5, price: 99 }] })]));
+    const out = path.join(dir, 'stock-status.json');
+    for (const envText of ['', 'TG_STOCK_MODE=off\n']) {
+      fs.writeFileSync(path.join(dir, 'env'), envText);
+      const env = Object.assign({}, process.env, { ENV_FILE: path.join(dir, 'env'), ORDERS_FILE: path.join(dir, 'orders.json'), CRM_DIR,
+        CRM_UMG_DIR: umg, TG_STOCK_STATE: path.join(dir, 'state.json'), TG_STOCK_STATUS_FILE: out });
+      fs.rmSync(out, { force: true });
+      const r = spawnSync(process.execPath, [path.join(__dirname, '..', '..', 'tg-stock.cjs')], { env, encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr + r.stdout);
+      assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).items['tesamorelin-10mg'], 'out');
+      assert.equal(fs.existsSync(path.join(dir, 'state.json')), false, 'off: no table, no alert state');
+      assert.doesNotMatch(r.stdout + r.stderr, /bot token|sent|edited/i, 'nothing goes to Telegram');
+    }
+    // and an unreadable warehouse still leaves the old file alone with mode off
+    const before = fs.readFileSync(out, 'utf8');
+    fs.writeFileSync(path.join(umg, 'data', 'inventory.json'), '{ half');
+    const env2 = Object.assign({}, process.env, { ENV_FILE: path.join(dir, 'env'), ORDERS_FILE: path.join(dir, 'orders.json'), CRM_DIR, CRM_UMG_DIR: umg, TG_STOCK_STATE: path.join(dir, 'state.json'), TG_STOCK_STATUS_FILE: out });
+    assert.equal(spawnSync(process.execPath, [path.join(__dirname, '..', '..', 'tg-stock.cjs')], { env: env2, encoding: 'utf8' }).status, 1);
+    assert.equal(fs.readFileSync(out, 'utf8'), before);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

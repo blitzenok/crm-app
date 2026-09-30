@@ -472,3 +472,35 @@ test('tg_order / tg_paid: valid kinds, one item per order each', () => {
   assert.equal(h.box.enqueue('tg_paid', 'A1'), true);
   assert.equal(h.box.enqueue('tg_order', 'A1'), false, 'queued once per order');
 });
+
+// restock (30.09): letter_restock has no order: its ref is a subscription id, found by deps.findRecord, handed to send() where an order goes.
+test('letter_restock: valid kind, one item per subscription, looked up with findRecord (not orders.json), gone when the record is gone', async () => {
+  assert.ok(mo.KINDS.includes('letter_restock'));
+  const subs = [{ id: 'rs_1', status: 'pending' }];
+  const h = harness({ script: () => REFUSED, orders: [] });
+  const seen = [];
+  const box = mo.createMailOutbox(Object.assign({}, h.deps, {
+    findRecord: (kind, ref) => { seen.push(kind + ' ' + ref); return subs.find(s => s.id === ref) || null; },
+    send: (item, rec, cb) => { h.calls.push({ kind: item.kind, ref: item.ref, rec }); cb({ ok: false, status: 503 }); }
+  }));
+  assert.equal(box.enqueue('letter_restock', 'rs_1'), true);
+  assert.equal(box.enqueue('letter_restock', 'rs_1'), false, 'queued once per subscription');
+  assert.equal(h.calls.length, 1); assert.deepEqual(h.calls[0].rec, subs[0]);
+  assert.deepEqual(seen, ['letter_restock rs_1']);
+  assert.equal(h.queue().length, 1, 'refused: stays for a retry');
+  subs.length = 0;
+  h.T += 10 * MIN;
+  await box.tick();
+  assert.deepEqual(h.queue(), [], 'the subscription is gone: dropped, not buried');
+  assert.ok(h.logs.some(l => /dropped letter_restock rs_1/.test(l)), h.logs.join('\n'));
+  assert.equal(h.dead().length, 0);
+});
+
+test('letter_restock without a findRecord reader is a failed attempt to retry, never "gone"; order kinds are unaffected by findRecord', async () => {
+  const h = harness({ script: () => ({ ok: true, status: 200 }) });
+  h.box.enqueue('letter_restock', 'rs_1');
+  assert.equal(h.queue().length, 1);
+  assert.match(h.queue()[0].lastError || '', /record/);
+  const box2 = mo.createMailOutbox(Object.assign({}, h.deps, { findRecord: () => { throw new Error('must not be asked'); } }));
+  assert.equal(box2.enqueue('mail_manager', 'A1'), true, 'an order kind still reads orders.json');
+});
