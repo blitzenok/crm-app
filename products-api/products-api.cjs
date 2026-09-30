@@ -1976,6 +1976,29 @@ function handleRequest(req, res) {
     });
     return;
   }
+  // Reviews (2026-10-01, services/reviews/): verified-buyer reviews and the hidden 1-5 order rating.
+  if (req.method === 'GET' && pathname === '/msolpeptides-api/reviews') { reviewsReplyPublic(req, res); return; }
+  if (req.method === 'POST' && (pathname === '/msolpeptides-api/review/order' || pathname === '/msolpeptides-api/review/rating' || pathname === '/msolpeptides-api/review/submit')) {
+    // JSON only: a plain HTML form on another site must not be able to write anything for anybody. The order is a POST too, so the link token travels in the body,
+    // never in an address (no access.log line, no Referer): it only reads.
+    if (reviewsContentType(req) !== 'application/json') { req.resume(); jsonReply(res, 415, {error:'Content-Type must be application/json'}); return; }
+    readBody(req, (err, data) => {
+      if (err) { jsonReply(res, 400, {error:'Invalid request'}); return; }
+      if (pathname === '/msolpeptides-api/review/order') reviewsReplyOrder(req, res, data);
+      else if (pathname === '/msolpeptides-api/review/rating') reviewsReplyRating(req, res, data);
+      else reviewsReplySubmit(req, res, data);
+    });
+    return;
+  }
+  // The moderator's side: not in PUBLIC_ROUTES, so the gate has already checked the CRM session (or X-Admin-Secret) before this line.
+  if (req.method === 'GET' && pathname === '/msolpeptides-api/reviews-admin') { reviewsReplyAdmin(res); return; }
+  if (req.method === 'POST' && pathname.startsWith('/msolpeptides-api/reviews-admin/')) {
+    readBody(req, (err, data) => {
+      if (err) { jsonReply(res, 400, {error:'Invalid request'}); return; }
+      reviewsReplyDecide(req, res, pathname.slice('/msolpeptides-api/reviews-admin/'.length), data);
+    });
+    return;
+  }
   if (req.method === 'POST' && pathname === '/msolpeptides-api/subscribe') {
     readBody(req, (err, data) => {
       if (err || !data || typeof data !== 'object' || Array.isArray(data)) { jsonReply(res, 400, {error:'Invalid subscription'}); return; }
@@ -3934,6 +3957,10 @@ const PUBLIC_ROUTES = new Set([
   ,'POST /msolpeptides-api/coupon-quote',
   'GET /msolpeptides-api/coupon-quote',
   'GET /msolpeptides-api/site-copy',
+  'POST /msolpeptides-api/review/order',           // reviews (2026-10-01): the page of the link in the delivered letter reads its order (JSON {o,t}: the token is never in an address); writes nothing
+  'POST /msolpeptides-api/review/rating',
+  'POST /msolpeptides-api/review/submit',
+  'GET /msolpeptides-api/reviews',                 // approved reviews of one product (200 with an empty list while the feature is off)
   'GET /msolpeptides-api/stock-status',            // restock (2026-09-30): out-of-stock list, no numbers
   'POST /msolpeptides-api/restock-subscribe',
   'GET /msolpeptides-api/restock-unsubscribe',          // the page with the button; the POST cancels
@@ -4322,6 +4349,7 @@ function orderLettersSend(item, order, cb) {
   let data;
   try { data = orderLetters.letterData(order, type, { mailSafe: mailSafe }); }
   catch (e) { return cb({ ok: false, status: 'not_built', error: 'letter data: ' + ((e && e.message) || e) }); }
+  if (type === 'delivered') Object.assign(data, reviewsLetterFields(order));   // reviews (2026-10-01): review_url, only when REVIEWS_MODE allows this address
   cioSendEmail(id, to, to, data, 'letter-' + type, ref, (ok, status, errorText) => {
     if (ok) orderLettersMark(order.ref, type);
     cb({ ok: ok, status: status, error: errorText });
@@ -4687,6 +4715,211 @@ function tgContactSend(item, msg, cb) {
     if (r.ok && r.richRefused) console.error('[mail-alert] TG RICH REFUSED contact ' + tgAlerts.safeRef(msg.id) + ', sent not as meant: ' + r.richRefused);
     cb({ ok: r.ok, status: r.status, error: r.error });
   });
+}
+// Reviews (2026-10-01): verified-buyer reviews of a product and a hidden 1-5 rating of an order. The rules are in reviews.cjs
+// (services/reviews/ in biofirst-hosting; spec docs/superpowers/specs/2026-10-01-reviews.md). Here: the routes, the file and the
+// link in the delivered letter. reviews.json (0600) holds ratings and reviews with the buyer's address: not in git, not in a log
+// line. The link of the letter carries an HMAC token of (order number, address) made with REVIEWS_SECRET; the GET that opens the
+// page writes nothing, only the two POSTs do. A review is published only after a person approved it in the CRM (never automatic).
+// REVIEWS_MODE (off|test|on), REVIEWS_SECRET and ORDER_LETTERS_TEST_TO live in ENV_FILE; a change needs a restart.
+let reviews = null;
+let REVIEWS_CFG = { mode: 'off', secret: '', testTo: new Set() };
+const REVIEWS_FILE = path.join(__dirname, 'reviews.json');
+let reviewsWriteLimiter = null;          // writes (ratings and reviews) per visitor address, in memory only
+let reviewsFailLimiter = null;           // wrong links per visitor address
+const reviewsCapAlertAt = {};            // one [mail-alert] REVIEWS CAP per kind and hour
+try {
+  reviews = require('./reviews.cjs');
+  const reviewsCfg = reviews.parseConfig(readEnvFile(ENV_FILE));
+  for (const p of reviewsCfg.problems) console.error('[reviews] ERROR ' + p);
+  REVIEWS_CFG = reviewsCfg;
+  reviewsWriteLimiter = reviews.createLimiter(20, 3600 * 1000);
+  reviewsFailLimiter = reviews.createLimiter(40, 3600 * 1000);
+  console.log('[reviews] ' + reviewsCfg.mode);
+} catch (e) {
+  reviews = null;
+  REVIEWS_CFG = { mode: 'off', secret: '', testTo: new Set() };
+  console.error('[reviews] ERROR module not started: ' + ((e && e.message) || e));
+}
+function reviewsErr(e) { return reviews ? reviews.safeId((e && e.message) || e) : 'error'; }
+function reviewsOn() { return !!reviews && REVIEWS_CFG.mode !== 'off'; }
+function reviewsContentType(req) { return String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase(); }
+// nginx puts the visitor's address in X-Real-IP (and overwrites anything the visitor sent); this process listens on 127.0.0.1 only.
+function reviewsClientIp(req) {
+  const v = String(req.headers['x-real-ip'] || '').trim();
+  if (/^[0-9a-fA-F:.]{3,45}$/.test(v)) return v;
+  return String((req.socket && req.socket.remoteAddress) || '');
+}
+function reviewsReadData() { return reviews.normalizeData(readJsonOrFallback(REVIEWS_FILE, undefined)); }
+// The read-only routes (the page's order, the public list, the moderator's list) parse a file again only when it has changed: same inode, size and mtime
+// = the same parsed object, which these routes never change. The routes that write read fresh with reviewsReadData(): a write is a rename, so the cache
+// key moves on by itself. A file that cannot be read or parsed is never cached.
+const reviewsFileCache = new Map();
+function reviewsReadCached(file, parse) {
+  let st;
+  try { st = fs.statSync(file); } catch (e) { if (e && e.code === 'ENOENT') { reviewsFileCache.delete(file); return parse(undefined); } throw e; }
+  const key = st.ino + ':' + st.size + ':' + st.mtimeMs;
+  const hit = reviewsFileCache.get(file);
+  if (hit && hit.key === key) return hit.value;
+  const value = parse(fs.readFileSync(file, 'utf8'));
+  reviewsFileCache.set(file, { key: key, value: value });
+  return value;
+}
+function reviewsParseData(raw) { return reviews.normalizeData(raw === undefined ? undefined : JSON.parse(raw)); }
+function reviewsParseOrders(raw) { if (raw === undefined) throw new Error('orders.json is missing'); return JSON.parse(raw); }
+function reviewsWrite(data) { mailOutboxWrite(REVIEWS_FILE, data); }   // 0600, like the queue: the file holds addresses
+function reviewsCapAlert(kind, text) {
+  const now = Date.now();
+  if (reviewsCapAlertAt[kind] && now - reviewsCapAlertAt[kind] < 3600 * 1000) return;
+  reviewsCapAlertAt[kind] = now;
+  console.error('[mail-alert] REVIEWS CAP ' + kind + ' ' + text);
+}
+function reviewsNoStore(res) { res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); }
+// The field of the delivered letter: {review_url} or nothing. A failure here must never stop the letter.
+function reviewsLetterFields(order) {
+  try {
+    if (!reviewsOn()) return {};
+    return reviews.letterFields(order, REVIEWS_CFG, { isTestOrder: isTestOrderRef, looksLikeEmail: looksLikeEmail });
+  } catch (e) {
+    console.error('[reviews] ERROR review link not built: ' + reviewsErr(e));
+    return {};
+  }
+}
+// The door of the three routes that work with a link (all POST with the token in the body): the mode, a visitor that has not guessed too often, the order, the token,
+// the order's state, the address the mode allows, the catalog. Answers for every refusal with the same 404 (nothing tells a wrong number from a wrong
+// token from an order that is not delivered); 429 for a visitor with too many wrong links. -> { order, email, items } or null (already answered).
+function reviewsDoor(req, res, ref, token) {
+  if (!reviewsOn()) { jsonReply(res, 404, {error:'Not found'}); return null; }
+  const ip = reviewsClientIp(req), now = Date.now();
+  if (reviewsFailLimiter.over(ip, now)) { jsonReply(res, 429, {error:'Too many attempts'}); return null; }
+  const refuse = () => { reviewsFailLimiter.take(ip, now); jsonReply(res, 404, {error:'This link is not valid'}); return null; };
+  if (typeof ref !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(ref) || typeof token !== 'string') return refuse();
+  let order = null;
+  try {
+    const all = reviewsReadCached(TRACK_ORDERS_FILE, reviewsParseOrders);
+    order = Array.isArray(all) ? (all.find(o => o && o.ref === ref) || null) : null;
+  } catch (e) {
+    console.error('[reviews] ERROR orders not readable: ' + reviewsErr(e));
+    jsonReply(res, 503, {error:'Unavailable'}); return null;
+  }
+  if (!order) return refuse();
+  const email = reviews.emailOf(order);
+  if (!reviews.tokenOk(REVIEWS_CFG.secret, ref, email, token)) return refuse();
+  // From here on the visitor holds a real link, so a refusal is not a guess and is not counted against them.
+  if (!reviews.orderAllowed(order, { isTestOrder: isTestOrderRef, looksLikeEmail: looksLikeEmail }).ok || !reviews.modeAllows(REVIEWS_CFG, email)) { jsonReply(res, 404, {error:'This link is not valid'}); return null; }
+  const products = readProducts();
+  if (catalogUnreadable) { jsonReply(res, 503, {error:'Unavailable'}); return null; }
+  return { order: order, email: email, items: reviews.itemsOf(order, products) };
+}
+// POST {o, t}: what the page of the link shows. Only reads (a mail scanner that opens the link does not even run the page's script, and the link's fragment never reaches a server).
+function reviewsReplyOrder(req, res, body) {
+  reviewsNoStore(res);
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const a = reviewsDoor(req, res, b.o, b.t);
+  if (!a) return;
+  try {
+    const data = reviewsReadCached(REVIEWS_FILE, reviewsParseData);
+    const rt = reviews.findRating(data, a.order.ref);
+    jsonReply(res, 200, {
+      orderNumber: a.order.ref,
+      firstName: reviews.cleanLine(a.order.customer && a.order.customer.firstName).split(' ')[0],
+      defaultName: reviews.defaultName(a.order),
+      items: a.items,
+      rating: rt ? { r: rt.rating, comment: rt.comment || '', locked: reviews.ratingLocked(rt, Date.now()) } : null,
+      reviewed: data.reviews.filter(r => r && r.ref === a.order.ref).map(r => r.slug)
+    });
+  } catch (e) {
+    console.error('[reviews] ERROR file not readable: ' + reviewsErr(e));
+    jsonReply(res, 500, {error:'Could not load, please try again'});
+  }
+}
+function reviewsReplyRating(req, res, body) {
+  reviewsNoStore(res);
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const a = reviewsDoor(req, res, b.o, b.t);
+  if (!a) return;
+  const v = reviews.validateRating(b);
+  if (!v.ok) { jsonReply(res, 400, {error: v.error}); return; }
+  if (!reviewsWriteLimiter.take(reviewsClientIp(req), Date.now())) { jsonReply(res, 429, {error:'Too many requests, please try again later'}); return; }
+  try {
+    const data = reviewsReadData();
+    const r = reviews.setRating(data, { ref: a.order.ref, email: a.email, r: v.r, comment: v.comment }, Date.now());
+    if (r.result === 'locked') { jsonReply(res, 409, {error:'This rating can no longer be changed'}); return; }
+    if (r.result === 'cap_total') { reviewsCapAlert('ratings', reviews.MAX_RATINGS + ' ratings in the file, new ones are not taken'); jsonReply(res, 503, {error:'Unavailable'}); return; }
+    reviewsWrite(data);
+    console.log('[reviews] rating ' + r.result + ' ' + reviews.safeId(r.rating.id));
+    jsonReply(res, 200, {ok:true, rating: r.rating.rating});
+  } catch (e) {
+    console.error('[reviews] ERROR rating not saved: ' + reviewsErr(e));
+    jsonReply(res, 500, {error:'Could not save, please try again'});
+  }
+}
+function reviewsReplySubmit(req, res, body) {
+  reviewsNoStore(res);
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {};
+  const a = reviewsDoor(req, res, b.o, b.t);
+  if (!a) return;
+  const v = reviews.validateReview(b, a.items, a.order);
+  if (!v.ok) { jsonReply(res, 400, {error: v.error}); return; }
+  if (!reviewsWriteLimiter.take(reviewsClientIp(req), Date.now())) { jsonReply(res, 429, {error:'Too many requests, please try again later'}); return; }
+  try {
+    const data = reviewsReadData();
+    const item = a.items.find(i => i.slug === v.slug);
+    const r = reviews.addReview(data, { ref: a.order.ref, email: a.email, slug: v.slug, productName: item ? item.name : v.slug, displayName: v.displayName, text: v.text }, Date.now());
+    if (r.result === 'duplicate') { jsonReply(res, 409, {error:'You have already reviewed this product'}); return; }
+    if (r.result === 'cap_pending') { reviewsCapAlert('pending', reviews.MAX_PENDING + ' reviews wait for a moderator, new ones are not taken'); jsonReply(res, 503, {error:'Unavailable'}); return; }
+    if (r.result === 'cap_total') { reviewsCapAlert('total', reviews.MAX_REVIEWS + ' reviews in the file, new ones are not taken'); jsonReply(res, 503, {error:'Unavailable'}); return; }
+    reviewsWrite(data);
+    console.log('[reviews] submitted ' + reviews.safeId(r.review.id) + ' ' + r.review.slug + (r.review.flags.length ? ' FLAGGED' : ''));
+    jsonReply(res, 200, {ok:true});
+  } catch (e) {
+    console.error('[reviews] ERROR review not saved: ' + reviewsErr(e));
+    jsonReply(res, 500, {error:'Could not save, please try again'});
+  }
+}
+// Public: the approved reviews of one product. Nothing in them identifies an order or an address.
+function reviewsReplyPublic(req, res) {
+  // Off (or the module did not start): an empty list, not a 404. Every product card asks, and the 404s were only noise in the log.
+  if (!reviewsOn()) { res.setHeader('Cache-Control', 'public, max-age=120'); jsonReply(res, 200, {reviews: [], preview: false}); return; }
+  let slug = '';
+  try { slug = new URL(String(req.url || ''), 'http://localhost').searchParams.get('slug') || ''; } catch (e) { slug = ''; }
+  try {
+    const list = reviews.publicReviews(reviewsReadCached(REVIEWS_FILE, reviewsParseData), slug.trim().toLowerCase());
+    res.setHeader('Cache-Control', 'public, max-age=120');   // here, not in nginx: add_header in a location drops the server's security headers
+    // preview: test mode. The page script draws the list only for a browser that opted in (localStorage blr_reviews_preview = 1).
+    jsonReply(res, 200, {reviews: list, preview: REVIEWS_CFG.mode === 'test'});
+  } catch (e) {
+    console.error('[reviews] ERROR file not readable: ' + reviewsErr(e));
+    jsonReply(res, 503, {error:'Unavailable'});
+  }
+}
+function reviewsReplyAdmin(res) {
+  if (!reviews) { jsonReply(res, 503, {error:'Reviews module not started'}); return; }
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    jsonReply(res, 200, Object.assign({ mode: REVIEWS_CFG.mode }, reviews.adminView(reviewsReadCached(REVIEWS_FILE, reviewsParseData))));
+  } catch (e) {
+    console.error('[reviews] ERROR file not readable: ' + reviewsErr(e));
+    jsonReply(res, 500, {error:'Could not read the reviews file'});
+  }
+}
+// approve | reject, from any state. The text is never edited and nothing is deleted.
+function reviewsReplyDecide(req, res, id, body) {
+  if (!reviews) { jsonReply(res, 503, {error:'Reviews module not started'}); return; }
+  if (!/^rv_[0-9a-f]{16}$/.test(id)) { jsonReply(res, 404, {error:'Not found'}); return; }
+  const action = body && typeof body === 'object' ? body.action : undefined;
+  try {
+    const data = reviewsReadData();
+    const r = reviews.decide(data, id, action, req.crmEmail || '', Date.now());
+    if (r.result === 'bad_action') { jsonReply(res, 400, {error:'action must be approve or reject'}); return; }
+    if (r.result === 'not_found') { jsonReply(res, 404, {error:'Not found'}); return; }
+    reviewsWrite(data);
+    console.log('[reviews] ' + action + ' ' + reviews.safeId(id));
+    jsonReply(res, 200, {ok:true, id: r.review.id, status: r.review.status});
+  } catch (e) {
+    console.error('[reviews] ERROR decision not saved: ' + reviewsErr(e));
+    jsonReply(res, 500, {error:'Could not save, please try again'});
+  }
 }
 const server = http.createServer((req, res) => {
   applyCors(req, res);

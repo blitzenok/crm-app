@@ -11,7 +11,7 @@ const ITEMS = ['items', 'subtotal_server', 'shipping_server', 'discount_server',
 const TRACK = ['carrier', 'tracking_number', 'tracking_url'];
 const EXPECTED = {
   'order-customer': COMMON.concat(ITEMS), 'order-paid': COMMON,
-  'order-shipped': COMMON.concat(TRACK), 'order-in-transit': COMMON.concat(TRACK), 'order-delivered': COMMON.concat(TRACK)
+  'order-shipped': COMMON.concat(TRACK), 'order-in-transit': COMMON.concat(TRACK), 'order-delivered': COMMON.concat(TRACK, ['review_url'])
 };
 
 test('contract: five letters, fields exactly as in contract.md', () => {

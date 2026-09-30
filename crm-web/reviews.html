@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* reviews-only styling; everything shared lives in crm.css. No tables on purpose: crm.css hides the header and the first column of every table on a phone. */
+.notice{background:#FFF8EC;border:1px solid #F5DFAE;border-radius:12px;padding:12px 16px;font-size:12.5px;color:#7A5B18;margin-bottom:16px;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:12px 16px;font-size:12.5px;color:#991B1B;margin-bottom:16px;}
+.muted{color:#7A869A;}
+.hint{font-size:11.5px;color:#7A869A;margin-top:6px;}
+.rv-tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.rv-tab{padding:8px 16px;border-radius:10px;border:1px solid #E8ECF4;background:#fff;color:#5A6685;font-size:13px;font-weight:700;cursor:pointer;}
+.rv-tab.on{background:#1B2A4A;color:#fff;border-color:#1B2A4A;}
+.rv-tab .n{display:inline-block;margin-left:6px;padding:0 7px;border-radius:20px;background:#E8ECF4;color:#1B2A4A;font-size:11px;}
+.rv-tab.on .n{background:rgba(255,255,255,.2);color:#fff;}
+.rv-bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:12.5px;color:#5A6685;}
+.rv-bar label{display:inline-flex;gap:6px;align-items:center;cursor:pointer;}
+.rv-card{background:#fff;border:1px solid #E8ECF4;border-left-width:4px;border-radius:12px;padding:14px 16px;margin-bottom:12px;}
+.rv-card.pending{border-left-color:#D97706;}
+.rv-card.approved{border-left-color:#0E9F6E;}
+.rv-card.rejected{border-left-color:#9AA3B5;}
+.rv-card.flagged{border-left-color:#DC2626;background:#FFFBFB;}
+.rv-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:13px;color:#2D3654;}
+.rv-head b{font-size:14px;color:#1B2A4A;}
+.rv-meta{font-size:11.5px;color:#7A869A;overflow-wrap:anywhere;}
+.rv-text{font-size:13.5px;line-height:1.6;color:#2D3654;white-space:pre-line;overflow-wrap:anywhere;margin:6px 0;}
+.rv-text mark,.rv-flag mark{background:#FECACA;color:#7F1D1D;border-radius:3px;padding:0 2px;font-weight:700;}
+.rv-flag{background:#FEF2F2;color:#991B1B;border:1px solid #FCA5A5;border-radius:8px;padding:6px 10px;font-size:12px;margin:8px 0;}
+.rv-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+.rv-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px;}
+.rv-stat{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px;}
+.rv-stat .v{font-size:24px;font-weight:700;color:#1B2A4A;line-height:1.1;}
+.rv-stat .l{font-size:11.5px;color:#7A869A;margin-top:4px;}
+.rv-dist{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.rv-dist h3,.rv-months h3{font-size:13px;margin:0 0 10px;color:#1B2A4A;}
+.rv-drow{display:flex;align-items:center;gap:10px;font-size:12.5px;margin:6px 0;}
+.rv-drow .k{flex:0 0 34px;color:#1B2A4A;font-weight:700;}
+.rv-drow .track{flex:1;height:12px;border-radius:6px;background:#F0F3FA;overflow:hidden;}
+.rv-drow .fill{display:block;height:100%;background:#B8892B;}
+.rv-drow.low .fill{background:#DC2626;}
+.rv-drow .c{flex:0 0 76px;text-align:right;color:#5A6685;}
+.rv-months{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+.rv-mrow{display:flex;gap:12px;font-size:12.5px;padding:5px 0;border-top:1px solid #F0F3FA;}
+.rv-mrow:first-of-type{border-top:0;}
+.rv-mrow .m{flex:1;}
+.rv-rating{background:#fff;border:1px solid #E8ECF4;border-left-width:4px;border-left-color:#B8892B;border-radius:12px;padding:12px 16px;margin-bottom:10px;}
+.rv-rating.low{border-left-color:#DC2626;background:#FFFBFB;}
+.rv-stars{font-size:16px;letter-spacing:1px;color:#B8892B;}
+.rv-rating.low .rv-stars{color:#DC2626;}
+@media(max-width:700px){.rv-stats{grid-template-columns:1fr 1fr;}}
+</style>
+
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Reviews <span>&mdash; moderation and the hidden order rating</span></div>
+      <span class="muted" id="loadedAt" style="font-size:12px"></span>
+      <button class="refresh-btn" onclick="loadAll()">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+
+      <div id="banner"></div>
+
+      <div class="rv-tabs" id="tabs"></div>
+
+      <div id="moderation">
+        <div class="rv-bar" id="modBar"></div>
+        <div id="modList"><div class="muted">Loading&hellip;</div></div>
+      </div>
+
+      <div id="ratings" style="display:none">
+        <div id="ratingStats"></div>
+        <div class="rv-bar" id="ratBar"></div>
+        <div id="ratList"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+renderNav('reviews');
+
+/* State of the page. The data comes from GET /msolpeptides-api/reviews-admin; nothing is cached anywhere else. */
+var DATA = null;
+var TAB = 'moderation';
+var FILTER = { status: 'pending', flaggedOnly: false };
+var RFILTER = { lowOnly: false, commentOnly: false };
+var BUSY = {};
+
+function el(id) { return document.getElementById(id); }
+function num(v) { return (v === null || v === undefined) ? '—' : String(v); }
+function stars(n) {
+  var s = '', i;
+  for (i = 1; i <= 5; i++) s += i <= n ? '\u2605' : '\u2606';
+  return s;
+}
+
+/* The text with every flagged string marked. Text is escaped first, piece by piece: the marks are the only markup that is ever made. */
+function highlight(text, flags) {
+  var t = String(text === null || text === undefined ? '' : text);
+  var words = (Array.isArray(flags) ? flags : []).filter(function (f) { return typeof f === 'string' && f; })
+    .map(function (f) { return f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+'); });
+  if (!words.length) return esc(t);
+  var re = new RegExp(words.join('|'), 'gi'), out = '', last = 0, m;
+  while ((m = re.exec(t)) !== null) {
+    if (m[0] === '') { re.lastIndex++; continue; }
+    out += esc(t.slice(last, m.index)) + '<mark>' + esc(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+  }
+  return out + esc(t.slice(last));
+}
+function fmtDay(iso) {
+  var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(iso || ''));
+  return m ? m[1] : '—';
+}
+function statusBadge(s) {
+  var cls = s === 'approved' ? 'badge-sent' : (s === 'pending' ? 'badge-high' : 'badge-none');
+  return '<span class="badge ' + cls + '">' + esc(s || 'unknown') + '</span>';
+}
+
+function reviewCard(r) {
+  var flagged = Array.isArray(r.flags) && r.flags.length > 0;
+  var id = safeId(r.id);
+  var cls = 'rv-card ' + esc(r.status === 'pending' || r.status === 'approved' || r.status === 'rejected' ? r.status : 'pending') + (flagged ? ' flagged' : '');
+  var by = r.decidedAt ? ' &middot; ' + esc(r.status) + ' ' + esc(fmtDay(r.decidedAt)) + (r.decidedBy ? ' by ' + esc(r.decidedBy) : '') : '';
+  var out = '<div class="' + cls + '" data-id="' + escAttr(id) + '">' +
+    '<div class="rv-head"><b>' + esc(r.productName || r.slug) + '</b>' + statusBadge(r.status) +
+    '<span>' + esc(r.displayName) + '</span></div>' +
+    '<div class="rv-meta">Order ' + esc(r.ref) + ' &middot; ' + esc(r.email) + ' &middot; written ' + esc(fmtDay(r.createdAt)) + by + '</div>';
+  if (flagged) out += '<div class="rv-flag"><b>Check before approving:</b> ' + r.flags.map(function (f) { return '<mark>' + esc(f) + '</mark>'; }).join(' ') +
+    ' &mdash; dosing, use or effects words, or a link. The text cannot be edited: reject it if it does not follow the research-use rule.</div>';
+  out += '<div class="rv-text">' + highlight(r.text, r.flags) + '</div><div class="rv-actions">';
+  if (id) {
+    if (r.status !== 'approved') out += '<button class="btn btn-primary" onclick="decide(\'' + id + '\',\'approve\')">Approve</button>';
+    if (r.status !== 'rejected') out += '<button class="btn btn-danger" onclick="decide(\'' + id + '\',\'reject\')">' + (r.status === 'approved' ? 'Take down' : 'Reject') + '</button>';
+  }
+  return out + '</div></div>';
+}
+
+/* Pending first (oldest waiting first), then the rest newest first. */
+function moderationRows(data, filter) {
+  var list = (data && data.reviews || []).filter(function (r) {
+    if (filter.status !== 'all' && r.status !== filter.status) return false;
+    if (filter.flaggedOnly && !(r.flags && r.flags.length)) return false;
+    return true;
+  });
+  var pend = list.filter(function (r) { return r.status === 'pending'; }).sort(function (a, b) { return String(a.createdAt) < String(b.createdAt) ? -1 : 1; });
+  var rest = list.filter(function (r) { return r.status !== 'pending'; });
+  return pend.concat(rest);
+}
+function renderModeration(data, filter) {
+  var rows = moderationRows(data, filter);
+  if (!rows.length) return '<div class="muted">' + (filter.status === 'pending' ? 'Nothing is waiting for a decision.' : 'No reviews match this filter.') + '</div>';
+  return rows.map(reviewCard).join('');
+}
+function renderModBar(data, filter) {
+  var c = (data && data.counts) || { pending: 0, approved: 0, rejected: 0 };
+  var opt = function (v, label) { return '<option value="' + v + '"' + (filter.status === v ? ' selected' : '') + '>' + label + '</option>'; };
+  return '<select class="filter-select" id="fStatus" onchange="setStatus(this.value)">' +
+    opt('pending', 'Pending (' + num(c.pending) + ')') + opt('approved', 'Approved (' + num(c.approved) + ')') + opt('rejected', 'Rejected (' + num(c.rejected) + ')') + opt('all', 'All') + '</select>' +
+    '<label><input type="checkbox" id="fFlag" onchange="setFlagged(this.checked)"' + (filter.flaggedOnly ? ' checked' : '') + '> Flagged only</label>' +
+    '<span class="hint" style="margin:0">Nothing is published without Approve. A review can be taken down later; the text is never edited.</span>';
+}
+
+function renderRatingStats(stats) {
+  if (!stats || !stats.count) return '<div class="muted" style="margin-bottom:14px">No ratings yet.</div>';
+  var low = (stats.distribution[1] || 0) + (stats.distribution[2] || 0) + (stats.distribution[3] || 0);
+  var out = '<div class="rv-stats">' +
+    '<div class="rv-stat"><div class="v">' + esc(num(stats.average)) + ' / 5</div><div class="l">Average rating</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(num(stats.count)) + '</div><div class="l">Ratings</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(String(low)) + '</div><div class="l">3 stars or fewer (' + esc(String(Math.round(low * 100 / stats.count))) + '%)</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(num(stats.distribution[5] || 0)) + '</div><div class="l">5 stars</div></div></div>';
+  out += '<div class="rv-dist"><h3>Distribution</h3>';
+  [5, 4, 3, 2, 1].forEach(function (n) {
+    var c = stats.distribution[n] || 0;
+    out += '<div class="rv-drow' + (n <= 3 ? ' low' : '') + '"><span class="k">' + n + ' ' + '\u2605' + '</span><span class="track"><span class="fill" style="width:' + Math.round(c * 100 / stats.count) + '%"></span></span><span class="c">' + esc(String(c)) + ' (' + Math.round(c * 100 / stats.count) + '%)</span></div>';
+  });
+  out += '</div><div class="rv-months"><h3>By month</h3>';
+  (stats.byMonth || []).slice().reverse().forEach(function (m) {
+    out += '<div class="rv-mrow"><span class="m">' + esc(m.month) + '</span><span>' + esc(String(m.count)) + (m.count === 1 ? ' rating' : ' ratings') + '</span><span><b>' + esc(num(m.average)) + '</b> / 5</span></div>';
+  });
+  return out + '</div>';
+}
+function ratingRows(data, filter) {
+  return (data && data.ratings || []).filter(function (x) {
+    if (filter.lowOnly && !(x.rating <= 3)) return false;
+    if (filter.commentOnly && !x.comment) return false;
+    return true;
+  });
+}
+function renderRatings(data, filter) {
+  var rows = ratingRows(data, filter);
+  if (!rows.length) return '<div class="muted">No ratings match this filter.</div>';
+  return rows.map(function (x) {
+    return '<div class="rv-rating' + (x.rating <= 3 ? ' low' : '') + '">' +
+      '<div class="rv-head"><span class="rv-stars">' + stars(x.rating) + '</span><b>' + esc(String(x.rating)) + ' / 5</b><span class="rv-meta">Order ' + esc(x.ref) + ' &middot; ' + esc(x.email) + ' &middot; ' + esc(fmtDay(x.createdAt)) +
+      (x.updatedAt && fmtDay(x.updatedAt) !== fmtDay(x.createdAt) ? ' (changed ' + esc(fmtDay(x.updatedAt)) + ')' : '') + '</span></div>' +
+      (x.comment ? '<div class="rv-text">' + highlight(x.comment, x.flags) + '</div>' : '<div class="rv-meta">No comment.</div>') + '</div>';
+  }).join('');
+}
+function renderRatBar(data, filter) {
+  var n = (data && data.ratings && data.ratings.length) || 0;
+  return '<label><input type="checkbox" id="rLow" onchange="setLow(this.checked)"' + (filter.lowOnly ? ' checked' : '') + '> 3 stars or fewer</label>' +
+    '<label><input type="checkbox" id="rCom" onchange="setComment(this.checked)"' + (filter.commentOnly ? ' checked' : '') + '> With a comment</label>' +
+    '<span class="hint" style="margin:0">Ratings are private: they are never shown on the site. The list shows the latest ' + esc(String(n)) + '.</span>';
+}
+
+function renderTabs(data, tab) {
+  var pending = data && data.counts ? data.counts.pending : 0;
+  var cnt = data && data.stats ? data.stats.count : 0;
+  return '<button class="rv-tab' + (tab === 'moderation' ? ' on' : '') + '" onclick="setTab(\'moderation\')">Moderation<span class="n">' + esc(num(pending)) + '</span></button>' +
+    '<button class="rv-tab' + (tab === 'ratings' ? ' on' : '') + '" onclick="setTab(\'ratings\')">Ratings<span class="n">' + esc(num(cnt)) + '</span></button>';
+}
+function renderBanner(data) {
+  if (!data) return '';
+  if (data.mode === 'off') return '<div class="notice">Reviews are <b>off</b> on the site (REVIEWS_MODE): buyers cannot write yet and nothing is shown. What is already in the file can still be decided here.</div>';
+  if (data.mode === 'test') return '<div class="notice">Reviews are in <b>test</b> mode: only the test addresses get the link, and the site shows approved reviews only to a browser that opted in.</div>';
+  return '';
+}
+
+function paint() {
+  el('banner').innerHTML = renderBanner(DATA);
+  el('tabs').innerHTML = renderTabs(DATA, TAB);
+  el('moderation').style.display = TAB === 'moderation' ? '' : 'none';
+  el('ratings').style.display = TAB === 'ratings' ? '' : 'none';
+  el('modBar').innerHTML = renderModBar(DATA, FILTER);
+  el('modList').innerHTML = renderModeration(DATA, FILTER);
+  el('ratingStats').innerHTML = renderRatingStats(DATA && DATA.stats);
+  el('ratBar').innerHTML = renderRatBar(DATA, RFILTER);
+  el('ratList').innerHTML = renderRatings(DATA, RFILTER);
+}
+function setTab(t) { TAB = t === 'ratings' ? 'ratings' : 'moderation'; paint(); }
+function setStatus(v) { FILTER.status = ['pending', 'approved', 'rejected', 'all'].indexOf(v) >= 0 ? v : 'pending'; paint(); }
+function setFlagged(b) { FILTER.flaggedOnly = !!b; paint(); }
+function setLow(b) { RFILTER.lowOnly = !!b; paint(); }
+function setComment(b) { RFILTER.commentOnly = !!b; paint(); }
+
+function askConfirm(msg) {
+  if (typeof confirmDialog === 'function') return confirmDialog(msg, { confirmText: 'Approve anyway' });
+  return Promise.resolve(window.confirm(msg));
+}
+async function decide(id, action) {
+  var r = DATA && DATA.reviews.filter(function (x) { return x.id === id; })[0];
+  if (!r || BUSY[id]) return;
+  if (action === 'approve' && r.flags && r.flags.length) {
+    var ok = await askConfirm('This review has flagged words (' + r.flags.join(', ') + '). Approving publishes it on the product page as it is. Approve anyway?');
+    if (!ok) return;
+  }
+  BUSY[id] = true;
+  try {
+    var res = await api('/msolpeptides-api/reviews-admin/' + encodeURIComponent(id), { method: 'POST', body: { action: action } });
+    r.status = res && res.status ? res.status : (action === 'approve' ? 'approved' : 'rejected');
+    r.decidedAt = new Date().toISOString();
+    await loadAll(true);
+    if (typeof toast === 'function') toast(action === 'approve' ? 'Approved: it is on the product page now' : (r.status === 'rejected' ? 'Rejected' : 'Done'), 'success');
+  } catch (e) { /* api() has shown the message */ }
+  BUSY[id] = false;
+}
+
+async function loadAll(quiet) {
+  try {
+    DATA = await api('/msolpeptides-api/reviews-admin', { toast: false });
+    el('loadedAt').textContent = 'Read ' + fmtDate(new Date().toISOString());
+    paint();
+  } catch (e) {
+    if (!quiet || !DATA) el('banner').innerHTML = '<div class="banner-error"><b>Reviews</b> ' + esc(e.message || 'Something went wrong') + '</div>';
+  }
+}
+
+loadAll();
+</script>
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
+</body>
+</html>

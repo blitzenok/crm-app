@@ -55,7 +55,7 @@ const CONTRACT = {
   'order-paid': COMMON_FIELDS.slice(),
   'order-shipped': COMMON_FIELDS.concat(TRACK_FIELDS),
   'order-in-transit': COMMON_FIELDS.concat(TRACK_FIELDS),
-  'order-delivered': COMMON_FIELDS.concat(TRACK_FIELDS)
+  'order-delivered': COMMON_FIELDS.concat(TRACK_FIELDS, ['review_url'])   // review_url (2026-10-01, services/reviews): the link of "How was your order?", sent only while REVIEWS_MODE allows the address
 };
 
 function normalizeName(name) {
@@ -147,7 +147,8 @@ const SAMPLE = {
   shipping_address: '123 Example Street, Springfield, IL 62701, US', shipping_method: 'Standard',
   items: [{ name: 'Sample product', mg: '5 mg', qty: 1, price: '99.00' }],
   subtotal_server: '99.00', shipping_server: '19.75', discount_server: '0.00', discount_pct_server: '0', discount_source: '',
-  carrier: 'FedEx', tracking_number: '123456789012', tracking_url: 'https://www.fedex.com/fedextrack/?trknbr=123456789012'
+  carrier: 'FedEx', tracking_number: '123456789012', tracking_url: 'https://www.fedex.com/fedextrack/?trknbr=123456789012',
+  review_url: 'https://biolabsresearch.co/review#o=TEST-0001&t=sampletokensampletokensample00'
 };
 
 function sampleData(key) {
