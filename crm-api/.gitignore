@@ -1,0 +1,13 @@
+node_modules/
+backups/
+snapshots/
+logs/
+audit/
+tombstones/
+*.env
+sheets-token.env
+sheets-oauth.env
+cio.env
+data/*.bak*
+*.bak*
+server_v14.cjs.bak*
