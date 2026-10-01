@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<style>
+/* accounts-only styling; everything shared lives in crm.css */
+.acc-search{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+.acc-search input{ flex:1; min-width:220px; max-width:420px; padding:9px 12px; border:1px solid #CBD5E1; border-radius:10px; font:inherit; font-size:13px; }
+.acc-hint{ font-size:12px; color:#5A6685; margin-bottom:12px; }
+.acc-msg{ font-size:13px; margin-bottom:12px; padding:9px 12px; border-radius:10px; }
+.acc-msg.err{ background:#FEF2F2; color:#991B1B; border:1px solid #FECACA; }
+.acc-msg.ok{ background:#EDFBF4; color:#0E6B45; border:1px solid #BBF7D0; }
+.acc-email{ font-weight:700; color:#1a1a2e; word-break:break-all; }
+.acc-past{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:2px 0; word-break:break-all; }
+.acc-none{ color:#7A869A; }
+.btn.acc-small{ padding:4px 10px; font-size:12px; }
+</style>
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=176ac848d9"></script>
+    <script src="auth.js"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Accounts <span>- customer accounts of the shop</span></div>
+    </div>
+    <div class="content">
+      <form class="acc-search" id="searchForm" autocomplete="off">
+        <input type="search" id="q" aria-label="Customer email" placeholder="Email, or its first 3 characters" maxlength="254">
+        <button class="btn btn-primary" id="searchBtn" type="submit">Search</button>
+      </form>
+      <div class="acc-hint">An exact address (login or a past one) comes first, then logins and past addresses that start with the text.</div>
+      <div class="acc-msg" id="msg" role="alert" hidden></div>
+      <div class="table-card">
+        <table id="accTable">
+          <thead><tr>
+            <th>#</th><th>Email</th><th>Past emails</th><th>Claimed orders</th><th>Created</th><th>Last login</th><th>Orders</th><th data-admin-only>Actions</th>
+          </tr></thead>
+          <tbody id="accBody"><tr><td colspan="8" class="empty-state">Search for a customer to see the account.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+renderNav('customer-accounts');
+const DESK = '/account-desk';
+// Every string from the service (addresses a customer typed) reaches the page only through textContent.
+let busy = false;       // an admin action in flight: its buttons do nothing until it ends
+let gen = 0;            // search generation: an answer for a search we already left is dropped
+let lastQuery = '';
+let rows = [];
+
+const $ = id => document.getElementById(id);
+function isAdmin() { return !!(window.CRM_CURRENT_USER && window.CRM_CURRENT_USER.role === 'admin'); }
+function el(tag, props, children) {
+  const e = document.createElement(tag);
+  for (const k in (props || {})) {
+    if (k === 'text') e.textContent = props[k];
+    else if (k === 'data') for (const d in props[k]) e.dataset[d] = props[k][d];
+    else e.setAttribute(k, props[k]);
+  }
+  (children || []).forEach(c => e.appendChild(c));
+  return e;
+}
+function when(iso) {
+  const d = new Date(iso);
+  return iso && !isNaN(d.getTime()) ? d.toLocaleString() : '';
+}
+function say(text, kind) {
+  const m = $('msg');
+  m.textContent = text || '';
+  m.className = 'acc-msg ' + (kind || 'err');
+  m.hidden = !text;
+}
+
+function cell(label, child) {
+  const td = el('td', { 'data-label': label });
+  if (typeof child === 'string') td.textContent = child; else if (child) td.appendChild(child);
+  return td;
+}
+
+function render() {
+  const body = $('accBody');
+  body.textContent = '';
+  if (!rows.length) {
+    body.appendChild(el('tr', {}, [el('td', { colspan: '8', class: 'empty-state', text: 'No accounts found' })]));
+    return;
+  }
+  const admin = isAdmin();
+  rows.forEach((a, i) => {
+    const past = el('div', {});
+    if (!a.pastEmails.length) past.appendChild(el('span', { class: 'acc-none', text: 'none' }));
+    a.pastEmails.forEach(pe => {
+      const line = el('div', { class: 'acc-past' }, [el('span', { class: 'acc-past-email', text: pe })]);
+      if (admin) line.appendChild(el('button', { type: 'button', class: 'btn btn-danger acc-small', 'data-admin-only': '', data: { act: 'release', email: pe }, text: 'Release email' }));
+      past.appendChild(line);
+    });
+    const tr = el('tr', { data: { id: a.id } }, [
+      el('td', { text: String(i + 1) }),
+      cell('Email', el('span', { class: 'acc-email', text: a.email })),
+      cell('Past emails', past),
+      cell('Claimed orders', String(a.claimedRefs.length)),
+      cell('Created', when(a.createdAt)),
+      cell('Last login', when(a.lastLoginAt) || 'never'),
+      cell('Orders', String(a.orderCount))
+    ]);
+    if (admin) tr.appendChild(cell('Actions', el('button', { type: 'button', class: 'btn btn-secondary acc-small', 'data-admin-only': '', data: { act: 'change', id: a.id, email: a.email }, text: 'Change email' })));
+    body.appendChild(tr);
+  });
+}
+
+async function search(q, keepMessage) {
+  const my = ++gen;
+  if (!keepMessage) say('');
+  try {
+    const d = await api(DESK + '/accounts?email=' + encodeURIComponent(q), { toast: false });
+    if (my !== gen) return;
+    lastQuery = q;
+    rows = ((d && d.accounts) || []).map(a => ({
+      id: String(a.id), email: String(a.email), pastEmails: (a.pastEmails || []).map(String), claimedRefs: a.claimedRefs || [],
+      createdAt: a.createdAt, lastLoginAt: a.lastLoginAt, orderCount: Number(a.orderCount) || 0
+    }));
+    render();
+  } catch (e) {
+    if (my !== gen) return;
+    rows = [];
+    render();
+    say(e.message || 'Could not load accounts');
+  }
+}
+
+$('searchForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = $('q').value.trim().toLowerCase();
+  if (q.length < 3) { say('Type at least 3 characters of the email.'); return; }
+  search(q);
+});
+
+async function act(fn) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll('#accBody button').forEach(b => { b.disabled = true; });
+  try { await fn(); } finally { busy = false; document.querySelectorAll('#accBody button').forEach(b => { b.disabled = false; }); }
+}
+
+async function release(email) {
+  if (!await confirmDialog('Release ' + email + '? Anyone will be able to sign up with this address.', { ok: 'Release email' })) return;
+  try {
+    await api(DESK + '/release-email', { method: 'POST', body: { email }, toast: false });
+    await search(lastQuery, true);
+    say(email + ' is free now.', 'ok');
+  } catch (e) { say(e.message || 'Could not release the email'); }
+}
+
+async function changeEmail(id, email) {
+  const next = window.prompt('New login email for ' + email + ':', '');
+  if (next === null) return;
+  const to = next.trim();
+  if (!to) { say('Enter the new email.'); return; }
+  if (!await confirmDialog('Change the login email from ' + email + ' to ' + to + '? The customer will be signed out everywhere.', { ok: 'Change email' })) return;
+  try {
+    await api(DESK + '/change-email', { method: 'POST', body: { accountId: id, newEmail: to }, toast: false });
+    await search(lastQuery, true);
+    say('Login email changed to ' + to + '. The customer is signed out everywhere.', 'ok');
+  } catch (e) { say(e.message || 'Could not change the email'); }
+}
+
+$('accBody').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]');
+  if (!b || !isAdmin()) return;
+  say('');
+  if (b.dataset.act === 'release') act(() => release(b.dataset.email));
+  else if (b.dataset.act === 'change') act(() => changeEmail(b.dataset.id, b.dataset.email));
+});
+</script>
+</body>
+</html>
