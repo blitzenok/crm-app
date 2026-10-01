@@ -2143,6 +2143,7 @@ function handleRequest(req, res) {
       if (!looksLikeEmail(data.email)) {
         jsonReply(res, 400, {error:'A valid email is required (max 200)'}); return;
       }
+      if (checkoutEmailRefused(res, data.email, 'checkout-identify')) return;   // checkout-consistency 2026-10-02: the page's rule, so no profile is made for an address the page would not take
       if (data.firstName !== undefined && typeof data.firstName !== 'string') { jsonReply(res, 400, {error:'firstName must be a string'}); return; }
       const addr = data.email.trim().toLowerCase();
       const answer = {ok: true};
@@ -2181,6 +2182,7 @@ function handleRequest(req, res) {
         // they are not orders and used to clutter orders.json.
         const clean = sanitizeOrder(orderData, paymentMethod);
         ref = clean.ref;
+        if (!signup && checkoutEmailPublic(req) && checkoutEmailRefused(res, orderData && orderData.customer && orderData.customer.email, 'notify-order')) return;   // checkout-consistency 2026-10-02
         // Stage 1 RET (2026-09-30): the server, not the page, says this order came from the shop (letterAllowed needs it);
         // a test flag from the page only ever removes letters.
         clean.channel = 'shop';
@@ -4920,6 +4922,35 @@ function reviewsReplyDecide(req, res, id, body) {
     console.error('[reviews] ERROR decision not saved: ' + reviewsErr(e));
     jsonReply(res, 500, {error:'Could not save, please try again'});
   }
+}
+// Checkout e-mail rule (2026-10-02, services/checkout-consistency/ in biofirst-hosting): the checkout page checks the address with
+// emailProblem() of checkout-validate.js; checkout-email.cjs is that same rule for the server, so an order or a Customer.io profile is
+// not made for an address the page would have refused (an old cached page, a script that skips the page). Public requests only: the
+// payment module's store-forward of an approved card order reaches notify-order directly and is always recorded. The module is a plain
+// file next to this one; if it cannot be loaded the routes behave as before (loose checks only) and the log says so. The address itself
+// never goes to the log.
+let checkoutEmail = null;
+try {
+  checkoutEmail = require('./checkout-email.cjs');
+  if (typeof checkoutEmail.problem !== 'function') throw new Error('checkout-email.cjs has no problem()');
+} catch (e) {
+  checkoutEmail = null;
+  console.error('[checkout-email] ERROR module not loaded, addresses are checked loosely only: ' + ((e && e.message) || e));
+}
+// What nginx adds to every storefront request; the payment module's store-forward (127.0.0.1:4000) has neither.
+function checkoutEmailPublic(req) {
+  return !!(req && req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip']));
+}
+// true = the request has been answered with 400 invalid_email (the code the crypto and card answers use; the checkout page shows its
+// message for card answers only, notify-order refusals fall back to its generic handling). Any failure inside the check lets the request through.
+function checkoutEmailRefused(res, value, where) {
+  if (!checkoutEmail) return false;
+  let msg = '';
+  try { msg = checkoutEmail.problem(value); } catch (e) { console.error('[checkout-email] ERROR check failed, request let through: ' + ((e && e.message) || e)); return false; }
+  if (!msg) return false;
+  console.log('[checkout-email] refused ' + where);
+  jsonReply(res, 400, { ok: false, error: 'invalid_email', field: 'email', charged: false, message: msg });
+  return true;
 }
 const server = http.createServer((req, res) => {
   applyCors(req, res);
