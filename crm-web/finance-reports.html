@@ -59,6 +59,7 @@
     <script src="orders-model.js?v=3123f1cc3a"></script>
     <script src="finance-model.js?v=16a1229df8"></script>
     <script src="crm-charts.js?v=4cc1a39a7f"></script>
+    <script src="finance-view.js"></script>
     <script src="adspend-model.js"></script>
     <script src="adspend-section.js"></script>
 
@@ -192,6 +193,7 @@ function setError() {
 
 function render() {
   if (loadError) { setError(); return; }
+  if (window.FinanceView) { try { FinanceView.render({ orders: allOrders, period: periodVal(), paidOnly: paidOnlyVal(), costIdx: costIdx, costsError: costsError }); if (window.AdSpendSection) { try { AdSpendSection.render(); } catch (e) { console.error(e); } } return; } catch (e) { console.error(e); } }
   var selected = FinanceModel.select(allOrders, { period: periodVal(), paidOnly: paidOnlyVal(), now: new Date() });
   var aov = FinanceModel.aov(selected);
   var prods = FinanceModel.products(selected, { top: 20 });
