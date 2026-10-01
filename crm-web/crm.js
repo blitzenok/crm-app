@@ -183,6 +183,7 @@
         { key: 'customer-timeline', icon: '🗂️', label: 'Customer Timeline' },
         { key: 'store-messages', icon: '✉️', label: 'Messages', m: 1, id: 'nav-store-messages', extra: MSG_BADGE_HTML },
         { key: 'chats', icon: String.fromCodePoint(0x1F4AC), label: 'Chats', m: 1, id: 'nav-chats', extra: CHATS_BADGE_HTML },
+        { key: 'customer-accounts', icon: '🔐', label: 'Accounts', m: 1 },
         { key: 'quotations', icon: '📋', label: 'Quotations', m: 1 },
         { key: 'sales-entry', icon: '🧾', label: 'Add Sale', m: 1 },
         { key: 'sales-dashboard', icon: '💰', label: 'Sales Dashboard', m: 1 },
