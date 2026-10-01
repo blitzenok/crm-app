@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Tasks - BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=15a8f6da73">
+<style>
+/* tasks-only styling; everything shared lives in crm.css. No tables on purpose (crm.css hides the header and the first column of every
+   table on a phone) and no min-width anywhere: the page must never scroll sideways. Our classes start with tk- so the global
+   chip/button/modal rules of crm.css (several with !important) do not touch them. */
+.muted{color:#7A869A;}
+[hidden]{display:none!important;}
+.modal-overlay{z-index:1500;}   /* the confirm dialog of crm.js must sit above the task card (1300) */
+.tk-toolbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:16px;}
+.tk-group{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.tk-seg{display:inline-flex;border:1px solid #E8ECF4;border-radius:10px;overflow:hidden;background:#fff;}
+.tk-seg button{border:0;background:transparent;padding:7px 18px;font-size:12.5px;font-weight:600;color:#5A6685;cursor:pointer;font-family:inherit;}
+.tk-seg button[aria-pressed="true"]{background:#1B2A4A;color:#fff;}
+.tk-pill{border:1px solid #E8ECF4;background:#fff;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;color:#5A6685;cursor:pointer;font-family:inherit;}
+.tk-pill:hover{border-color:#1B2A4A;color:#1B2A4A;}
+.tk-pill[aria-pressed="true"]{background:#1B2A4A;color:#fff;border-color:#1B2A4A;}
+.tk-pill b{font-weight:700;margin-left:4px;opacity:.75;}
+.tk-search,.tk-select{border:1px solid #E8ECF4;border-radius:8px;padding:7px 12px;font-size:13px;background:#fff;color:#1a1a2e;font-family:inherit;outline:none;}
+.tk-search{width:170px;max-width:100%;}
+.tk-search:focus,.tk-select:focus{border-color:#1B2A4A;}
+.tk-check{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:#5A6685;cursor:pointer;}
+.tk-banner{border-radius:12px;padding:12px 16px;font-size:12.5px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
+.tk-banner b{display:block;margin-bottom:2px;font-size:13px;}
+.tk-banner .tk-bt{flex:1;min-width:0;overflow-wrap:anywhere;}
+.tk-banner.bad{background:#FEF2F2;border:1px solid #FCA5A5;color:#991B1B;}
+.tk-banner.warn{background:#FEF3C7;border:1px solid #FCD34D;color:#7A4B06;}
+.tk-banner.info{background:#F3F5FB;border:1px solid #E8ECF4;color:#5A6685;}
+.tk-empty{background:#fff;border:1px dashed #CBD5E1;border-radius:12px;padding:36px 20px;text-align:center;color:#5A6685;font-size:13px;}
+.tk-empty b{display:block;font-size:15px;color:#1B2A4A;margin-bottom:6px;}
+.tk-empty .btn{margin-top:14px;}
+
+/* status badge and avatars */
+.tk-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;}
+.tk-s-todo{background:#E8ECF4;color:#5A6685;}
+.tk-s-in_progress{background:#E8F0FE;color:#1D4ED8;}
+.tk-s-review{background:#FFF8EC;color:#D97706;}
+.tk-s-done{background:#E8F5E9;color:#2E7D32;}
+.tk-avs{display:inline-flex;align-items:center;}
+.tk-av{width:26px;height:26px;border-radius:50%;font-size:10px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;color:#fff;border:2px solid #fff;margin-left:-5px;flex:0 0 26px;}
+.tk-av:first-child{margin-left:0;}
+.tk-av.wait{background:#fff!important;color:#5A6685;border:2px dashed #CBD5E1;}
+.tk-av.more{background:#E8ECF4;color:#5A6685;}
+.tk-c0{background:#1F7A3D;}.tk-c1{background:#1D4ED8;}.tk-c2{background:#B45309;}.tk-c3{background:#7C3AED;}.tk-c4{background:#BE185D;}.tk-c5{background:#0F766E;}
+.tk-due{font-size:12.5px;color:#2D3654;white-space:nowrap;}
+.tk-due.late{color:#C62828;font-weight:700;}
+.tk-clip{display:inline-flex;align-items:center;gap:2px;font-size:11.5px;color:#7A869A;margin-left:8px;white-space:nowrap;vertical-align:middle;}
+.tk-clip svg{width:13px;height:13px;}
+.tk-num{color:#7A869A;font-weight:600;margin-right:6px;font-size:12px;}
+
+/* list: rows, not a table */
+.tk-list{background:#fff;border:1px solid #E8ECF4;border-radius:12px;overflow:hidden;}
+.tk-row,.tk-lhead{display:grid;grid-template-columns:116px minmax(0,1fr) 150px 96px 80px;gap:12px;align-items:center;padding:11px 16px;}
+.tk-lhead{background:#F8FAFC;border-bottom:1px solid #E8ECF4;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A869A;padding-top:9px;padding-bottom:9px;}
+.tk-row{border-bottom:1px solid #F0F3FA;cursor:pointer;}
+.tk-row:last-child{border-bottom:0;}
+.tk-row:hover,.tk-row:focus{background:#F8FAFC;outline:none;}
+.tk-ttl{font-size:13.5px;font-weight:600;color:#1B2A4A;overflow-wrap:anywhere;min-width:0;}
+.tk-time{font-size:12.5px;color:#5A6685;white-space:nowrap;}
+.tk-row .tk-time{text-align:right;}
+.tk-lhead span:last-child{text-align:right;}
+
+/* board */
+.tk-bswitch{display:none;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.tk-board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start;}
+.tk-col{background:#F3F5FB;border-radius:12px;padding:10px;min-width:0;min-height:110px;border:2px solid transparent;}
+.tk-col.over{border-color:#1B2A4A;background:#E8F0FE;}
+.tk-colh{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#5A6685;margin:2px 2px 10px;}
+.tk-colh span:last-child{background:#fff;border-radius:10px;padding:1px 8px;font-size:11px;}
+.tk-card{background:#fff;border:1px solid #E8ECF4;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer;min-width:0;}
+.tk-card:hover,.tk-card:focus{border-color:#1B2A4A;outline:none;}
+.tk-card[draggable="true"]{cursor:grab;}
+.tk-card.drag{opacity:.4;}
+.tk-card .tk-ttl{font-size:13px;margin-bottom:8px;}
+.tk-cmeta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;justify-content:space-between;}
+.tk-cmeta .tk-time{font-size:11.5px;}
+.tk-note{font-size:11.5px;color:#7A869A;margin:6px 2px 0;}
+.tk-colempty{font-size:12px;color:#9AA5B8;text-align:center;padding:14px 4px;}
+
+/* people */
+.tk-pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:12px;}
+.tk-pcard{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px;min-width:0;}
+.tk-phead{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.tk-phead .tk-av{margin-left:0;width:34px;height:34px;flex-basis:34px;font-size:12px;}
+.tk-pname{font-size:14px;font-weight:700;color:#1B2A4A;overflow-wrap:anywhere;}
+.tk-pmail{font-size:11.5px;color:#7A869A;overflow-wrap:anywhere;}
+.tk-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px;}
+.tk-stat{background:#F8FAFC;border-radius:8px;padding:8px;min-width:0;}
+.tk-stat b{display:block;font-size:17px;color:#1B2A4A;}
+.tk-stat span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.1px;color:#7A869A;font-weight:600;white-space:nowrap;}
+.tk-prow{font-size:12.5px;color:#5A6685;margin-top:5px;}
+.tk-prow b{color:#1B2A4A;}
+.tk-plink{display:block;width:100%;text-align:left;background:none;border:0;padding:4px 0;font-size:12.5px;color:#1D4ED8;cursor:pointer;font-family:inherit;overflow-wrap:anywhere;}
+.tk-plink:hover{text-decoration:underline;}
+
+/* the card of a task (a dialog that sits over the page; a full sheet on a phone) */
+.tk-ov{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:1300;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:4vh 12px;}
+.tk-dlg{background:#fff;border-radius:16px;width:720px;max-width:100%;box-shadow:0 24px 60px rgba(0,0,0,.2);}
+.tk-dlg.narrow{width:560px;}
+.tk-dhead{display:flex;gap:12px;align-items:flex-start;padding:18px 22px 12px;border-bottom:1px solid #F0F3FA;}
+.tk-dhead h2{font-size:17px;font-weight:700;color:#1B2A4A;overflow-wrap:anywhere;margin:0;}
+.tk-dmain{flex:1;min-width:0;}
+.tk-dnum{font-size:11.5px;color:#7A869A;font-weight:600;margin-bottom:2px;}
+.tk-x{width:32px;height:32px;border-radius:8px;border:1px solid #E8ECF4;background:#fff;font-size:18px;color:#7A869A;cursor:pointer;flex:0 0 32px;line-height:1;}
+.tk-x:hover{background:#FEF2F2;color:#E02424;border-color:#E02424;}
+.tk-sec{padding:14px 22px;border-bottom:1px solid #F0F3FA;}
+.tk-sec:last-child{border-bottom:0;}
+.tk-sec h4{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#7A869A;margin:0 0 8px;}
+.tk-actions,.tk-statusrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;}
+.tk-meta{display:grid;grid-template-columns:110px minmax(0,1fr);gap:8px 12px;font-size:12.5px;color:#2D3654;margin-bottom:12px;}
+.tk-k{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:#7A869A;font-weight:700;padding-top:2px;}
+.tk-v{min-width:0;overflow-wrap:anywhere;}
+.tk-v .tk-person{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+.tk-v .tk-person .tk-av{margin-left:0;}
+.tk-v small{color:#7A869A;}
+.tk-link{color:#1D4ED8;text-decoration:underline;}
+.tk-desc{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.55;color:#2D3654;}
+.tk-banner-in{margin:12px 22px 0;}
+.tk-files{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:10px;margin-bottom:10px;}
+.tk-thumb{border:1px solid #E8ECF4;border-radius:10px;overflow:hidden;min-width:0;background:#fff;}
+.tk-thumb .pic{display:flex;align-items:center;justify-content:center;width:100%;height:100px;background:#F3F5FB;border:0;padding:0;cursor:zoom-in;color:#7A869A;font-size:11px;}
+.tk-thumb img{width:100%;height:100px;object-fit:cover;display:block;}
+.tk-thumb .cap{padding:5px 8px;font-size:11px;color:#5A6685;overflow-wrap:anywhere;}
+.tk-thumb .cap button{border:0;background:none;color:#C62828;font-size:11px;cursor:pointer;padding:0;margin-left:6px;font-family:inherit;}
+.tk-drop{border:2px dashed #CBD5E1;border-radius:10px;padding:14px;text-align:center;font-size:12.5px;color:#5A6685;}
+.tk-drop.over{border-color:#1B2A4A;background:#E8F0FE;}
+.tk-drop label{color:#1D4ED8;text-decoration:underline;cursor:pointer;}
+.tk-drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+.tk-upst{font-size:12px;color:#5A6685;margin-top:6px;}
+.tk-cbox textarea,.tk-f textarea,.tk-f input[type="text"],.tk-f input[type="date"]{width:100%;border:1px solid #E8ECF4;border-radius:8px;padding:9px 12px;font-size:13px;font-family:inherit;color:#1a1a2e;outline:none;background:#fff;}
+.tk-f textarea{resize:vertical;min-height:90px;line-height:1.5;}
+.tk-cbox textarea{resize:vertical;min-height:70px;line-height:1.5;}
+.tk-f input:focus,.tk-f textarea:focus,.tk-cbox textarea:focus{border-color:#1B2A4A;}
+.tk-f{margin-bottom:12px;}
+.tk-f label.tk-fl{display:block;font-size:11px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;}
+.tk-f .tk-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:8px;}
+.tk-f .tk-hint{font-size:11.5px;color:#7A869A;margin-top:4px;}
+.tk-err{font-size:12px;color:#C62828;margin-top:4px;}
+.tk-people-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:4px 12px;max-height:170px;overflow-y:auto;border:1px solid #E8ECF4;border-radius:8px;padding:8px 10px;}
+.tk-people-pick label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#2D3654;cursor:pointer;min-width:0;overflow-wrap:anywhere;}
+.tk-crow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
+.tk-crow small{color:#7A869A;font-size:11.5px;}
+.tk-ev{padding:8px 0;border-bottom:1px solid #F0F3FA;font-size:12.5px;color:#2D3654;overflow-wrap:anywhere;}
+.tk-ev:last-child{border-bottom:0;}
+.tk-ev .when{color:#7A869A;font-size:11.5px;margin-left:6px;}
+.tk-ev .txt{white-space:pre-wrap;background:#F8FAFC;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:13px;}
+.tk-lb{background:rgba(15,23,42,.88);z-index:1400;align-items:center;padding:12px;cursor:zoom-out;}
+.tk-lb img{max-width:100%;max-height:92vh;border-radius:8px;background:#fff;}
+.tk-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;}
+@media (min-width:701px) and (max-width:1000px){
+  .tk-board{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .tk-row,.tk-lhead{grid-template-columns:104px minmax(0,1fr) 120px 84px 64px;gap:8px;}
+}
+@media (max-width:700px){
+  .tk-lhead{display:none;}
+  .tk-row{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"ttl ttl avs" "st due time";gap:8px 10px;padding:12px 14px;}
+  .tk-row .tk-ttl{grid-area:ttl;} .tk-row .c-avs{grid-area:avs;justify-self:end;} .tk-row .c-st{grid-area:st;}
+  .tk-row .c-due{grid-area:due;} .tk-row .tk-time{grid-area:time;}
+  .tk-bswitch{display:flex;}
+  .tk-board{display:block;}
+  .tk-col{display:none;}
+  .tk-col.on{display:block;}
+  .tk-search,.tk-select,.tk-f textarea,.tk-f input[type="text"],.tk-f input[type="date"],.tk-cbox textarea{font-size:16px;}
+  .tk-search{flex:1;width:auto;}
+  .tk-ov{padding:0;}
+  .tk-dlg,.tk-dlg.narrow{width:100%;border-radius:0;min-height:100%;}
+  .tk-dhead,.tk-sec,.tk-foot{padding-left:14px;padding-right:14px;}
+  .tk-banner-in{margin-left:14px;margin-right:14px;}
+  .tk-meta{grid-template-columns:92px minmax(0,1fr);}
+  .tk-stats{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .tk-f .tk-two{grid-template-columns:minmax(0,1fr);}
+}
+</style>
+</head>
+<body>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
+    <script src="tasks-model.js?v=7f03f228aa"></script>
+<div class="app-wrapper">
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
+  </div>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Tasks <span>&mdash; what the team is working on</span></div>
+      <button class="btn btn-primary" id="newBtn" type="button">+ New task</button>
+      <button class="refresh-btn" id="refreshBtn" type="button">&#8635; Refresh</button>
+    </div>
+    <div class="content">
+      <div id="banner"></div>
+      <div class="tk-toolbar" id="toolbar"></div>
+      <div id="view"><div class="muted">Loading&hellip;</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="tk-ov" id="dlg" hidden role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+  <div class="tk-dlg">
+    <div class="tk-dhead">
+      <div class="tk-dmain"><div class="tk-dnum" id="dlgNum"></div><h2 id="dlgTitle"></h2></div>
+      <button class="tk-x" id="dlgClose" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div id="dlgState"></div>
+    <div id="dlgBody" hidden>
+      <div class="tk-sec" id="secTop"></div>
+      <div class="tk-sec" id="secFiles">
+        <h4>Screenshots</h4>
+        <div class="tk-files" id="fileGrid"></div>
+        <div class="tk-drop" id="dropZone">
+          Paste a screenshot (Ctrl+V), drop a picture here, or <label for="fileInput">choose a file</label>
+          <input type="file" id="fileInput" accept="image/*" multiple>
+        </div>
+        <div class="tk-upst" id="upStatus"></div>
+      </div>
+      <div class="tk-sec tk-cbox" id="secComment">
+        <h4>Comment</h4>
+        <textarea id="cText" rows="3" maxlength="2000" placeholder="Write a comment"></textarea>
+        <div class="tk-crow"><small id="cCount"></small><button class="btn btn-primary" id="cSend" type="button">Send</button></div>
+        <div class="tk-err" id="cErr"></div>
+      </div>
+      <div class="tk-sec"><h4>History</h4><div id="secHist"></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="tk-ov" id="newDlg" hidden role="dialog" aria-modal="true" aria-labelledby="newTitle">
+  <form class="tk-dlg narrow" id="newForm" novalidate>
+    <div class="tk-dhead">
+      <div class="tk-dmain"><h2 id="newTitle">New task</h2></div>
+      <button class="tk-x" id="newClose" type="button" aria-label="Close">&times;</button>
+    </div>
+    <div class="tk-sec" id="newBox"></div>
+    <div class="tk-foot">
+      <button class="btn btn-secondary" id="newCancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="newCreate" type="submit">Create task</button>
+    </div>
+  </form>
+</div>
+
+<div class="tk-ov tk-lb" id="lightbox" hidden><img id="lbImg" alt=""></div>
+
+<script>
+renderNav('tasks');
+
+var TM = TasksModel;
+var POLL_MS = 60000;
+var PREF_KEY = 'crm_tasks_ui';
+var SVGNS = 'http://www.w3.org/2000/svg';
+
+var S = {
+  tasks: [], people: [], me: null, loaded: false, loading: false, lastLoad: 0, lastErr: null,
+  prefs: loadPrefs(), archived: false, q: '', boardStatus: 'todo',
+  openId: null, detail: null, detailErr: null, editing: false, form: null,
+  pics: {}, picWait: {}, drafts: {}, busy: {}, dragId: null, uploading: false
+};
+var T = {};   // toolbar controls
+
+/* ── tiny DOM helper: user text only ever goes in as a text node or an attribute, never as markup ───── */
+function h(tag, props, kids) {
+  var el = document.createElement(tag), k, v;
+  props = props || {};
+  for (k in props) {
+    if (!Object.prototype.hasOwnProperty.call(props, k)) continue;
+    v = props[k];
+    if (v === null || v === undefined || v === false) continue;
+    if (k === 'class') el.className = v;
+    else if (k === 'text') el.textContent = v;
+    else if (k === 'on') { for (var ev in v) el.addEventListener(ev, v[ev]); }
+    else if (k === 'value' || k === 'checked' || k === 'disabled' || k === 'hidden' || k === 'tabIndex') el[k] = v;
+    else if (k === 'href') { var u = TM.safeLink(v); if (u) el.setAttribute('href', u); }                       // only a CRM page
+    else if (k === 'src') { var im = TM.safeImageSrc(v); if (im) el.setAttribute('src', im); }                   // only a data: picture (the CSP of the CRM host has no blob:)
+    else el.setAttribute(k, v === true ? '' : String(v));
+  }
+  (kids || []).forEach(function (c) {
+    if (c === null || c === undefined || c === false) return;
+    el.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  });
+  return el;
+}
+function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+function $(id) { return document.getElementById(id); }
+function clipIcon() {
+  var s = document.createElementNS(SVGNS, 'svg'), p = document.createElementNS(SVGNS, 'path');
+  s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none'); s.setAttribute('stroke', 'currentColor');
+  s.setAttribute('stroke-width', '2'); s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+  p.setAttribute('d', 'M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48');
+  s.appendChild(p);
+  return s;
+}
+
+/* ── state helpers ────────────────────────────────────────────────────────────────────────────── */
+function loadPrefs() {
+  try { return TM.normalizePrefs(JSON.parse(localStorage.getItem(PREF_KEY))); } catch (e) { return TM.normalizePrefs(null); }
+}
+function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(S.prefs)); } catch (e) { /* storage off: the choice just is not remembered */ } }
+function nameOf(email) {
+  var e = TM.normEmail(email);
+  for (var i = 0; i < S.people.length; i++) if (TM.normEmail(S.people[i].email) === e) return S.people[i].name || e;
+  return e || '?';
+}
+function findTask(id) { for (var i = 0; i < S.tasks.length; i++) if (S.tasks[i].id === id) return S.tasks[i]; return null; }
+function dateText(v) { return typeof fmtDate === 'function' ? fmtDate(v) : String(v || ''); }
+function mkErr(msg, status) { var e = new Error(msg); e.status = status; e.user = true; return e; }
+function errMsg(e) {
+  var s = e && e.status, m = (e && e.message) || '';
+  if (e && e.user && !s) return m;
+  if (s === 0) return 'Cannot reach the server. Check the connection and try again.';
+  if (s === 403 && /join the task first/i.test(m)) return 'You are not on this task yet. Open it and press Join first.';
+  if (s === 403) return m || 'You do not have access to this.';
+  if (s === 404) return 'This task no longer exists.';
+  if (s === 413) return 'That picture is too big for the server (the limit is 900 KB).';
+  if (s === 507) return 'The storage for task pictures is full. Tell the developer.';
+  if (s === 415) return 'This picture type is not accepted. Use PNG, JPEG or WebP.';
+  if (s === 429) return 'Too many requests. Wait a minute and try again.';
+  return m || 'Something went wrong';
+}
+function call(path, opts) { opts = opts || {}; opts.toast = false; return api('/api/tasks' + path, opts); }
+// One request per button at a time: a second click while the first is on its way does nothing.
+async function act(btn, key, fn) {
+  if (S.busy[key]) return;
+  S.busy[key] = true;
+  if (btn) btn.disabled = true;
+  try { await fn(); } catch (e) { toast(errMsg(e), 'error'); }
+  finally { delete S.busy[key]; if (btn && btn.isConnected) btn.disabled = false; }
+}
+function anyBusy() { return Object.keys(S.busy).length > 0; }
+function btn(label, kind, onClick) {
+  return h('button', { type: 'button', class: 'btn btn-' + kind, text: label, on: { click: function (e) { onClick(e.currentTarget); } } });
+}
+
+/* ── banner ───────────────────────────────────────────────────────────────────────────────────── */
+function showBanner(level, title, text, retry) {
+  var box = $('banner');
+  clear(box);
+  if (!level) return;
+  var kids = [h('div', { class: 'tk-bt' }, [h('b', { text: title }), text])];
+  if (retry) kids.push(btn('Try again', 'secondary', function () { loadList(false); }));
+  box.appendChild(h('div', { class: 'tk-banner ' + level }, kids));
+}
+
+/* ── loading ──────────────────────────────────────────────────────────────────────────────────── */
+async function loadList(silent) {
+  if (S.dragId || anyBusy()) return;                 // a card is being dragged or a change is on its way: the next tick will do
+  if (S.loading) { S.reload = true; return; }        // a switch (Archived) asked while one load runs: run again after it
+  S.loading = true;
+  try {
+    var d = await call(S.archived ? '?archived=1' : '');
+    if (!d || d.ok !== true || !Array.isArray(d.tasks)) throw new Error('bad answer');
+    S.tasks = d.tasks;
+    S.people = Array.isArray(d.people) ? d.people : [];
+    S.me = d.me || S.me;
+    S.loaded = true; S.lastLoad = Date.now(); S.lastErr = null;
+    showBanner(null);
+    render();
+    if (S.openId) { renderDialog(); refreshDetail(true); }
+  } catch (e) {
+    S.lastErr = e;
+    if (!S.loaded) clear($('view'));
+    if (e && e.status === 403) showBanner('bad', 'No access', 'Your account cannot open Tasks. Ask an admin.');
+    else if (!S.loaded) showBanner('bad', 'Could not load the tasks', errMsg(e), true);
+    else if (!silent) toast(errMsg(e), 'error');
+    else showBanner('warn', 'Could not refresh', 'Showing the last data. The page tries again every minute.');
+  } finally {
+    S.loading = false;
+    if (S.reload) { S.reload = false; loadList(true); }
+  }
+}
+// Archived and live tasks are two different server answers: show "Loading" until the right one arrives.
+function switchArchived(on) {
+  S.archived = on; S.tasks = []; S.loaded = false; S.lastErr = null;
+  render(); loadList(true);
+}
+async function refreshDetail(silent) {
+  var id = S.openId;
+  if (!id) return;
+  try {
+    var d = await call('/' + encodeURIComponent(id));
+    if (S.openId !== id) return;
+    if (!d || d.ok !== true || !d.task) throw new Error('bad answer');
+    S.detail = { task: d.task, work: d.work || d.task.work || {} };
+    S.detailErr = null;
+    applyTask(d.task);
+    renderDialog();
+  } catch (e) {
+    if (S.openId !== id) return;
+    if (!silent || !S.detail) { S.detailErr = e; renderDialog(); }
+  }
+}
+// A changed task from any answer of the server: into the list, and into the open card.
+function applyTask(t) {
+  if (!t || !t.id) return;
+  var slim = Object.assign({}, t); delete slim.history;
+  var i = -1;
+  for (var k = 0; k < S.tasks.length; k++) if (S.tasks[k].id === t.id) { i = k; break; }
+  var belongs = S.archived ? !!t.archivedAt : !t.archivedAt;
+  if (i >= 0) { if (belongs) S.tasks[i] = Object.assign({}, S.tasks[i], slim); else S.tasks.splice(i, 1); }
+  else if (belongs && S.loaded) S.tasks.push(slim);
+  render();
+}
+function absorb(resp) {
+  var t = resp && resp.task;
+  if (!t) return;
+  if (S.detail && S.detail.task.id === t.id) S.detail.task = Object.assign({}, S.detail.task, t);
+  applyTask(t);
+  renderDialog();
+  refreshDetail(true);   // the answer of a change may carry no time-in-work: ask for the full card
+}
+
+/* ── toolbar ──────────────────────────────────────────────────────────────────────────────────── */
+function buildToolbar() {
+  var tb = $('toolbar');
+  T.views = {};
+  var seg = h('div', { class: 'tk-seg', role: 'group', 'aria-label': 'View' });
+  [['list', 'List'], ['board', 'Board'], ['people', 'People']].forEach(function (v) {
+    var b = h('button', { type: 'button', text: v[1], on: { click: function () { setView(v[0]); } } });
+    T.views[v[0]] = b; seg.appendChild(b);
+  });
+  tb.appendChild(seg);
+
+  T.filterBox = h('div', { class: 'tk-group' });
+  T.filters = {};
+  [['all', 'All'], ['mine', 'My tasks'], ['overdue', 'Overdue']].forEach(function (f) {
+    var count = h('b');
+    var b = h('button', { type: 'button', class: 'tk-pill', on: { click: function () { S.prefs.filter = f[0]; savePrefs(); render(); } } }, [f[1], count]);
+    T.filters[f[0]] = { btn: b, count: count }; T.filterBox.appendChild(b);
+  });
+  tb.appendChild(T.filterBox);
+
+  T.search = h('input', { type: 'search', class: 'tk-search', placeholder: 'Search by title', 'aria-label': 'Search by title', maxlength: 100,
+    on: { input: function () { S.q = T.search.value; render(); } } });
+  tb.appendChild(T.search);
+
+  T.closed = h('input', { type: 'checkbox', on: { change: function () { S.prefs.showClosed = T.closed.checked; savePrefs(); render(); } } });
+  T.closedLbl = h('label', { class: 'tk-check' }, [T.closed, 'Show closed']);
+  tb.appendChild(T.closedLbl);
+
+  T.sort = h('select', { class: 'tk-select', 'aria-label': 'Sort', on: { change: function () { S.prefs.sort = T.sort.value; savePrefs(); render(); } } },
+    [['smart', 'Smart order'], ['due', 'Due date'], ['updated', 'Recently updated'], ['newest', 'Newest first']].map(function (o) { return h('option', { value: o[0], text: o[1] }); }));
+  tb.appendChild(T.sort);
+
+  T.arch = h('button', { type: 'button', class: 'tk-pill', text: 'Archived', on: { click: function () { switchArchived(!S.archived); } } });
+  tb.appendChild(T.arch);
+
+  T.periodBox = h('div', { class: 'tk-group' });
+  T.periods = {};
+  [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['all', 'All time']].forEach(function (p) {
+    var b = h('button', { type: 'button', class: 'tk-pill', text: p[1], on: { click: function () { S.prefs.period = p[0]; savePrefs(); render(); } } });
+    T.periods[p[0]] = b; T.periodBox.appendChild(b);
+  });
+  tb.appendChild(T.periodBox);
+}
+function setView(v) {
+  S.prefs.view = v; savePrefs();
+  if (v !== 'list' && S.archived) { switchArchived(false); return; }
+  render();
+}
+function syncToolbar() {
+  var p = S.prefs, v = p.view, list = v === 'list', people = v === 'people';
+  Object.keys(T.views).forEach(function (k) { T.views[k].setAttribute('aria-pressed', k === v ? 'true' : 'false'); });
+  var counts = TM.countFilters(S.tasks, { meEmail: S.me && S.me.email, nowMs: Date.now(), showClosed: p.showClosed });
+  Object.keys(T.filters).forEach(function (k) {
+    T.filters[k].btn.setAttribute('aria-pressed', p.filter === k ? 'true' : 'false');
+    T.filters[k].count.textContent = S.loaded && !S.archived ? String(counts[k]) : '';
+  });
+  T.filterBox.hidden = people || (list && S.archived);
+  T.search.hidden = people;
+  T.closedLbl.hidden = people || (list && S.archived);
+  T.closed.checked = p.showClosed;
+  T.sort.hidden = !list || S.archived;
+  T.sort.value = p.sort;
+  T.arch.hidden = !list;
+  T.arch.setAttribute('aria-pressed', S.archived ? 'true' : 'false');
+  T.periodBox.hidden = !people;
+  Object.keys(T.periods).forEach(function (k) { T.periods[k].setAttribute('aria-pressed', p.period === k ? 'true' : 'false'); });
+}
+
+/* ── the three views ──────────────────────────────────────────────────────────────────────────── */
+function render() {
+  syncToolbar();
+  var view = $('view');
+  if (!S.loaded) { if (!S.lastErr) { clear(view); view.appendChild(h('div', { class: 'muted', text: 'Loading…' })); } return; }
+  clear(view);
+  var v = S.prefs.view;
+  if (v === 'board') renderBoard(view);
+  else if (v === 'people') renderPeople(view);
+  else renderList(view);
+}
+function filtered(showClosed) {
+  return TM.filterTasks(S.tasks, { filter: S.prefs.filter, q: S.q, showClosed: showClosed, meEmail: S.me && S.me.email, nowMs: Date.now(), archived: S.archived && S.prefs.view === 'list' });
+}
+function emptyState() {
+  var none = S.tasks.length === 0 && !S.archived;
+  if (none) return h('div', { class: 'tk-empty' }, [h('b', { text: 'No tasks yet' }), 'Write down the first thing the team has to do.', h('div', {}, [btn('Create the first task', 'primary', openNew)])]);
+  return h('div', { class: 'tk-empty', text: S.archived ? 'No archived tasks.' : 'No task matches these filters.' });
+}
+function avatarsOf(t, max) {
+  var seen = {}, out = [];
+  (t.participants || []).forEach(function (p) { var e = TM.normEmail(p && p.email); if (e && !seen[e]) { seen[e] = 1; out.push({ e: e, joined: true }); } });
+  (t.assignees || []).forEach(function (a) { var e = TM.normEmail(a); if (e && !seen[e]) { seen[e] = 1; out.push({ e: e, joined: false }); } });
+  var box = h('span', { class: 'tk-avs' });
+  if (!out.length) { box.appendChild(h('span', { class: 'muted', text: '—' })); return box; }
+  out.slice(0, max || 4).forEach(function (x) {
+    var nm = nameOf(x.e);
+    box.appendChild(h('span', { class: 'tk-av ' + (x.joined ? 'tk-c' + TM.colorIndex(x.e, 6) : 'wait'), title: nm + (x.joined ? '' : ' (assigned, has not taken it yet)'), text: TM.initials(nm, x.e) }));
+  });
+  if (out.length > (max || 4)) box.appendChild(h('span', { class: 'tk-av more', title: out.slice(max || 4).map(function (x) { return nameOf(x.e); }).join(', '), text: '+' + (out.length - (max || 4)) }));
+  return box;
+}
+function statusBadge(s) { return h('span', { class: 'tk-badge tk-s-' + (TM.STATUS_LABEL[s] ? s : 'todo'), text: TM.STATUS_LABEL[s] || String(s) }); }
+function dueNode(t, now) {
+  var late = TM.isOverdue(t, now), txt = TM.fmtDue(t.due, now);
+  if (!txt) return h('span', { class: 'muted', text: '—' });
+  return h('span', { class: 'tk-due' + (late ? ' late' : ''), title: late ? 'Overdue' : 'Due ' + t.due, text: txt });
+}
+function titleNode(t) {
+  var kids = [h('span', { class: 'tk-num', text: '#' + t.n }), t.title];
+  var n = (t.files || []).length;
+  if (n) kids.push(h('span', { class: 'tk-clip', title: n + (n === 1 ? ' picture' : ' pictures') }, [clipIcon(), String(n)]));
+  return kids;
+}
+function workText(t) { return t.workTotalMs > 0 ? TM.fmtDuration(t.workTotalMs) : '—'; }
+function openOn(el, id) {
+  el.tabIndex = 0; el.setAttribute('role', 'button');
+  el.addEventListener('click', function () { openTask(id); });
+  el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTask(id); } });
+}
+
+function renderList(view) {
+  var items = TM.sortTasks(filtered(S.prefs.showClosed), S.prefs.sort), now = Date.now();
+  if (!items.length) { view.appendChild(emptyState()); return; }
+  var list = h('div', { class: 'tk-list' });
+  list.appendChild(h('div', { class: 'tk-lhead' }, [h('span', { text: 'Status' }), h('span', { text: 'Task' }), h('span', { text: 'People' }), h('span', { text: 'Due' }), h('span', { text: 'In work' })]));
+  items.forEach(function (t) {
+    var row = h('div', { class: 'tk-row' }, [
+      h('span', { class: 'c-st' }, [statusBadge(t.status)]),
+      h('div', { class: 'tk-ttl' }, titleNode(t)),
+      h('span', { class: 'c-avs' }, [avatarsOf(t, 4)]),
+      h('span', { class: 'c-due' }, [dueNode(t, now)]),
+      h('span', { class: 'tk-time', text: workText(t), title: 'Time in work' })
+    ]);
+    openOn(row, t.id);
+    list.appendChild(row);
+  });
+  view.appendChild(list);
+}
+
+function dragOK() { return !!(window.matchMedia && window.matchMedia('(min-width:701px) and (hover:hover) and (pointer:fine)').matches); }
+function renderBoard(view) {
+  var g = TM.groupByStatus(filtered(true), { nowMs: Date.now(), doneWithinDays: S.prefs.showClosed ? undefined : 14 }), now = Date.now();
+  var sw = h('div', { class: 'tk-bswitch' });
+  TM.STATUSES.forEach(function (s) {
+    sw.appendChild(h('button', { type: 'button', class: 'tk-pill', 'aria-pressed': S.boardStatus === s ? 'true' : 'false', on: { click: function () { S.boardStatus = s; render(); } } }, [TM.STATUS_LABEL[s], h('b', { text: String(g.columns[s].length) })]));
+  });
+  view.appendChild(sw);
+  var board = h('div', { class: 'tk-board' }), canDrag = dragOK();
+  TM.STATUSES.forEach(function (s) {
+    var col = h('div', { class: 'tk-col' + (S.boardStatus === s ? ' on' : ''), 'data-status': s }, [
+      h('div', { class: 'tk-colh' }, [h('span', { text: TM.STATUS_LABEL[s] }), h('span', { text: String(g.columns[s].length) })])
+    ]);
+    g.columns[s].forEach(function (t) {
+      var card = h('div', { class: 'tk-card', draggable: canDrag ? 'true' : null }, [
+        h('div', { class: 'tk-ttl' }, titleNode(t)),
+        h('div', { class: 'tk-cmeta' }, [avatarsOf(t, 3), dueNode(t, now), h('span', { class: 'tk-time', text: workText(t), title: 'Time in work' })])
+      ]);
+      openOn(card, t.id);
+      card.addEventListener('dragstart', function (e) {
+        S.dragId = t.id; card.classList.add('drag');
+        try { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* some browsers refuse; the id is in S.dragId anyway */ }
+      });
+      card.addEventListener('dragend', function () { S.dragId = null; card.classList.remove('drag'); });
+      col.appendChild(card);
+    });
+    if (!g.columns[s].length) col.appendChild(h('div', { class: 'tk-colempty', text: 'Nothing here' }));
+    if (s === 'done' && g.hiddenDone) col.appendChild(h('div', { class: 'tk-note', text: g.hiddenDone + ' older closed ' + (g.hiddenDone === 1 ? 'task is' : 'tasks are') + ' hidden. Tick "Show closed" to see all.' }));
+    col.addEventListener('dragover', function (e) { if (!S.dragId) return; e.preventDefault(); col.classList.add('over'); });
+    col.addEventListener('dragleave', function (e) { if (!col.contains(e.relatedTarget)) col.classList.remove('over'); });
+    col.addEventListener('drop', function (e) {
+      e.preventDefault(); col.classList.remove('over');
+      var id = S.dragId; S.dragId = null;
+      if (id) moveTask(id, s);
+    });
+    board.appendChild(col);
+  });
+  view.appendChild(board);
+}
+if (window.matchMedia) {
+  var mql = window.matchMedia('(min-width:701px) and (hover:hover) and (pointer:fine)');
+  if (mql.addEventListener) mql.addEventListener('change', function () { render(); });
+}
+// The card goes to the new column at once; if the server says no it goes back and we say why.
+async function moveTask(id, to) {
+  var t = findTask(id);
+  if (!t || t.status === to) return;
+  var key = 'move:' + id;
+  if (S.busy[key]) return;
+  S.busy[key] = true;
+  var from = t.status;
+  t.status = to; render();
+  try { absorb(await call('/' + encodeURIComponent(id) + '/status', { method: 'POST', body: { status: to } })); }
+  catch (e) { var cur = findTask(id); if (cur) cur.status = from; toast(errMsg(e), 'error', 5000); }
+  finally { delete S.busy[key]; render(); }
+}
+
+var PERIOD_TEXT = { '7': 'in the last 7 days', '30': 'in the last 30 days', all: 'over all time' };
+function renderPeople(view) {
+  var rows = TM.peopleSummary(S.tasks, S.people, Date.now(), S.prefs.period);
+  if (!rows.length) { view.appendChild(h('div', { class: 'tk-empty', text: 'No people to show.' })); return; }
+  var grid = h('div', { class: 'tk-pgrid' });
+  rows.forEach(function (p) {
+    var stat = function (n, label) { return h('div', { class: 'tk-stat' }, [h('b', { text: String(n) }), h('span', { text: label })]); };
+    var card = h('div', { class: 'tk-pcard' }, [
+      h('div', { class: 'tk-phead' }, [
+        h('span', { class: 'tk-av tk-c' + TM.colorIndex(p.email, 6), text: TM.initials(p.name, p.email) }),
+        h('div', { style: 'min-width:0' }, [h('div', { class: 'tk-pname', text: p.name }), p.name !== p.email ? h('div', { class: 'tk-pmail', text: p.email }) : null])
+      ]),
+      h('div', { class: 'tk-stats' }, [stat(p.inProgress, 'In progress'), stat(p.review, 'Review'), stat(p.done, 'Done')]),
+      h('div', { class: 'tk-prow' }, ['Done ' + PERIOD_TEXT[S.prefs.period] + ': ', h('b', { text: TM.fmtDuration(p.doneMs) + ' in work' })]),
+      h('div', { class: 'tk-prow' }, ['Open tasks so far: ', h('b', { text: TM.fmtDuration(p.openMs) + ' in work' })])
+    ]);
+    if (p.waiting) card.appendChild(h('div', { class: 'tk-prow', text: 'Assigned, not taken yet: ' + p.waiting }));
+    p.active.slice(0, 5).forEach(function (t) {
+      card.appendChild(h('button', { type: 'button', class: 'tk-plink', text: '#' + t.n + '  ' + t.title, on: { click: function () { openTask(t.id); } } }));
+    });
+    if (p.active.length > 5) card.appendChild(h('div', { class: 'tk-note', text: '+' + (p.active.length - 5) + ' more in progress' }));
+    grid.appendChild(card);
+  });
+  view.appendChild(grid);
+}
+
+/* ── task form (new task and edit) ────────────────────────────────────────────────────────────── */
+function taskForm(init) {
+  init = init || {};
+  var errs = {}, boxes = {};
+  var title = h('input', { type: 'text', maxlength: TM.LIMITS.title, value: init.title || '', 'aria-label': 'Title' });
+  var desc = h('textarea', { rows: 4, maxlength: TM.LIMITS.description, 'aria-label': 'Description' });
+  desc.value = init.description || '';
+  var due = h('input', { type: 'date', value: init.due || '', 'aria-label': 'Due date' });
+  var ll = h('input', { type: 'text', maxlength: TM.LIMITS.linkLabel, placeholder: 'Name, e.g. Order 1234', value: init.linkLabel || '', 'aria-label': 'Link name' });
+  var lu = h('input', { type: 'text', placeholder: '/crm/orders.html#q=1234', value: init.linkUrl || '', 'aria-label': 'Link address', autocomplete: 'off' });
+  var chosen = {}, pick = h('div', { class: 'tk-people-pick' }), emails = [];
+  (init.assignees || []).forEach(function (a) { chosen[TM.normEmail(a)] = true; });
+  S.people.forEach(function (p) { emails.push({ email: TM.normEmail(p.email), name: p.name }); });
+  Object.keys(chosen).forEach(function (e) { if (!emails.some(function (x) { return x.email === e; })) emails.push({ email: e, name: e }); });   // a person no longer in the user list stays until unticked
+  var boxesA = [];
+  emails.forEach(function (p) {
+    var cb = h('input', { type: 'checkbox', checked: !!chosen[p.email] });
+    cb.setAttribute('data-email', p.email);
+    boxesA.push(cb);
+    pick.appendChild(h('label', {}, [cb, p.name || p.email]));
+  });
+  if (!emails.length) pick.appendChild(h('span', { class: 'muted', text: 'No people loaded' }));
+  function field(key, label, control, hint) {
+    var e = h('div', { class: 'tk-err' });
+    errs[key] = e;
+    return h('div', { class: 'tk-f' }, [h('label', { class: 'tk-fl', text: label }), control, hint ? h('div', { class: 'tk-hint', text: hint }) : null, e]);
+  }
+  var el = h('div', {}, [
+    field('title', 'Title', title),
+    field('description', 'Description', desc),
+    field('assignees', 'Assigned to', pick, 'Leave empty if anyone can pick it up.'),
+    field('due', 'Due date', due),
+    field('link', 'Related CRM page', h('div', { class: 'tk-two' }, [ll, lu]), 'Optional. The address starts with /crm/ and opens the page from the task.')
+  ]);
+  return {
+    el: el, focus: function () { title.focus(); },
+    read: function () {
+      return { title: title.value, description: desc.value, due: due.value, linkLabel: ll.value, linkUrl: lu.value,
+        assignees: boxesA.filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute('data-email'); }) };
+    },
+    setErrors: function (e) { Object.keys(errs).forEach(function (k) { errs[k].textContent = (e && e[k]) || ''; }); }
+  };
+}
+
+function openNew() {
+  S.form = taskForm({});
+  var box = $('newBox'); clear(box); box.appendChild(S.form.el);
+  $('newDlg').hidden = false;
+  S.form.focus();
+}
+function closeNew() { $('newDlg').hidden = true; S.form = null; }
+$('newBtn').addEventListener('click', openNew);
+$('newClose').addEventListener('click', closeNew);
+$('newCancel').addEventListener('click', closeNew);
+$('newDlg').addEventListener('click', function (e) { if (e.target === $('newDlg')) closeNew(); });
+$('newForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var form = S.form;
+  if (!form) return;
+  var v = TM.validateTask(form.read());
+  form.setErrors(v.errors);
+  if (!v.ok) return;
+  act($('newCreate'), 'create', async function () {
+    var d = await call('', { method: 'POST', body: v.value });
+    if (!d || !d.task) throw new Error('bad answer');
+    closeNew();
+    applyTask(d.task);
+    toast('Task created', 'success');
+    openTask(d.task.id);
+  });
+});
+
+/* ── the card of a task ───────────────────────────────────────────────────────────────────────── */
+function openTask(id) {
+  if (!id) return;
+  if (S.openId === id) { if (TM.parseHash(location.hash) !== id) location.hash = '#task=' + id; return; }
+  if (S.openId) stashDraft();
+  dropPics();
+  S.openId = id; S.detail = null; S.detailErr = null; S.editing = false; S.form = null;
+  $('cText').value = loadDraft(id);
+  syncCount();
+  $('cErr').textContent = ''; $('upStatus').textContent = '';
+  $('dlg').hidden = false;
+  if (TM.parseHash(location.hash) !== id) location.hash = '#task=' + id;
+  renderDialog();
+  refreshDetail(false);
+}
+// The comment being typed survives closing the card and a forced sign-in (a 401 sends the tab to the login page and back):
+// kept per task in memory and in sessionStorage, dropped when the comment is sent.
+function draftKey(id) { return 'crm_tasks_draft:' + id; }
+function saveDraft(id, text) {
+  if (text) S.drafts[id] = text; else delete S.drafts[id];
+  try { if (text) sessionStorage.setItem(draftKey(id), text); else sessionStorage.removeItem(draftKey(id)); } catch (e) { /* storage off: the draft lives in memory only */ }
+}
+function loadDraft(id) {
+  if (S.drafts[id]) return S.drafts[id];
+  try { return sessionStorage.getItem(draftKey(id)) || ''; } catch (e) { return ''; }
+}
+function stashDraft() { if (S.openId) saveDraft(S.openId, $('cText').value); }
+function closeDialog(fromHash) {
+  if (!S.openId) return;
+  stashDraft();
+  S.openId = null; S.detail = null; S.editing = false; S.form = null;
+  $('dlg').hidden = true;
+  closeLightbox();
+  dropPics();
+  if (!fromHash && TM.parseHash(location.hash)) { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; } }
+}
+function onHash() {
+  var id = TM.parseHash(location.hash);
+  if (id) { if (S.openId !== id) openTask(id); }
+  else if (S.openId) closeDialog(true);
+}
+window.addEventListener('hashchange', onHash);
+$('dlgClose').addEventListener('click', function () { closeDialog(false); });
+$('dlg').addEventListener('click', function (e) { if (e.target === $('dlg')) closeDialog(false); });
+
+function renderDialog() {
+  if (!S.openId) return;
+  var st = $('dlgState'), body = $('dlgBody');
+  var shown = S.detail ? S.detail.task : findTask(S.openId);
+  $('dlgNum').textContent = shown ? '#' + shown.n : '';
+  $('dlgTitle').textContent = shown ? shown.title : '';
+  clear(st);
+  if (S.detailErr && !S.detail) {
+    body.hidden = true;
+    var gone = S.detailErr.status === 404;
+    st.appendChild(h('div', { class: 'tk-sec' }, [
+      h('div', { class: 'tk-banner bad' }, [h('div', { class: 'tk-bt' }, [h('b', { text: gone ? 'Task not found' : 'Could not open the task' }), gone ? 'It may have been removed, or the link is wrong.' : errMsg(S.detailErr)])]),
+      gone ? null : btn('Try again', 'secondary', function () { S.detailErr = null; renderDialog(); refreshDetail(false); })
+    ]));
+    return;
+  }
+  if (!S.detail || !S.me) { body.hidden = true; st.appendChild(h('div', { class: 'tk-sec muted', text: 'Loading…' })); return; }
+  body.hidden = false;
+  var t = S.detail.task;
+  if (t.archivedAt) st.appendChild(h('div', { class: 'tk-banner info tk-banner-in' }, [h('div', { class: 'tk-bt', text: 'This task is archived since ' + dateText(t.archivedAt) + '.' })]));
+  // An archived task is read-only for everybody (the server answers 409 to every change but Restore): offer nothing but Restore.
+  $('secComment').hidden = !!t.archivedAt;
+  if (!S.editing) renderTop(t);
+  renderFiles(t);
+  renderHistory(t);
+}
+
+function metaRow(k, v) { return [h('div', { class: 'tk-k', text: k }), h('div', { class: 'tk-v' }, Array.isArray(v) ? v : [v])]; }
+function workFor(email) { return TM.workOf({ work: S.detail.work }, TM.normEmail(email)); }
+function renderTop(t) {
+  var box = $('secTop'); clear(box);
+  var a = TM.actionsFor(t, S.me), now = Date.now();
+  var bar = h('div', { class: 'tk-actions' });
+  if (a.take) bar.appendChild(btn('Take it', 'primary', function (b) { act(b, 'take', async function () { absorb(await call('/' + encodeURIComponent(t.id) + '/status', { method: 'POST', body: { status: 'in_progress' } })); }); }));
+  if (a.join) bar.appendChild(btn('Join', a.take ? 'secondary' : 'primary', function (b) { act(b, 'join', async function () { absorb(await call('/' + encodeURIComponent(t.id) + '/join', { method: 'POST' })); toast('You joined the task', 'success'); }); }));
+  if (a.edit) bar.appendChild(btn('Edit', 'secondary', startEdit));
+  if (a.archive) bar.appendChild(btn('Archive', 'danger', function (b) {
+    act(b, 'archive', async function () {
+      if (!(await confirmDialog('Archive this task? It leaves the lists; the author or an admin can bring it back from the Archived view.', { ok: 'Archive' }))) return;
+      applyTask((await call('/' + encodeURIComponent(t.id) + '/archive', { method: 'POST' })).task);
+      closeDialog(false); toast('Task archived', 'success');
+    });
+  }));
+  if (a.restore) bar.appendChild(btn('Restore', 'primary', function (b) {
+    act(b, 'restore', async function () {
+      applyTask((await call('/' + encodeURIComponent(t.id) + '/restore', { method: 'POST' })).task);
+      closeDialog(false); toast('Task restored', 'success');
+    });
+  }));
+  if (bar.firstChild) box.appendChild(bar);
+  if (a.status) {
+    var row = h('div', { class: 'tk-statusrow' }, [h('span', { class: 'tk-k', text: 'Move to' })]);
+    TM.STATUSES.forEach(function (s) {
+      var cur = s === t.status;
+      row.appendChild(h('button', { type: 'button', class: 'tk-pill', 'aria-pressed': cur ? 'true' : 'false', disabled: cur, text: TM.STATUS_LABEL[s],
+        on: { click: function (e) { act(e.currentTarget, 'status', async function () { absorb(await call('/' + encodeURIComponent(t.id) + '/status', { method: 'POST', body: { status: s } })); }); } } }));
+    });
+    box.appendChild(row);
+  }
+
+  var meta = h('div', { class: 'tk-meta' });
+  var add = function (k, v) { metaRow(k, v).forEach(function (n) { meta.appendChild(n); }); };
+  add('Status', statusBadge(t.status));
+  add('Due', t.due ? [dueNode(t, now), TM.isOverdue(t, now) ? h('small', { text: '  overdue' }) : null] : h('span', { class: 'muted', text: 'No due date' }));
+  if (t.link && t.link.url) {
+    var safe = TM.safeLink(t.link.url);
+    add('Related page', safe ? h('a', { class: 'tk-link', href: safe, text: t.link.label || safe }) : h('span', { class: 'muted', text: (t.link.label || '') + ' (the address is not a CRM page, so it is not shown as a link)' }));
+  }
+  add('Created', [(t.createdBy && (t.createdBy.name || nameOf(t.createdBy.email))) || '', h('small', { text: '  ' + dateText(t.createdAt) })]);
+  if (t.doneAt) add('Closed', dateText(t.doneAt));
+  add('Assigned to', (t.assignees || []).length ? t.assignees.map(function (e) { return h('div', { class: 'tk-person' }, [h('span', { class: 'tk-av tk-c' + TM.colorIndex(e, 6), text: TM.initials(nameOf(e), e) }), nameOf(e)]); }) : h('span', { class: 'muted', text: 'Nobody' }));
+  add('Working on it', (t.participants || []).length ? t.participants.map(function (p) {
+    return h('div', { class: 'tk-person' }, [h('span', { class: 'tk-av tk-c' + TM.colorIndex(p.email, 6), text: TM.initials(nameOf(p.email), p.email) }), nameOf(p.email), h('small', { text: TM.fmtDuration(workFor(p.email)) + ' in work' })]);
+  }) : h('span', { class: 'muted', text: 'Nobody has taken it yet' }));
+  box.appendChild(meta);
+  box.appendChild(t.description ? h('div', { class: 'tk-desc', text: t.description }) : h('div', { class: 'muted', text: 'No description.' }));
+}
+
+function startEdit() {
+  var t = S.detail && S.detail.task;
+  if (!t) return;
+  S.editing = true;
+  S.form = taskForm({ title: t.title, description: t.description, due: t.due, assignees: t.assignees, linkLabel: t.link && t.link.label, linkUrl: t.link && t.link.url });
+  var box = $('secTop'); clear(box);
+  box.appendChild(S.form.el);
+  box.appendChild(h('div', { class: 'tk-actions' }, [
+    btn('Save', 'primary', function (b) { act(b, 'save', saveEdit); }),
+    btn('Cancel', 'secondary', function () { S.editing = false; S.form = null; renderDialog(); })
+  ]));
+  S.form.focus();
+}
+async function saveEdit() {
+  var t = S.detail.task, form = S.form;
+  var v = TM.validateTask(form.read());
+  form.setErrors(v.errors);
+  if (!v.ok) return;
+  var val = v.value, patch = {}, same = function (a, b) { return JSON.stringify(a) === JSON.stringify(b); };
+  var norm = function (l) { return (l || []).map(TM.normEmail).sort(); };
+  if (val.title !== t.title) patch.title = val.title;
+  if ((val.description || '') !== (t.description || '')) patch.description = val.description || '';
+  if ((val.due || null) !== (t.due || null)) patch.due = val.due || null;
+  if (!same(val.link || null, t.link ? { label: t.link.label, url: t.link.url } : null)) patch.link = val.link || null;
+  if (!same(norm(val.assignees), norm(t.assignees))) patch.assignees = val.assignees || [];
+  if (!Object.keys(patch).length) { S.editing = false; S.form = null; renderDialog(); return; }
+  var d = await call('/' + encodeURIComponent(t.id), { method: 'PATCH', body: patch });
+  S.editing = false; S.form = null;
+  absorb(d);
+  toast('Saved', 'success');
+}
+
+/* ── pictures ─────────────────────────────────────────────────────────────────────────────────── */
+// The CSP of the CRM host allows img-src 'self' data: https: - no blob: - so a picture is shown from a data: URL made of the answer.
+function dropPics() { S.pics = {}; S.picWait = {}; }
+function readDataUrl(blob) {
+  return new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () { resolve(String(r.result)); };
+    r.onerror = function () { reject(mkErr('Could not read the picture', 0)); };
+    r.readAsDataURL(blob);
+  });
+}
+function picFor(taskId, fileId) {
+  if (S.pics[fileId]) return Promise.resolve(S.pics[fileId]);
+  if (S.picWait[fileId]) return S.picWait[fileId];
+  var p = api('/api/tasks/' + encodeURIComponent(taskId) + '/files/' + encodeURIComponent(fileId), { raw: true, toast: false })
+    .then(function (res) { return res.blob(); })
+    .then(readDataUrl)
+    .then(function (url) {
+      delete S.picWait[fileId];
+      if (S.openId !== taskId) throw mkErr('closed', 0);   // the card was closed while it loaded
+      if (!TM.safeImageSrc(url)) throw mkErr('Not a picture', 0);
+      S.pics[fileId] = url;
+      return url;
+    }, function (e) { delete S.picWait[fileId]; throw e; });
+  S.picWait[fileId] = p;
+  return p;
+}
+function kb(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+function renderFiles(t) {
+  var grid = $('fileGrid'); clear(grid);
+  var keep = {};
+  (t.files || []).forEach(function (f) { keep[f.id] = 1; });
+  Object.keys(S.pics).forEach(function (k) { if (!keep[k]) delete S.pics[k]; });
+  var canEdit = TM.actionsFor(t, S.me).edit;   // false while archived
+  (t.files || []).forEach(function (f) {
+    var pic = h('button', { type: 'button', class: 'pic', text: 'Loading…', 'aria-label': 'Open ' + f.name });
+    var thumb = h('div', { class: 'tk-thumb' }, [pic, h('div', { class: 'cap' }, [f.name + ' (' + kb(f.size || 0) + ')',
+      canEdit ? h('button', { type: 'button', text: 'Remove', on: { click: function (e) { removeFile(e.currentTarget, t, f); } } }) : null])]);
+    grid.appendChild(thumb);
+    picFor(t.id, f.id).then(function (url) {
+      clear(pic);
+      pic.appendChild(h('img', { src: url, alt: f.name }));
+      pic.addEventListener('click', function () { openLightbox(url, f.name); });
+    }, function (e) { if (!(e && e.user && e.message === 'closed')) pic.textContent = 'Could not load'; });
+  });
+  var full = (t.files || []).length >= TM.LIMITS.files;
+  $('secFiles').hidden = !!t.archivedAt && !(t.files || []).length;   // an archived task with no pictures has nothing to show here
+  $('dropZone').hidden = full || !!t.archivedAt;
+  if (full && !t.archivedAt && !$('upStatus').textContent) $('upStatus').textContent = 'The task has the most pictures it can hold (' + TM.LIMITS.files + ').';
+}
+function removeFile(b, t, f) {
+  act(b, 'rmfile:' + f.id, async function () {
+    if (!(await confirmDialog('Remove "' + f.name + '" from the task?', { ok: 'Remove' }))) return;
+    absorb(await call('/' + encodeURIComponent(t.id) + '/files/' + encodeURIComponent(f.id), { method: 'DELETE' }));
+  });
+}
+function openLightbox(url, name) { var ok = TM.safeImageSrc(url); if (!ok) return; $('lbImg').setAttribute('src', ok); $('lbImg').setAttribute('alt', name || ''); $('lightbox').hidden = false; }
+function closeLightbox() { $('lightbox').hidden = true; $('lbImg').removeAttribute('src'); }
+$('lightbox').addEventListener('click', closeLightbox);
+
+// createImageBitmap reads the chosen file itself: no URL, so nothing here depends on the CSP (and every current browser has it).
+function decode(file) {
+  var bad = function () { return mkErr('Could not read this picture. Try a PNG or JPEG screenshot.', 0); };
+  if (!window.createImageBitmap) return Promise.reject(bad());
+  return createImageBitmap(file).then(function (b) { return { src: b, w: b.width, h: b.height, done: function () { if (b.close) b.close(); } }; }, function () { throw bad(); });
+}
+function toJpeg(canvas, q) {
+  return new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', q); });
+}
+// Longest side up to 1920, JPEG, quality down in steps until it fits the 900 KB the server takes.
+async function shrink(file) {
+  var img = await decode(file);
+  try {
+    var size = TM.fitSize(img.w, img.h, TM.SHRINK.MAX_SIDE);
+    if (!(size.w > 0 && size.h > 0)) throw mkErr('Could not read this picture. Try a PNG or JPEG screenshot.', 0);
+    var cv = document.createElement('canvas'); cv.width = size.w; cv.height = size.h;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, size.w, size.h);   // a transparent PNG would turn black as JPEG
+    ctx.drawImage(img.src, 0, 0, size.w, size.h);
+    for (var i = 0; i < TM.SHRINK.QUALITY.length; i++) {
+      var blob = await toJpeg(cv, TM.SHRINK.QUALITY[i]);
+      if (!blob) throw mkErr('Could not prepare this picture.', 0);
+      if (blob.size <= TM.SHRINK.MAX_BYTES) return blob;
+    }
+    throw mkErr('This picture is too detailed to fit under 900 KB. Take a smaller part of the screen.', 0);
+  } finally { img.done(); }
+}
+async function uploadRaw(taskId, blob, name) {
+  var tok = '';
+  try { tok = localStorage.getItem('crm_token') || ''; } catch (e) { tok = ''; }
+  var res;
+  try {
+    res = await fetch('/api/tasks/' + encodeURIComponent(taskId) + '/files', { method: 'POST', body: blob,
+      headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': blob.type || 'image/jpeg', 'X-File-Name': encodeURIComponent(name) } });
+  } catch (e) { throw mkErr('Cannot reach the server', 0); }
+  if (res.status === 401) {
+    try { localStorage.removeItem('crm_token'); localStorage.removeItem('crm_user'); } catch (e) { /* nothing to clear */ }
+    location.href = '/crm/login.html';
+    throw mkErr('Session expired', 401);
+  }
+  if (res.status === 502 || res.status === 503 || res.status === 504) throw mkErr('Server unavailable, please try again in a minute', res.status);
+  var data = null;
+  try { data = JSON.parse(await res.text()); } catch (e) { data = null; }
+  if (!res.ok) throw mkErr(data && data.error ? String(data.error) : 'HTTP ' + res.status, res.status);
+  return data;
+}
+async function addFiles(list) {
+  var t = S.detail && S.detail.task, id = S.openId;
+  if (!t || S.uploading || t.archivedAt) return;
+  var files = Array.prototype.slice.call(list || []).filter(function (f) { return f && /^image\//.test(f.type || ''); });
+  if (!files.length) { toast('Only pictures can be attached (PNG, JPEG, WebP).', 'error'); return; }
+  var room = TM.LIMITS.files - (t.files || []).length;
+  if (room <= 0) { toast('The task already has ' + TM.LIMITS.files + ' pictures.', 'error'); return; }
+  if (files.length > room) { toast('Only ' + room + ' more can be attached; the rest are skipped.', 'info', 4000); files = files.slice(0, room); }
+  S.uploading = true;
+  var st = $('upStatus');
+  try {
+    for (var i = 0; i < files.length; i++) {
+      if (S.openId !== id) break;
+      st.textContent = 'Preparing picture ' + (i + 1) + ' of ' + files.length + '…';
+      try {
+        var blob = await shrink(files[i]);
+        st.textContent = 'Uploading picture ' + (i + 1) + ' of ' + files.length + '…';
+        var d = await uploadRaw(id, blob, TM.shrunkName(files[i].name));
+        if (S.openId === id) absorb(d);
+      } catch (e) { toast(errMsg(e), 'error', 5000); }
+    }
+  } finally { S.uploading = false; st.textContent = ''; }
+}
+$('fileInput').addEventListener('change', function (e) { var f = e.target.files; addFiles(f).then(function () { e.target.value = ''; }); });
+document.addEventListener('paste', function (e) {
+  if (!S.openId || !S.detail || $('dlg').hidden || !e.clipboardData) return;
+  var files = [], items = e.clipboardData.items || [];
+  for (var i = 0; i < items.length; i++) if (items[i].kind === 'file' && /^image\//.test(items[i].type)) { var f = items[i].getAsFile(); if (f) files.push(f); }
+  if (!files.length) return;   // plain text goes to the comment box as usual
+  e.preventDefault();
+  addFiles(files);
+});
+$('dlg').addEventListener('dragover', function (e) { e.preventDefault(); if (e.target.closest && e.target.closest('#dropZone')) $('dropZone').classList.add('over'); });
+$('dlg').addEventListener('dragleave', function () { $('dropZone').classList.remove('over'); });
+$('dlg').addEventListener('drop', function (e) {
+  e.preventDefault(); $('dropZone').classList.remove('over');   // never let the browser open a dropped picture in place of the page
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+});
+
+/* ── comments and history ─────────────────────────────────────────────────────────────────────── */
+function syncCount() { var n = $('cText').value.length; $('cCount').textContent = n ? n + ' / ' + TM.LIMITS.comment : ''; }
+$('cText').addEventListener('input', function () { syncCount(); $('cErr').textContent = ''; if (S.openId) saveDraft(S.openId, $('cText').value); });
+$('cSend').addEventListener('click', function () {
+  var v = TM.validateComment($('cText').value);
+  if (!v.ok) { $('cErr').textContent = v.error; return; }
+  var id = S.openId;
+  act($('cSend'), 'comment', async function () {
+    var d = await call('/' + encodeURIComponent(id) + '/comments', { method: 'POST', body: { text: v.value } });
+    saveDraft(id, '');
+    if (S.openId === id && $('cText').value.trim() === v.value) { $('cText').value = ''; syncCount(); }   // not another task's box, not text typed meanwhile
+    absorb(d);
+  });
+});
+function renderHistory(t) {
+  var box = $('secHist'); clear(box);
+  var ev = (t.history || []).slice().reverse();
+  if (!ev.length) { box.appendChild(h('div', { class: 'muted', text: 'Nothing yet.' })); return; }
+  ev.forEach(function (e) {
+    var line = h('div', { class: 'tk-ev' }, [h('b', { text: nameOf(e.by) }), ' ' + TM.describeEvent(e, nameOf), h('span', { class: 'when', text: dateText(e.at) })]);
+    if (e.type === 'comment' && e.text) line.appendChild(h('div', { class: 'txt', text: e.text }));
+    box.appendChild(line);
+  });
+}
+
+/* ── start, keys, refresh ─────────────────────────────────────────────────────────────────────── */
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (!$('lightbox').hidden) closeLightbox();
+  else if (!$('newDlg').hidden) closeNew();
+  else if (S.openId) closeDialog(false);
+});
+$('refreshBtn').addEventListener('click', function () { loadList(false); });
+setInterval(function () { if (!document.hidden) loadList(true); }, POLL_MS);
+document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - S.lastLoad > 10000) loadList(true); });
+
+buildToolbar();
+render();
+onHash();
+loadList(false);
+</script>
+</body>
+</html>

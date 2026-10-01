@@ -1689,6 +1689,18 @@ try {
   console.error('⚠️ unit-costs.cjs not mounted:', e.message);
 }
 
+// Tasks (2026-10-01): the team's task planner for the CRM page Tasks (/api/tasks...). requireAuth on the mount: every signed-in user;
+// the module itself decides who may change which task. Tasks are written through lockedUpdate to data/tasks.json. The pictures go to
+// task-files/ NEXT TO data/, not inside it: the nightly backup takes the whole of /opt/crm-api, the 6-hourly CRM data backup only
+// data/, so 200 MB of screenshots are not copied 4 times a day for 14 days. CRM_TASKS_FILES_DIR overrides the folder.
+// Wrapped like the mounts above: a broken module must not take the CRM's login down with it.
+try {
+  app.use('/api/tasks', requireAuth, require('./crm-tasks.cjs')({ lockedUpdate, DATA_DIR, filesDir: process.env.CRM_TASKS_FILES_DIR || path.join(__dirname, 'task-files') }));
+  console.log('✅ crm-tasks.cjs mounted (/api/tasks)');
+} catch (e) {
+  console.error('⚠️ crm-tasks.cjs not mounted:', e.message);
+}
+
 // ═══════════════════════════════════════════════════════════════
 // GLOBAL ERROR HANDLER — catch-all, always returns JSON
 // Last middleware in the stack, so it also answers for the modules mounted above.

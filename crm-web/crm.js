@@ -176,6 +176,7 @@
     DASHBOARD: { key: 'dashboard', icon: '📊', label: 'Dashboard' },
     DEFAULT: [
       { id: 'sales', title: 'SALES', collapsed: false, items: [
+        { key: 'tasks', icon: '✅', label: 'Tasks' },
         { key: 'orders', icon: '📦', label: 'Orders' },
         { key: 'store-orders', icon: '🛒', label: 'Store Orders', m: 1 },
         { key: 'crypto-orders', icon: '🪙', label: 'Crypto payments', m: 1 },

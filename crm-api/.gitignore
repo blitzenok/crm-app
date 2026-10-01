@@ -11,3 +11,4 @@ cio.env
 data/*.bak*
 *.bak*
 server_v14.cjs.bak*
+task-files/
