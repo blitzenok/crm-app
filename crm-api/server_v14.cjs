@@ -1583,6 +1583,16 @@ try {
 } catch (e) {
   console.warn('⚠️  leads-store.cjs failed:', e.message);
 }
+// Account unsubscribe (2026-10-02): "Stop marketing emails" in the customer account marks the CRM lead unsubscribed
+// (POST /api/internal/account-unsubscribe, called by /opt/shop-account from 127.0.0.1 with ACCOUNT_CRM_SYNC_SECRET; the module
+// refuses anything proxied by nginx). Written to data/leads.json under the same leads.json.lock as chat-leads and products-api.
+// Wrapped like the mounts around it: a broken module must not take the CRM's login down with it.
+try {
+  require('./account-unsubscribe.cjs')({ app, DATA_DIR, writeAuditLog });
+  console.log('✅ account-unsubscribe.cjs mounted (/api/internal/account-unsubscribe)');
+} catch (e) {
+  console.error('⚠️ account-unsubscribe.cjs not mounted:', e.message);
+}
 try {
   require('./cio-routes.cjs')({ app, requireAuth, requireAdmin, DATA_DIR });
   console.log('✅ cio-routes.cjs mounted');
