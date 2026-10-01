@@ -2,145 +2,321 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<link rel="manifest" href="/crm/manifest.json">
-<meta name="theme-color" content="#1B2A4A">
-<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
-<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+  <link rel="manifest" href="/crm/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="BioLabs">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1B2A4A">
+  <link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+  <link rel="icon" href="/crm/assets/biolabs-logo.png">
 <title>BioLabs Research</title>
 <link rel="stylesheet" href="crm.css?v=05fa5a1bda">
 <style>
 /* campaigns-only styling; everything shared lives in crm.css */
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#E8ECF4;color:#1a1a2e;font-size:13px;display:flex;height:100vh;overflow:hidden;}
-.logo-img{width:42px;height:42px;border-radius:12px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#1F7A3D,#1B2A4A);}
-.card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:20px 22px;margin-bottom:16px;}
-.card h3{font-size:14px;font-weight:700;margin-bottom:14px;color:#1B2A4A;}
-.empty{text-align:center;padding:48px 20px;color:#5A6685;}
-.empty-icon{font-size:36px;margin-bottom:10px;opacity:.6;}
-.empty-title{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:6px;}
-.toast{position:fixed;bottom:28px;right:28px;background:#1a1a2e;color:#fff;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(12px);transition:all .3s;pointer-events:none;}
-thead th{text-align:left;padding:10px 8px;font-size:11px;font-weight:600;color:#5A6685;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #E8ECF4;}
-tbody td{padding:10px 8px;font-size:13px;border-bottom:1px solid #F0F2FA;}
-.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;}
-.badge-green{background:#E8F5E9;color:#2E7D32;}
-.badge-gray{background:#E8ECF4;color:#5A6685;}
-.badge-amber{background:#FFF8EC;color:#D97706;}
-.badge-red{background:#FEF2F2;color:#C62828;}
-.health{width:10px;height:10px;border-radius:50%;display:inline-block;}
-.health.green{background:#0E9F6E;}
-.health.yellow{background:#F59E0B;}
-.health.red{background:#E02424;}
-.grid-cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
-.auto-card{background:#fff;border:1px solid #E8ECF4;border-radius:14px;padding:18px 20px;}
-.auto-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.auto-name{font-size:14px;font-weight:700;color:#1a1a2e;}
-.auto-desc{font-size:12px;color:#5A6685;line-height:1.5;margin:8px 0 14px;}
-.rules{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
-.rule-row{display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:8px;align-items:center;}
-.seg-list{display:flex;flex-direction:column;gap:8px;}
-.seg-item{border:1px solid #E8ECF4;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;}
-.note{font-size:12px;color:#5A6685;margin-top:8px;}
-:root{--navy:#1B2A4A;--green:#1F7A3D;--border:#CBD5E1;--muted:#475569;}
-/* page-only mobile rules (the shared mobile layout is in crm.css) */
+.section{margin-bottom:20px;}
+.notice{background:#FFF8EC;border:1px solid #F5DFAE;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#7A5B18;margin-bottom:16px;}
+.banner-error{background:#FEF2F2;border:1px solid #FCA5A5;border-radius:12px;padding:14px 18px;font-size:12.5px;color:#991B1B;margin-bottom:16px;}
+.banner-error b{display:block;margin-bottom:3px;font-size:13px;}
+.banner-error div+div,.notice div+div{margin-top:4px;}
+.muted{color:#7A869A;}
+.hint{font-size:11.5px;color:#7A869A;padding:10px 20px 14px;}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;}
+.tile{background:#fff;border:1px solid #E8ECF4;border-radius:12px;padding:14px 16px;}
+.tile .tv{font-size:22px;font-weight:700;color:#1B2A4A;}
+.tile .tl{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:#7A869A;font-weight:600;margin-top:2px;}
+.tile .ts{font-size:11.5px;color:#7A869A;margin-top:4px;min-height:14px;}
+.gap{padding:18px 20px;font-size:12.5px;color:#7A869A;}
+.gap.bad{color:#991B1B;}
+th.sortable{cursor:pointer;user-select:none;}
+th.sortable:hover{color:#1B2A4A;}
+th.sortable.sort-asc::after{content:" \25B2";font-size:9px;}
+th.sortable.sort-desc::after{content:" \25BC";font-size:9px;}
+td.num,th.num{text-align:right;}
+.sub{display:block;font-size:11.5px;color:#7A869A;overflow-wrap:anywhere;}
+.link-btn{font-size:11px;padding:5px 12px;border-radius:8px;border:1px solid #E8ECF4;color:#1B2A4A;text-decoration:none;white-space:nowrap;display:inline-block;background:#fff;}
+.link-btn:hover{background:#E8ECF4;}
+.tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:6px;background:#F3F5FB;color:#1B2A4A;border:1px solid #D5DCF0;margin-left:6px;}
 @media(max-width:768px){
-.sidebar-logo,.nav-section-label,.sidebar-spacer,.nav-mobile-hidden{display:none!important;}
-.grid-cards{grid-template-columns:1fr;}
-.rule-row{grid-template-columns:1fr;}
+  /* crm.css shows tables as card lists and hides the first cell of every row; here the first cell is the name */
+  table.ctable tbody td:first-child{display:block!important;text-align:left!important;font-weight:700;padding-bottom:6px!important;}
+  table.ctable td.num,table.ctable th.num{text-align:right!important;}
 }
 </style>
+
 </head>
 <body>
-<script src="crm-utils.js"></script>
-<script src="crm.js?v=d91d6eb09f"></script>
-<script src="auth.js"></script>
+
+    <script src="crm-utils.js"></script>
+    <script src="crm.js?v=d91d6eb09f"></script>
+    <script src="auth.js"></script>
 <div class="app-wrapper">
-<aside class="sidebar">
-  <div id="crm-nav" class="crm-nav"></div>
-</aside>
-<div class="main">
-  <header class="topbar">
-    <div class="topbar-title">📣 Campaigns <span>Broadcasts & delivery</span></div>
-  </header>
-  <div class="content">
-
-<div id="cio-empty" class="card empty" style="display:none">
-  <div class="empty-icon">📣</div>
-  <div class="empty-title">Connect Customer.io to see campaigns.</div>
-  <div>Campaigns, delivery, and broadcast triggers will appear here once the server keys are set.</div>
-  <div style="margin-top:16px">
-    <button class="btn btn-primary btn-disabled" id="trigger-empty" type="button">Trigger Broadcast</button>
+  <div class="sidebar">
+    <div id="crm-nav" class="crm-nav"></div>
   </div>
-</div>
-<div id="cio-ready" style="display:none">
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h3 style="margin:0">Campaigns</h3>
-      <button class="btn btn-primary" id="trigger-ready" type="button">Trigger Broadcast</button>
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title">Campaigns <span>&mdash; what was sent and how it did</span></div>
+      <span class="muted" id="fetchedAt" style="font-size:12px"></span>
+      <button class="refresh-btn" id="refreshBtn" type="button">&#8635; Refresh</button>
     </div>
-    <div style="overflow:auto">
-      <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Audience</th><th>Sent</th><th>Delivery</th><th>Open</th><th>Click</th><th>Unsub</th></tr></thead>
-        <tbody id="camp-body"><tr><td colspan="9" style="color:#5A6685">Loading…</td></tr></tbody>
-      </table>
+    <div class="content">
+
+      <div id="banner"></div>
+
+      <div class="notice">
+        View only. Newsletters, journeys and service letters with their delivery numbers for the last 30 days, read from the CRM and
+        from Customer.io. Nothing is sent or changed from this page: write and send newsletters on the Newsletter page, change journeys
+        in Customer.io. &ldquo;Opened&rdquo; and &ldquo;Clicked&rdquo; count people, not mail scanners.
+      </div>
+
+      <div class="tiles" id="tiles"><div class="muted">Loading&hellip;</div></div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Newsletters sent from the CRM</div><div class="table-head-count" id="issuesCount">&mdash;</div></div>
+        <div class="table-scroll" id="issues"><div class="gap">Loading&hellip;</div></div>
+        <div class="hint">Subject, audience and the estimate of addresses are the CRM&rsquo;s own record. Customer.io gives delivery numbers per broadcast, not per issue: see below.</div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Newsletter broadcasts in Customer.io (30 days)</div><div class="table-head-count" id="broadcastsCount">&mdash;</div></div>
+        <div class="table-scroll" id="broadcasts"><div class="gap">Loading&hellip;</div></div>
+        <div class="hint">One broadcast carries every issue of the newsletter, so these numbers add the issues of the last 30 days together.</div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Journeys (30 days)</div><div class="table-head-count" id="journeysCount">&mdash;</div></div>
+        <div class="table-scroll" id="journeys"><div class="gap">Loading&hellip;</div></div>
+        <div class="hint">Which events start them and which letters they hold is on the Journeys page.</div>
+      </div>
+
+      <div class="table-card section">
+        <div class="table-head"><div class="table-head-title">Service letters (30 days)</div><div class="table-head-count" id="transactionalCount">&mdash;</div></div>
+        <div class="table-scroll" id="transactional"><div class="gap">Loading&hellip;</div></div>
+        <div class="hint">Order and status letters the shop sends directly. Their texts are on the Emails page.</div>
+      </div>
+
     </div>
   </div>
 </div>
 
-  </div>
-</div>
-</div>
 <script>
 renderNav('campaigns');
-const API='/api';
-async function cioStatus(){
-  try{
-    // {toast:false}: a missing Customer.io is not an error here - the page shows its own "Connect Customer.io" card
-    const d=await api(API+'/cio/status',{toast:false});
-    return d || {configured:false};
-  }catch(e){ return {configured:false}; }
+
+/* A metric the server could not read prints as a dash, never as 0. */
+function num(v) { return (v === null || v === undefined) ? '—' : String(v); }
+function el(id) { return document.getElementById(id); }
+function link(url, label) {
+  var safe = safeUrl(url);
+  if (!safe || safe === '#') return '';
+  return '<a class="link-btn" href="' + escAttr(safe) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + '</a>';
 }
 
-(async function(){
-  const st = await cioStatus();
-  const empty = document.getElementById('cio-empty');
-  const ready = document.getElementById('cio-ready');
-  function bindNoop(id){
-    const el=document.getElementById(id);
-    if(!el) return;
-    el.addEventListener('click', ()=> showToast('Customer.io is not connected', 'error'));
-  }
-  if(!st.configured){
-    empty.style.display='block';
-    bindNoop('trigger-empty');
-    return;
-  }
-  ready.style.display='block';
-  document.getElementById('trigger-ready').addEventListener('click', ()=> showToast('Select a campaign first'));
-  try{
-    // {toast:false}: every failure is written into the table by the lines below
-    const d=await api(API+'/cio/campaigns',{toast:false});
-    if(!d.ok){ document.getElementById('camp-body').innerHTML='<tr><td colspan="9">Could not load campaigns</td></tr>'; return; }
-    const rows = Array.isArray(d.campaigns)? d.campaigns : [];
-    if(!rows.length){ document.getElementById('camp-body').innerHTML='<tr><td colspan="9" style="color:#5A6685">No campaigns yet</td></tr>'; return; }
-    document.getElementById('camp-body').innerHTML = rows.map(c=>{
-      const m=c.metrics||c.actions||{};
-      return `<tr>
-        <td style="font-weight:600">${esc(c.name||c.id||'—')}</td>
-        <td>${esc(c.type||c.campaign_type||'—')}</td>
-        <td><span class="badge badge-gray">${esc(c.state||c.status||'—')}</span></td>
-        <td>${esc(c.audience||c.segment_name||'—')}</td>
-        <td>${esc(m.sent??c.sent??'—')}</td>
-        <td>${esc(m.delivered??c.delivered??'—')}</td>
-        <td>${esc(m.opened??c.opened??'—')}</td>
-        <td>${esc(m.clicked??c.clicked??'—')}</td>
-        <td>${esc(m.unsubscribed??c.unsubscribed??'—')}</td>
-      </tr>`;
-    }).join('');
-  }catch(e){
-    document.getElementById('camp-body').innerHTML='<tr><td colspan="9">Load failed</td></tr>';
-  }
-})();
+/* ── sortable tables: columns say how to show a row and how to compare it ─────────────────── */
+var TABLES = {};   // id -> { cols, rows, sort: {key, dir}, empty, error }
 
+function metricCols(extra) {
+  var cols = [];
+  [['sent', 'Sent'], ['delivered', 'Delivered'], ['opened', 'Opened'], ['clicked', 'Clicked'], ['unsubscribed', 'Unsub'], ['bounced', 'Bounced']].forEach(function (p) {
+    if (extra.indexOf(p[0]) === -1) return;
+    cols.push({ key: p[0], label: p[1], num: true,
+      html: function (r) { return esc(num(r.metrics30d ? r.metrics30d[p[0]] : null)); },
+      val: function (r) { return r.metrics30d ? r.metrics30d[p[0]] : null; } });
+  });
+  return cols;
+}
+function nameCol() {
+  return { key: 'name', label: 'Name',
+    html: function (r) { return '<b>' + esc(r.name) + '</b>' + (r.is_crm_newsletter ? '<span class="tag">CRM newsletter</span>' : ''); },
+    val: function (r) { return r.name; } };
+}
+function stateCol() {
+  return { key: 'state', label: 'State',
+    html: function (r) { return '<span class="badge ' + (r.state === 'running' || r.state === 'sent' ? 'badge-sent' : 'badge-none') + '">' + esc(r.state || 'unknown') + '</span>'; },
+    val: function (r) { return r.state; } };
+}
+function linkCol(label, hrefOf) {
+  return { key: '', label: '', html: function (r) { return link(hrefOf(r), label); }, val: null };
+}
+
+var COLS = {
+  issues: [
+    { key: 'subject', label: 'Subject', html: function (r) { return '<b>' + esc(r.subject) + '</b>' + (r.unconfirmed ? '<span class="sub">Customer.io did not confirm this send: check Deliveries there before sending again.</span>' : ''); }, val: function (r) { return r.subject; } },
+    { key: 'state', label: 'State', html: function (r) { return '<span class="badge ' + (r.state === 'sent' ? 'badge-sent' : 'badge-none') + '">' + esc(r.state) + '</span>'; }, val: function (r) { return r.state; } },
+    { key: 'audience', label: 'Audience', html: function (r) { return esc(r.audience); }, val: function (r) { return r.audience; } },
+    { key: 'recipients_estimate', label: 'Addresses (estimate)', num: true, html: function (r) { return esc(num(r.recipients_estimate)); }, val: function (r) { return r.recipients_estimate; } },
+    { key: 'when', label: 'Sent', html: function (r) { return r.sent_at ? esc(fmtDate(r.sent_at)) + (r.sent_by ? '<span class="sub">' + esc(r.sent_by) + '</span>' : '') : '<span class="muted">not sent</span>'; }, val: function (r) { return r.sent_at || ''; } }
+  ],
+  broadcasts: [nameCol()].concat(metricCols(['sent', 'delivered', 'opened', 'clicked', 'unsubscribed', 'bounced']), [linkCol('Open in Customer.io', function (r) { return r.edit_url; })]),
+  journeys: [nameCol(), stateCol(),
+    { key: 'trigger', label: 'Starts when', html: function (r) { return esc(triggerText(r.trigger)); }, val: function (r) { return triggerText(r.trigger); } }
+  ].concat(metricCols(['sent', 'delivered', 'opened', 'clicked', 'unsubscribed', 'bounced']), [
+    { key: 'updated', label: 'Updated', html: function (r) { return r.updated ? '<span class="muted">' + esc(fmtDate(r.updated)) + '</span>' : '—'; }, val: function (r) { return r.updated || ''; } },
+    linkCol('Open in Customer.io', function (r) { return r.edit_url; })
+  ]),
+  transactional: [nameCol()].concat(metricCols(['sent', 'delivered', 'opened', 'clicked', 'bounced']), [
+    { key: '', label: '', html: function () { return '<a class="link-btn" href="marketing-emails.html">Edit text</a>'; }, val: null }
+  ])
+};
+
+function triggerText(t) {
+  if (!t) return '—';
+  if (t.kind === 'event') return t.event_name;
+  if (t.kind === 'segment') return 'a person joins ' + (t.segment_ids || []).map(function (id) { return 'segment #' + id; }).join(', ');
+  return t.type || '—';
+}
+
+/* null always last, whatever the direction; numbers numerically, text without regard to case. */
+function compare(a, b, dir) {
+  var an = a === null || a === undefined || a === '', bn = b === null || b === undefined || b === '';
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  var c = (typeof a === 'number' && typeof b === 'number') ? a - b : String(a).toLowerCase().localeCompare(String(b).toLowerCase());
+  return dir === 'asc' ? c : -c;
+}
+
+function renderTable(id) {
+  var t = TABLES[id], host = el(id);
+  if (!t) return;
+  if (t.error) { host.innerHTML = '<div class="gap bad">' + esc(t.error) + '</div>'; return; }
+  if (!t.rows.length) { host.innerHTML = '<div class="gap">' + esc(t.empty) + '</div>'; return; }
+  var rows = t.rows.slice();
+  var col = null;
+  t.cols.forEach(function (c) { if (c.key && c.key === t.sort.key) col = c; });
+  if (col && col.val) rows.sort(function (x, y) { return compare(col.val(x), col.val(y), t.sort.dir); });
+  var head = t.cols.map(function (c) {
+    var on = col === c;
+    return '<th class="' + (c.val ? 'sortable' : '') + (c.num ? ' num' : '') + (on ? ' sort-' + t.sort.dir : '') + '"' +
+      (c.val ? ' data-sort="' + escAttr(c.key) + '" data-table="' + escAttr(id) + '" tabindex="0"' : '') + '>' + esc(c.label) + '</th>';
+  }).join('');
+  var body = rows.map(function (r) {
+    return '<tr>' + t.cols.map(function (c) {
+      return '<td' + (c.num ? ' class="num"' : '') + (c.label ? ' data-label="' + escAttr(c.label) + '"' : '') + '>' + c.html(r) + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  host.innerHTML = '<table class="ctable"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+}
+
+function setTable(id, rows, errorText, empty, defaultSort) {
+  var prev = TABLES[id];
+  TABLES[id] = { cols: COLS[id], rows: rows || [], error: rows === null ? errorText : '', empty: empty, sort: prev ? prev.sort : defaultSort };
+  renderTable(id);
+}
+
+function sortBy(id, key) {
+  var t = TABLES[id];
+  if (!t) return;
+  t.sort = { key: key, dir: (t.sort.key === key && t.sort.dir === 'desc') ? 'asc' : 'desc' };
+  renderTable(id);
+}
+
+/* ── tiles: sums over the sections that could be read ─────────────────────────────────────── */
+function sumOf(lists, key) {
+  var total = 0, seen = false;
+  lists.forEach(function (list) {
+    (list || []).forEach(function (r) {
+      var v = r.metrics30d ? r.metrics30d[key] : null;
+      if (v !== null && v !== undefined) { total += v; seen = true; }
+    });
+  });
+  return seen ? total : null;
+}
+function rate(part, whole) {
+  if (part === null || whole === null || !whole) return '';
+  return (Math.round(part / whole * 1000) / 10) + '% of ' + 'delivered';
+}
+function renderTiles(d) {
+  var lists = [d.broadcasts, d.journeys, d.transactional].filter(function (l) { return l !== null && l !== undefined; });
+  var sent = sumOf(lists, 'sent'), delivered = sumOf(lists, 'delivered'), opened = sumOf(lists, 'opened'),
+      clicked = sumOf(lists, 'clicked'), unsub = sumOf(lists, 'unsubscribed'), bounced = sumOf(lists, 'bounced');
+  var issuesSent = d.issues ? d.issues.filter(function (i) { return i.state === 'sent'; }).length : null;
+  var running = d.journeys ? d.journeys.filter(function (j) { return j.running; }).length : null;
+  var cards = [
+    { v: num(issuesSent), l: 'Newsletters sent', s: d.issues_total > (d.issues || []).length ? 'newest ' + (d.issues || []).length + ' of ' + d.issues_total : 'all time' },
+    { v: num(running), l: 'Journeys running', s: d.journeys ? 'of ' + d.journeys.length : '' },
+    { v: num(sent), l: 'Sent, 30 days', s: lists.length < 3 ? 'without the sections not read' : '' },
+    { v: num(delivered), l: 'Delivered', s: delivered !== null && sent ? (Math.round(delivered / sent * 1000) / 10) + '% of sent' : '' },
+    { v: num(opened), l: 'Opened', s: rate(opened, delivered) },
+    { v: num(clicked), l: 'Clicked', s: rate(clicked, delivered) },
+    { v: num(unsub), l: 'Unsubscribed', s: '' },
+    { v: num(bounced), l: 'Bounced', s: bounced !== null && sent ? (Math.round(bounced / sent * 1000) / 10) + '% of sent' : '' }
+  ];
+  return cards.map(function (c) {
+    return '<div class="tile"><div class="tv">' + esc(c.v) + '</div><div class="tl">' + esc(c.l) + '</div><div class="ts">' + esc(c.s) + '</div></div>';
+  }).join('');
+}
+
+/* ── the banner: which source could not be read, and why ──────────────────────────────────── */
+var SOURCE_NAMES = { newsletters: 'Newsletters from the CRM', broadcasts: 'Newsletter broadcasts', journeys: 'Journeys', transactional: 'Service letters' };
+function bannerHtml(d) {
+  var out = '';
+  if (d.throttled) {
+    out += '<div class="notice">These numbers were read from Customer.io less than 30 seconds ago. Refresh again in ' + esc(String(d.refresh_in_s || 30)) + ' s to read them anew.</div>';
+  }
+  var bad = Object.keys(SOURCE_NAMES).filter(function (k) { return d.sources && d.sources[k] && d.sources[k].ok === false; });
+  if (bad.length) {
+    out += '<div class="banner-error"><b>' + (bad.length === 1 ? 'One part could not be read' : 'Some parts could not be read') + '</b>' +
+      bad.map(function (k) { return '<div>' + esc(SOURCE_NAMES[k]) + ': ' + esc(d.sources[k].error || 'not available') + '</div>'; }).join('') +
+      '<div>The rest of the page is shown as it was read.</div></div>';
+  } else if (d.cio && d.cio.partial) {
+    out += '<div class="notice">Some numbers could not be read from Customer.io just now and show as a dash. Refresh in a minute.</div>';
+  }
+  var cut = [];
+  if (d.journeys && d.journeys_total > d.journeys.length) cut.push('journeys: ' + d.journeys.length + ' of ' + d.journeys_total);
+  if (d.broadcasts && d.broadcasts_total > d.broadcasts.length) cut.push('broadcasts: ' + d.broadcasts.length + ' of ' + d.broadcasts_total);
+  if (d.transactional && d.transactional_total > d.transactional.length) cut.push('service letters: ' + d.transactional.length + ' of ' + d.transactional_total);
+  if (cut.length) out += '<div class="notice">Showing ' + esc(cut.join('; ')) + ': the rest are not read, and the numbers above cover only what is shown.</div>';
+  return out;
+}
+
+function reasonOf(d, k) { return (d.sources && d.sources[k] && d.sources[k].error) || 'not available'; }
+
+var LOADED = false;   // once something has been shown, a failed Refresh keeps it and only says so in the banner
+async function loadAll(fresh) {
+  var btn = el('refreshBtn');
+  btn.disabled = true;   // one request at a time: a Refresh held down must not turn into a read per click
+  try {
+    var d = await api('/api/marketing/campaigns' + (fresh ? '?fresh=1' : ''), { toast: false });
+    el('banner').innerHTML = bannerHtml(d);
+    el('tiles').innerHTML = renderTiles(d);
+    setTable('issues', d.issues, 'Not available: ' + reasonOf(d, 'newsletters'), 'No newsletter has been written yet.', { key: 'when', dir: 'desc' });
+    setTable('broadcasts', d.broadcasts, 'Not available: ' + reasonOf(d, 'broadcasts'), 'No broadcasts in this workspace.', { key: 'sent', dir: 'desc' });
+    setTable('journeys', d.journeys, 'Not available: ' + reasonOf(d, 'journeys'), 'No journeys in this workspace yet.', { key: 'sent', dir: 'desc' });
+    setTable('transactional', d.transactional, 'Not available: ' + reasonOf(d, 'transactional'), 'No service letters in this workspace.', { key: 'sent', dir: 'desc' });
+    el('issuesCount').textContent = d.issues ? String(d.issues_total) : '—';
+    el('broadcastsCount').textContent = d.broadcasts ? String(d.broadcasts.length) : '—';
+    el('journeysCount').textContent = d.journeys ? String(d.journeys.length) : '—';
+    el('transactionalCount').textContent = d.transactional ? String(d.transactional.length) : '—';
+    el('fetchedAt').textContent = d.fetched_at ? 'Read ' + fmtDate(d.fetched_at) : '';
+    LOADED = true;
+  } catch (e) {
+    var why = e.message || 'Something went wrong';
+    el('banner').innerHTML = '<div class="banner-error"><b>Campaigns</b>' + esc(why) + '</div>';
+    if (!LOADED) {
+      el('tiles').innerHTML = '<div class="muted">Not available: ' + esc(why) + '</div>';
+      // straight into the containers: TABLES keeps its sort state for the first good load
+      Object.keys(COLS).forEach(function (id) { el(id).innerHTML = '<div class="gap bad">' + esc('Not available: ' + why) + '</div>'; });
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function onSort(ev) {
+  var th = ev.target && ev.target.closest ? ev.target.closest('th[data-sort]') : null;
+  if (!th) return;
+  sortBy(th.getAttribute('data-table'), th.getAttribute('data-sort'));
+}
+document.addEventListener('click', onSort);
+document.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') onSort(ev); });
+el('refreshBtn').addEventListener('click', function () { loadAll(true); });
+
+loadAll();
 </script>
+
+<!-- Floating + button (mobile only) -->
+<div class="mobile-fab" onclick="window.location.href='/crm/sales-entry.html'">+</div>
 </body>
 </html>

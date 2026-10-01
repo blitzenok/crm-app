@@ -200,6 +200,7 @@
         { key: 'marketing-journeys', icon: '🧭', label: 'Journeys', m: 1 },
         { key: 'automations', icon: '⚡', label: 'Automations', m: 1 },
         { key: 'marketing-newsletter', icon: '📨', label: 'Newsletter', m: 1 },
+        { key: 'campaigns', icon: '📣', label: 'Campaigns', m: 1 },
         { key: 'reports', icon: '📈', label: 'Leads Reports', m: 1 }
       ] },
       { id: 'finance', title: 'FINANCE', collapsed: true, items: [

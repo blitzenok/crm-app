@@ -1660,6 +1660,15 @@ try {
   console.error('⚠️ marketing-journeys.cjs not mounted:', e.message);
 }
 
+// Campaigns (2026-10-02): newsletters, journeys and service letters with their 30-day numbers, read only (GET /api/marketing/campaigns).
+// Same shape as the mounts above: requireAuth on the mount, and a broken module must not take the CRM's login down with it.
+try {
+  app.use('/api/marketing/campaigns', requireAuth, require('./marketing-campaigns.cjs')({ DATA_DIR }));
+  console.log('✅ marketing-campaigns.cjs mounted (/api/marketing/campaigns)');
+} catch (e) {
+  console.error('⚠️ marketing-campaigns.cjs not mounted:', e.message);
+}
+
 // Customer timeline (2026-09-30): one read-only customer record per e-mail across leads, both order books (orders.json,
 // crm-umg store.json), abandoned checkouts, contact messages and the consent log (GET /api/customers, /api/customers/:email).
 // PII, so requireAuth sits on the mount; the module only reads its sources. Wrapped like the mounts above.
