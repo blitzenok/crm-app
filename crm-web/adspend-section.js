@@ -32,8 +32,13 @@
     '#fin-adspend .spend-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 14px;}',
     '#fin-adspend .spend-link{border:none;background:none;padding:0;font-size:12px;font-weight:600;color:#5A6685;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}',
     '#fin-adspend .spend-kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));}',   // the page's own .fin-tiles, five across
-    '#fin-adspend .tile-value.spend-muted{font-size:14px;font-weight:600;letter-spacing:0;line-height:27px;}',
-    '#fin-adspend .spend-kpi-s{font-size:11px;color:#8A94A6;margin-top:2px;}',
+    // every tile is a column with its figure on the bottom line, so a label that wraps does not push the figure down
+    '#fin-adspend .spend-kpis [data-tile]{display:flex;flex-direction:column;background:#fff;border-radius:14px;padding:14px 16px;}',
+    '#fin-adspend .spend-kpis .tile-value{margin-top:auto;padding-top:10px;font-size:26px;font-weight:700;line-height:32px;letter-spacing:-0.02em;color:#1B2A4A;font-variant-numeric:tabular-nums;white-space:nowrap;word-break:normal;}',
+    '#fin-adspend .spend-kpis .spend-small{font-size:15px;font-weight:600;letter-spacing:0;color:#8A94A6;}',
+    '#fin-adspend .spend-kpis .tile-value.spend-muted{font-size:14px;font-weight:600;letter-spacing:0;color:#8A94A6;}',
+    '#fin-adspend .spend-kpis .tile-value.spend-neg{color:#C62828;}',
+    '#fin-adspend .spend-kpi-s{font-size:11px;color:#8A94A6;margin-top:3px;}',
     '#fin-adspend .spend-muted{color:#8A94A6;font-weight:400;}',
     '#fin-adspend .spend-pos{color:#0E7A3E;}',
     '#fin-adspend .spend-neg{color:#C62828;}',
@@ -127,7 +132,8 @@
     return !total && r.key === 'direct' ? 'not ads' : 'no spend';
   }
   // A margin known for only some of the row's orders says so; none known is "cost unknown", never a zero.
-  function profitHtml(r, v, marginOn, colour) {
+  function profitHtml(r, v, marginOn, colour, noSpend) {
+    if (noSpend) return muted('no spend');
     if (!marginOn) return muted('cost list not loaded');
     if (v === null || (r.orders > 0 && r.costed === 0)) return muted('cost unknown');
     var part = r.costed < r.orders ? ' ' + muted('(' + r.costed + ' of ' + r.orders + ' orders)') : '';
@@ -136,10 +142,16 @@
   }
 
   function tile(label, valueHtml, sub) {
-    return '<div data-tile="adspend"><div class="tile-label">' + global.esc(label) + '</div>' + valueHtml +
-      (sub ? '<div class="spend-kpi-s">' + global.esc(sub) + '</div>' : '') + '</div>';
+    return '<div data-tile="adspend"><div class="tile-label">' + global.esc(label) + '</div>' +
+      (sub ? '<div class="spend-kpi-s">' + global.esc(sub) + '</div>' : '') + valueHtml + '</div>';
   }
-  function tileValue(text, isMuted) { return '<div class="tile-value' + (isMuted ? ' spend-muted' : '') + '">' + global.esc(text) + '</div>'; }
+  // A figure: the cents and the "×" are set smaller and lighter than the number they belong to. cls: 'spend-muted' for
+  // words in place of a number, 'spend-neg' for a loss.
+  function tileValue(text, cls) {
+    var m = cls === 'spend-muted' ? null : /^(.*?)(\.\d{2}|×)$/.exec(text);
+    return '<div class="tile-value' + (cls ? ' ' + cls : '') + '">' +
+      (m ? global.esc(m[1]) + '<span class="spend-small">' + global.esc(m[2]) + '</span>' : global.esc(text)) + '</div>';
+  }
 
   // The headline numbers are the Paid channels row: the sources that have spend, nothing else mixed in.
   function tiles(res, paidOnly) {
@@ -148,10 +160,11 @@
     return '<div class="fin-tiles spend-kpis">' +
       tile('Spend', tileValue(money(p.spendC))) +
       tile(paidOnly ? 'Revenue, paid channels' : 'Order value, paid channels', tileValue(money(p.revenueC))) +
-      tile('ROAS', p.roas === null ? tileValue('no spend', true) : tileValue(roasText(p.roas))) +
-      tile('Cost per new customer', p.cacC === null ? tileValue(why(p, true, 'no new customers'), true) : tileValue(money(p.cacC))) +
-      tile('Profit after ads', p.spendC === 0 ? tileValue('no spend', true)
-        : unknown ? tileValue(res.marginOn ? 'cost unknown' : 'cost list not loaded', true) : tileValue(money(p.afterAdsC)),
+      tile('ROAS', p.roas === null ? tileValue('no spend', 'spend-muted') : tileValue(roasText(p.roas))) +
+      tile('Cost per new customer', p.cacC === null ? tileValue(why(p, true, 'no new customers'), 'spend-muted') : tileValue(money(p.cacC))) +
+      tile('Profit after ads', p.spendC === 0 ? tileValue('no spend', 'spend-muted')
+        : unknown ? tileValue(res.marginOn ? 'cost unknown' : 'cost list not loaded', 'spend-muted')
+          : tileValue(money(p.afterAdsC), p.afterAdsC < 0 && p.costed === p.orders ? 'spend-neg' : ''),
         p.spendC > 0 && !unknown && p.costed < p.orders ? 'cost known for ' + p.costed + ' of ' + p.orders + ' orders' : '') +
       '</div>';
   }
@@ -159,6 +172,7 @@
   function roasTable(res, paidOnly) {
     var head = ['Source', 'Spend', 'Orders', paidOnly ? 'Revenue' : 'Order value', 'New customers', 'CAC', 'ROAS', 'Gross profit', 'Profit after ads'];
     function cells(r, total) {
+      var none = r === res.paidChannels && r.spendC === 0;   // no source has spend: the row has nothing to sum, as the tiles say
       // one span: on phones a cell is a row "label left, value right", and the dot must stay with the name
       var src = '<span>' + (total ? '' : dot(r.key)) + global.esc(r.label) + (!total && r.spendC > 0 && r.orders === 0 ? ' <span class="spend-flag">no orders</span>' : '') + '</span>';
       var N = 'spend-num';   // numbers never break across lines; a narrow table scrolls inside its wrapper instead
@@ -167,8 +181,8 @@
         cell(head[4], String(r.newCustomers), N) +
         cell(head[5], r.cacC === null ? muted(why(r, total, 'no new customers')) : global.esc(money(r.cacC)), N) +
         cell(head[6], r.roas === null ? muted(why(r, total)) : '<span class="spend-pill">' + global.esc(roasText(r.roas)) + '</span>', N) +
-        cell(head[7], profitHtml(r, r.profitC, res.marginOn, false), N) +
-        cell(head[8], profitHtml(r, r.afterAdsC, res.marginOn, true), N);
+        cell(head[7], profitHtml(r, r.profitC, res.marginOn, false, none), N) +
+        cell(head[8], profitHtml(r, r.afterAdsC, res.marginOn, true, none), N);
     }
     var note = 'Spend is what was entered for the period. New customer = first paid order of that e-mail in the whole history falls in the period ' +
       '(orders without an e-mail are not counted). CAC = spend / new customers, ROAS = ' + (paidOnly ? 'paid revenue' : 'order value') + ' / spend. ' +

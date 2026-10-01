@@ -84,9 +84,10 @@ test('render: fetches the period\'s entries, builds the section once, draws the 
   const roas = el('spend-roas').innerHTML;
   const kpis = roas.match(/<div class="fin-tiles spend-kpis">[^]*?<\/div><\/div>(?=<p)/)[0];
   assert.equal((kpis.match(/data-tile="adspend"/g) || []).length, 5);
-  assert.match(kpis, /Spend<\/div><div class="tile-value">\$400\.00</);          // the Paid channels row: 250 + 100 + 50
-  assert.match(kpis, /Revenue, paid channels<\/div><div class="tile-value">\$150\.00</);
-  assert.match(kpis, /Cost per new customer<\/div><div class="tile-value">\$200\.00</);   // 400 / 2 new customers
+  assert.match(kpis, /Spend<\/div><div class="tile-value">\$400<span class="spend-small">\.00<\/span></);          // the Paid channels row: 250 + 100 + 50
+  assert.match(kpis, /Revenue, paid channels<\/div><div class="tile-value">\$150<span class="spend-small">\.00<\/span></);
+  assert.match(kpis, /Cost per new customer<\/div><div class="tile-value">\$200<span class="spend-small">\.00<\/span></);   // 400 / 2 new customers
+  assert.match(kpis, /ROAS<\/div><div class="tile-value">0\.38<span class="spend-small">×<\/span></);   // 150 / 400
   assert.match(roas, /id="spend-how" hidden>/);                                   // the explanation is one click away
   assert.match(roas, /data-table="adspend"/);
   assert.match(roas, /<th>Revenue<\/th>/);
@@ -124,6 +125,9 @@ test('no spend at all: the tiles and rows say why there is no number, the empty 
   assert.match(roas, /ROAS<\/div><div class="tile-value spend-muted">no spend</);
   assert.match(roas, /Cost per new customer<\/div><div class="tile-value spend-muted">no spend</);
   assert.match(roas, /Profit after ads<\/div><div class="tile-value spend-muted">no spend</);
+  const paid = roas.match(/<tr class="spend-total">[^]*?<\/tr>/g)[1];
+  assert.equal((paid.match(/no spend/g) || []).length, 4, 'Paid channels with no spend: CAC, ROAS and both profits say so');
+  assert.doesNotMatch(roas.match(/<tr class="spend-total">[^]*?<\/tr>/g)[0], /no spend<\/span><\/td>$/, 'the Total row keeps its own profit cells');
   assert.doesNotMatch(roas, /—/);
   assert.match(el('spend-entries').innerHTML, /No spend entered for this period/);
   assert.match(el('spend-entries').innerHTML, /data-spend-add="1">Add spend</);
@@ -406,7 +410,7 @@ test('partial cost coverage shows "(N of M orders)" on gross profit, profit afte
   assert.match(totals[0], /\(1 of 3 orders\)/);                  // Total: 3 orders, one costed
   assert.match(totals[1], /Paid.channels/);
   assert.match(totals[1], /\(1 of 3 orders\)/);                  // both sources have spend
-  assert.match(html, /Profit after ads<\/div><div class="tile-value">\$65\.00<\/div><div class="spend-kpi-s">cost known for 1 of 3 orders</);   // 80 - 15
+  assert.match(html, /Profit after ads<\/div><div class="spend-kpi-s">cost known for 1 of 3 orders<\/div><div class="tile-value">\$65<span class="spend-small">\.00<\/span></);   // 80 - 15
   // every order costed: the profit after ads is coloured by its sign
   global.allOrders = OM.load([rawOrder('BLR-7023', 's@x.com', 3, 'google', 100, 2)]);
   await S.render();
