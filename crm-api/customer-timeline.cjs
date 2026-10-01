@@ -220,19 +220,33 @@ module.exports = function customerTimeline(opts) {
     const events = showQa || custQa ? c.events : c.events.filter(e => !e.qa);
     // One order is one ref: a card order that products-api mirrored into orders.json is counted once.
     const orders = new Map();
+    const quoteRefs = new Set(); // paid price-request records (not part of "orders": that field keeps its meaning)
     for (const e of events) {
+      if (e.type === 'shop_quote' && !e.qa && SHOP_PAID.includes(e.status)) quoteRefs.add(e.linkedRef || e.ref || (e.source.file + ':' + e.source.id));
       if (e.type !== 'shop_order' && e.type !== 'card_order') continue;
       const k = e.linkedRef || e.ref || (e.source.file + ':' + e.source.id);
-      const o = orders.get(k) || { umgPaid: null, shopPaid: null, cancelled: false };
+      const o = orders.get(k) || { umgPaid: null, shopPaid: null, cancelled: false, active: false, qa: false };
       if (e.type === 'card_order' && e.paid) o.umgPaid = e.amount || 0;
       if (e.type === 'shop_order' && e.paid) o.shopPaid = e.amount || 0;
       if (e.type === 'shop_order' && e.status === 'cancelled') o.cancelled = true; // cancelled in the shop book: not revenue
+      // activeOrders: a shop record that is not cancelled, or a card order that was paid (a declined or open attempt is not an order)
+      if (e.qa) o.qa = true;
+      if ((e.type === 'shop_order' && e.status !== 'cancelled') || (e.type === 'card_order' && (e.paid || e.status === 'refunded' || e.status === 'chargeback'))) o.active = true;
       orders.set(k, o);
     }
     let revenue = 0, paidOrders = 0;
     for (const o of orders.values()) {
       const v = o.cancelled ? null : (o.umgPaid !== null ? o.umgPaid : o.shopPaid);
       if (v !== null) { paidOrders++; revenue += v; }
+    }
+    // Same test refs as orders-model.js TEST_REF; QA e-mails and rows already marked QA are o.qa.
+    // A paid quote and its mirror share a key (source_ref), so the set counts them once; cancelled / QA in the shop book wins.
+    const activeRefs = new Set(quoteRefs);
+    for (const [k, o] of orders) if (o.active) activeRefs.add(k);
+    let activeOrders = 0;
+    for (const k of activeRefs) {
+      const o = orders.get(k);
+      if ((!o || (!o.cancelled && !o.qa)) && !/^(PROBE|BF-SMOKE|BF-MERGE|BF-CIO-TEST|BF-RENDER|BF-TEXT|BF-QA)/i.test(k)) activeOrders++;
     }
     const books = [...new Set(events.map(e => e.book))];
     const types = {};
@@ -242,7 +256,7 @@ module.exports = function customerTimeline(opts) {
       summary: {
         email: c.email, name: c.profile.name || null, company: c.profile.company || null, country: c.profile.country || null,
         qa: custQa, books, inBothBooks: books.includes('shop') && books.includes('umg') && events.some(e => e.source.file === 'orders.json') && events.some(e => e.source.file === 'store.json'),
-        eventCount: events.length, orders: orders.size, paidOrders, paidRevenue: Math.round(revenue * 100) / 100,
+        eventCount: events.length, orders: orders.size, activeOrders, paidOrders, paidRevenue: Math.round(revenue * 100) / 100,
         firstSeen: dates.length ? dates[0] : null, lastSeen: dates.length ? dates[dates.length - 1] : null, types,
         hiddenQaEvents: c.events.length - events.length
       },
