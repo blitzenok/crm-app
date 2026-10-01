@@ -219,7 +219,12 @@
       chargeCheck: chargeCheckOf(raw),
       edits: normalizeEdits(raw.edits),
       original: obj(raw.original),
-      attribution: { source: text(raw.attribution && raw.attribution.source).slice(0, 40).toLowerCase() },
+      attribution: {
+        source: text(raw.attribution && raw.attribution.source).slice(0, 40).toLowerCase(),
+        medium: text(raw.attribution && raw.attribution.medium).slice(0, 40).toLowerCase(),
+        click: text(raw.attribution && raw.attribution.click).slice(0, 20).toLowerCase(),
+        click_id: text(raw.attribution && raw.attribution.click_id).slice(0, 200)
+      },
       hasCopies: false
     };
   }

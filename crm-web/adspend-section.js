@@ -20,7 +20,7 @@
   var form = null;       // the open window: { overlay, id ('' = a new entry), source, day, view: {y, m}, busy }
 
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  var DOTS = { google: '#EA4335', meta: '#1877F2', tiktok: '#111827', newsletter: '#7C3AED', direct: '#B8C4DC' };
+  var DOTS = { google: '#EA4335', meta: '#1877F2', tiktok: '#111827', newsletter: '#7C3AED', direct: '#B8C4DC', __organic: '#B8C4DC' };
   var PENCIL = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>';
   var TRASH = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
 
@@ -130,10 +130,10 @@
     return '<td data-label="' + global.escAttr(label) + '"' + (cls ? ' class="' + cls + '"' : '') + '>' + html + '</td>';
   }
 
-  // Why a ratio has no number, in words: a source nobody paid for, a source with no spend entered, or no new customer yet.
+  // Why a ratio has no number, in words: the organic row (nobody paid for it), a source with no spend entered, or no new customer yet.
   function why(r, total, noCustomers) {
     if (r.spendC > 0) return noCustomers;
-    return !total && r.key === 'direct' ? 'not ads' : 'no spend';
+    return !total && r.key === '__organic' ? 'not ads' : 'no spend';
   }
   // A margin known for only some of the row's orders says so; none known is "cost unknown", never a zero.
   function profitHtml(r, v, marginOn, colour, noSpend) {
@@ -177,28 +177,35 @@
     var head = ['Source', 'Spend', 'Orders', paidOnly ? 'Revenue' : 'Order value', 'New customers', 'CAC', 'ROAS', 'Gross profit', 'Profit after ads'];
     function cells(r, total) {
       var none = r === res.paidChannels && r.spendC === 0;   // no source has spend: the row has nothing to sum, as the tiles say
+      var free = r === res.organic;                          // the organic row: not ads, so no spend, CAC, ROAS or profit after ads
       // one span: on phones a cell is a row "label left, value right", and the dot must stay with the name
-      var src = '<span>' + (total ? '' : dot(r.key)) + global.esc(r.label) + (!total && r.spendC > 0 && r.orders === 0 ? ' <span class="spend-flag">no orders</span>' : '') + '</span>';
+      var src = '<span>' + (total ? '' : dot(r.key)) + global.esc(r.label) + (!total && !free && r.spendC > 0 && r.orders === 0 ? ' <span class="spend-flag">no orders</span>' : '') + '</span>';
       var N = 'spend-num';   // numbers never break across lines; a narrow table scrolls inside its wrapper instead
       return cell(head[0], src) +
-        cell(head[1], global.esc(money(r.spendC)), N) + cell(head[2], String(r.orders), N) + cell(head[3], global.esc(money(r.revenueC)), N) +
+        cell(head[1], free ? muted('no spend') : global.esc(money(r.spendC)), N) + cell(head[2], String(r.orders), N) + cell(head[3], global.esc(money(r.revenueC)), N) +
         cell(head[4], String(r.newCustomers), N) +
         cell(head[5], r.cacC === null ? muted(why(r, total, 'no new customers')) : global.esc(money(r.cacC)), N) +
         cell(head[6], r.roas === null ? muted(why(r, total)) : '<span class="spend-pill">' + global.esc(roasText(r.roas)) + '</span>', N) +
         cell(head[7], profitHtml(r, r.profitC, res.marginOn, false, none), N) +
-        cell(head[8], profitHtml(r, r.afterAdsC, res.marginOn, true, none), N);
+        cell(head[8], free ? muted('not ads') : profitHtml(r, r.afterAdsC, res.marginOn, true, none), N);
     }
-    var note = 'Spend is what was entered for the period. New customer = first paid order of that e-mail in the whole history falls in the period ' +
+    var note = 'Spend is what was entered for the period, and it is counted only against orders whose link carries a paid utm_medium ' +
+      '(cpc, ppc, cpm, paid, paid social, display, ads, sponsored, affiliate and similar) or an ad click ID (fbclid, gclid, msclkid, ttclid); ' +
+      'visitors who declined cookies leave no trail, so their orders land in Organic / free. ' +
+      'Every other order, including free visits from Facebook, Instagram, Google and direct visits, is in the Organic / free row: nothing was spent on it, so it has no CAC or ROAS and is not part of Total or Paid channels. ' +
+      'New customer = first paid order of that e-mail in the whole history falls in the period ' +
       '(orders without an e-mail are not counted). CAC = spend / new customers, ROAS = ' + (paidOnly ? 'paid revenue' : 'order value') + ' / spend. ' +
       'Gross profit is the Margin section’s, for the orders that have a cost for every item' +
       (res.marginOn ? (res.marginPartial ? ' (' + res.total.costed + ' of ' + res.total.orders + ' orders in this total; the rest is unknown, not zero)' : '') : ' (cost list not loaded)') +
-      '. "Direct / unknown" is every order with no recorded source, so it has no ROAS by design; Total is blended over all sources; Paid channels is the same sums over the sources that have spend, and the tiles above show that row. Channel rows include all visits from that site (unpaid posts and search too), so ROAS/CAC for Meta and Google can be higher than for paid clicks alone.';
+      '. Total is every paid-link order, also from a source with no spend entered; Paid channels is the same sums over the sources that have spend, and the tiles above show that row. ' +
+      'Facebook adds an fbclid to every outgoing link, so a click on a free post can still count as a paid link.';
     return tiles(res, paidOnly) +
       '<p class="fin-note spend-how" id="spend-how"' + (howOpen ? '' : ' hidden') + '>' + global.esc(note) + '</p>' +
       '<div class="fin-table-wrap"><table class="spend-table" data-table="adspend"><thead><tr>' +
       head.map(function (h) { return '<th>' + global.esc(h) + '</th>'; }).join('') + '</tr></thead><tbody>' +
       res.rows.map(function (r) { return '<tr data-key="' + global.escAttr(r.key) + '">' + cells(r, false) + '</tr>'; }).join('') +
-      '<tr class="spend-total">' + cells(res.total, true) + '</tr><tr class="spend-total">' + cells(res.paidChannels, true) + '</tr></tbody></table></div>';
+      '<tr class="spend-total">' + cells(res.total, true) + '</tr><tr class="spend-total">' + cells(res.paidChannels, true) + '</tr>' +
+      (res.organic.orders > 0 ? '<tr class="spend-organic" data-key="__organic">' + cells(res.organic, false) + '</tr>' : '') + '</tbody></table></div>';
   }
 
   function entriesTable(list) {

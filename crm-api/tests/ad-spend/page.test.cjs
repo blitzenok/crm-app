@@ -5,11 +5,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { CRM_DIR, ADMODEL, ADSECTION } = require('./helpers.cjs');
-const { loadJs } = require('./helpers.cjs');
+const { CRM_DIR, ADMODEL, ADSECTION, loadOrdersModel, loadJs } = require('./helpers.cjs');
 
 loadJs(path.join(CRM_DIR, 'crm-utils.js'));           // the real esc / escAttr (they register on globalThis)
-const OM = loadJs(path.join(CRM_DIR, 'orders-model.js'));
+const OM = loadOrdersModel();
 const FM = loadJs(path.join(CRM_DIR, 'finance-model.js'));
 loadJs(ADMODEL);
 
@@ -47,9 +46,10 @@ const dayAgo = n => new Date(d.getTime() - n * 86400000).toISOString().slice(0, 
 const localDay = n => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - n); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); };
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const shown = day => MONTHS[Number(day.slice(5, 7)) - 1].slice(0, 3) + ' ' + Number(day.slice(8)) + ', ' + day.slice(0, 4);
-function rawOrder(ref, email, daysAgo, source, due, qty) {
+// an order with a source came by a paid link (utm_medium cpc) unless medium says otherwise ('' = a free visit)
+function rawOrder(ref, email, daysAgo, source, due, qty, medium) {
   return { ref, customer: { email }, savedAt: new Date(d.getTime() - daysAgo * 86400000).toISOString(), total_due_server: due.toFixed(2), status: 'new',
-    items: [{ slug: 'bpc-157', name: 'BPC-157', mg: '10mg', qty, price: due / qty }], attribution: source ? { source } : undefined,
+    items: [{ slug: 'bpc-157', name: 'BPC-157', mg: '10mg', qty, price: due / qty }], attribution: source ? { source, medium: medium === undefined ? 'cpc' : medium } : undefined,
     payments: [{ id: 'p' + ref, at: new Date(d.getTime() - daysAgo * 86400000).toISOString(), kind: 'payment', method: 'card', amount: due }] };
 }
 const BASE_ORDERS = () => OM.load([rawOrder('BLR-7001', 'a@x.com', 5, 'facebook', 100, 2), rawOrder('BLR-7002', 'b@x.com', 6, 'ram', 50, 1)]);
@@ -116,11 +116,12 @@ test('render: fetches the period\'s entries, builds the section once, draws the 
 });
 
 test('no spend at all: the tiles and rows say why there is no number, the empty list offers the button', async () => {
-  global.allOrders = OM.load([rawOrder('BLR-7030', 'd@x.com', 2, '', 40, 1), rawOrder('BLR-7031', 'e@x.com', 2, 'google', 60, 1)]);
+  global.allOrders = OM.load([rawOrder('BLR-7030', 'd@x.com', 2, '', 40, 1), rawOrder('BLR-7031', 'e@x.com', 2, 'google', 60, 1)]);   // no trail = organic; google by a paid link
   apiImpl = async () => ({ entries: [] });
   await S.render();
   const roas = el('spend-roas').innerHTML;
-  assert.equal((roas.match(/<tr data-key="direct">[^]*?<\/tr>/)[0].match(/not ads/g) || []).length, 2, 'CAC and ROAS of the direct row');
+  assert.equal((roas.match(/<tr class="spend-organic" data-key="__organic">[^]*?<\/tr>/)[0].match(/not ads/g) || []).length, 3, 'CAC, ROAS and profit after ads of the organic row');
+  assert.doesNotMatch(roas, /data-key="direct"/);
   assert.equal((roas.match(/<tr data-key="google">[^]*?<\/tr>/)[0].match(/no spend/g) || []).length, 2);
   assert.match(roas, /ROAS<\/div><div class="tile-value spend-muted">no spend</);
   assert.match(roas, /Cost per new customer<\/div><div class="tile-value spend-muted">no spend</);
@@ -131,6 +132,48 @@ test('no spend at all: the tiles and rows say why there is no number, the empty 
   assert.doesNotMatch(roas, /—/);
   assert.match(el('spend-entries').innerHTML, /No spend entered for this period/);
   assert.match(el('spend-entries').innerHTML, /data-spend-add="1">Add spend</);
+  global.allOrders = BASE_ORDERS();
+});
+
+test('paid-link rule: free visits sit in the Organic / free row under the totals, the tiles and ROAS use paid-link orders only, the note says what counts', async () => {
+  global.allOrders = OM.load([rawOrder('BLR-7040', 'a@x.com', 2, 'facebook', 100, 2), rawOrder('BLR-7041', 'b@x.com', 2, 'facebook', 40, 1, ''),   // paid / free facebook
+    rawOrder('BLR-7042', 'c@x.com', 2, 'google', 30, 1, 'organic'), rawOrder('BLR-7043', 'd@x.com', 2, '', 10, 1)]);                                  // free search / no trail
+  apiImpl = async () => ({ entries: [ENTRIES[0]] });   // 250 on facebook
+  await S.render();
+  const roas = el('spend-roas').innerHTML;
+  const kpis = roas.match(/<div class="fin-tiles spend-kpis">[^]*?<\/div><\/div>(?=<p)/)[0];
+  assert.match(kpis, /Spend<\/div><div class="tile-value">\$250<span class="spend-small">\.00</);
+  assert.match(kpis, /Revenue, paid channels<\/div><div class="tile-value">\$100<span class="spend-small">\.00</, 'the free facebook order is not revenue of the ad');
+  assert.match(kpis, /ROAS<\/div><div class="tile-value">0\.40<span class="spend-small">×</);          // 100 / 250
+  assert.match(kpis, /Cost per new customer<\/div><div class="tile-value">\$250<span class="spend-small">\.00</);   // one new customer by a paid link
+  const rows = roas.match(/<tr [^>]*>[^]*?<\/tr>/g).map(r => r.match(/^<tr ([^>]*)>/)[1]);
+  assert.deepEqual(rows, ['data-key="meta"', 'class="spend-total"', 'class="spend-total"', 'class="spend-organic" data-key="__organic"'], 'the organic row comes last, outside the totals');
+  const org = roas.match(/<tr class="spend-organic" data-key="__organic">[^]*?<\/tr>/)[0];
+  assert.match(org, /Organic \/ free/);
+  assert.match(org, /data-label="Spend"[^>]*><span class="spend-muted">no spend</);
+  assert.match(org, /data-label="Orders"[^>]*>3</);
+  assert.match(org, /data-label="Order value"|data-label="Revenue"/);
+  assert.match(org, />\$80\.00</, 'revenue of the three free orders: 40 + 30 + 10');
+  assert.equal((org.match(/not ads/g) || []).length, 3, 'CAC, ROAS and profit after ads');
+  assert.doesNotMatch(org, /spend-pill|no orders/);
+  const total = roas.match(/<tr class="spend-total">[^]*?<\/tr>/)[0];
+  assert.match(total, /data-label="Orders"[^>]*>1</, 'Total counts the paid-link order only');
+  const how = roas.match(/<p class="fin-note spend-how"[^>]*>([^]*?)<\/p>/)[1];
+  assert.match(how, /counted only against orders whose link carries a paid utm_medium/);
+  assert.match(how, /or an ad click ID \(fbclid, gclid, msclkid, ttclid\)/);
+  assert.doesNotMatch(how, /gbraid|wbraid/, 'the storefront does not keep these two');
+  assert.match(how, /visitors who declined cookies leave no trail, so their orders land in Organic \/ free/);
+  assert.match(how, /Organic \/ free row/);
+  assert.doesNotMatch(how, /Channel rows include all visits/, 'the old caption is gone');
+  assert.doesNotMatch(roas, /—|NaN|Infinity|undefined|null/);
+  // no free order at all: no organic row
+  global.allOrders = OM.load([rawOrder('BLR-7044', 'a@x.com', 2, 'facebook', 100, 2)]);
+  await S.render();
+  assert.doesNotMatch(el('spend-roas').innerHTML, /data-key="__organic"/);
+  // a paid link that names no source is its own row
+  global.allOrders = OM.load([{ ...rawOrder('BLR-7045', 'e@x.com', 2, '', 20, 1), attribution: { source: '', medium: 'cpc' } }]);
+  await S.render();
+  assert.match(el('spend-roas').innerHTML.match(/<tr data-key="direct">[^]*?<\/tr>/)[0], /Paid link, source unknown/);
   global.allOrders = BASE_ORDERS();
 });
 
@@ -388,9 +431,9 @@ test('error(): the orders did not load; the next render builds the section again
 
 test('partial cost coverage shows "(N of M orders)" on gross profit, profit after ads, the totals and the tile; no cost at all is "cost unknown"', async () => {
   global.allOrders = OM.load([rawOrder('BLR-7020', 'p@x.com', 3, 'ram', 100, 2),
-    { ref: 'BLR-7021', customer: { email: 'q@x.com' }, savedAt: new Date(d.getTime() - 3 * 86400000).toISOString(), total_due_server: '50.00', status: 'new', items: [], attribution: { source: 'ram' },
+    { ref: 'BLR-7021', customer: { email: 'q@x.com' }, savedAt: new Date(d.getTime() - 3 * 86400000).toISOString(), total_due_server: '50.00', status: 'new', items: [], attribution: { source: 'ram', medium: 'cpc' },
       payments: [{ id: 'pq', at: new Date(d.getTime() - 3 * 86400000).toISOString(), kind: 'payment', method: 'card', amount: 50 }] },
-    { ref: 'BLR-7022', customer: { email: 'r@x.com' }, savedAt: new Date(d.getTime() - 3 * 86400000).toISOString(), total_due_server: '25.00', status: 'new', items: [], attribution: { source: 'google' },
+    { ref: 'BLR-7022', customer: { email: 'r@x.com' }, savedAt: new Date(d.getTime() - 3 * 86400000).toISOString(), total_due_server: '25.00', status: 'new', items: [], attribution: { source: 'google', medium: 'cpc' },
       payments: [{ id: 'pr', at: new Date(d.getTime() - 3 * 86400000).toISOString(), kind: 'payment', method: 'card', amount: 25 }] }]);
   apiImpl = async () => ({ entries: [{ id: 'sp_ffffffffffff', date: dayAgo(1), source: 'other:ram', campaign: '', amountCents: 1000, note: '', createdBy: 'x', createdAt: '' },
     { id: 'sp_gggggggggggg', date: dayAgo(1), source: 'google', campaign: '', amountCents: 500, note: '', createdBy: 'x', createdAt: '' }] });

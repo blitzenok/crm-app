@@ -4,6 +4,9 @@
  * Spend comes from GET /api/marketing/spend (entries with amountCents), orders from OrdersModel.load(); this file only
  * reads both and never writes. Spec: docs/superpowers/specs/2026-10-01-ad-spend-roas.md
  * Needs FinanceModel (select, sourceOf, whenOf, margin); money is integer cents inside, dollars only at the edge.
+ * Paid-link rule (owner, 2026-10-01): an order is ad traffic only when its trail carries a paid utm_medium or an ad click id;
+ * every other order goes to one "Organic / free" row that has no spend, CAC or ROAS and is not part of the totals.
+ * The trail fields medium / click / click_id reach the page through OrdersModel (deploy/patch-roas-paid.cjs).
  */
 (function (global) {
   var FM = (typeof window !== 'undefined' && window.FinanceModel)
@@ -29,8 +32,32 @@
   function capital(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
   function grouped(key) { return GROUP[key] || key; }
+
+  // utm_medium values that mean a paid placement, compared as slugs (case, "_" and spaces folded: "Paid_Social" = "paid-social").
+  // Anything starting with "paid" or ending with "-paid" also counts (paid, paid-social, paidsocial, paid-search, social-paid),
+  // unless it is negated (non-paid, not-paid, unpaid). Not paid: social, organic, email, newsletter, referral, direct and everything not listed.
+  var PAID_MEDIUM = ['cpc', 'ppc', 'cpm', 'cpv', 'cpa', 'cpl', 'ads', 'ad', 'adwords', 'display', 'banner', 'sem', 'retargeting', 'remarketing',
+    'shopping', 'pmax', 'programmatic', 'sponsored', 'promoted', 'influencer', 'affiliate'];
+  var NOT_PAID = /(^|-)(non|not|un)-?paid/;
+  // The click parameters the storefront keeps (attribution.js: gclid, fbclid, ttclid, msclkid); gbraid / wbraid are Google's app-campaign ids.
+  var CLICK_PARAMS = ['fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid', 'ttclid'];
+
+  function paidMedium(medium) {
+    var m = slugKey(medium);
+    if (!m || NOT_PAID.test(m)) return false;
+    return PAID_MEDIUM.indexOf(m) !== -1 || m.slice(0, 4) === 'paid' || m.slice(-5) === '-paid';
+  }
+  // True when the order came in through a paid link: a paid medium, or an ad click id (its parameter name, or a stored id value).
+  // An order without a trail, or with a referrer and nothing else (a plain facebook.com visit), is not paid.
+  function fromPaidLink(r) {
+    var a = r && r.attribution;
+    if (!a || typeof a !== 'object') return false;
+    if (paidMedium(a.medium)) return true;
+    if (CLICK_PARAMS.indexOf(slugKey(a.click)) !== -1) return true;
+    return typeof a.click_id === 'string' && a.click_id.trim() !== '';
+  }
   // The key an order's source and a spend entry's source share. Orders: finance-model's label; "Direct" and "Not recorded"
-  // are one row, because an order with no trail cannot be told from a direct visit.
+  // are one row (for a paid-link order that names no source: "Paid link, source unknown").
   function orderKey(r) {
     var label = FM.sourceOf(r);
     if (label === 'Direct' || label === 'Not recorded') return 'direct';
@@ -42,7 +69,7 @@
     return grouped(slugKey(s) || 'direct');
   }
   function labelOf(key, seen) {
-    if (key === 'direct') return 'Direct / unknown';
+    if (key === 'direct') return 'Paid link, source unknown';
     for (var i = 0; i < SOURCE_OPTIONS.length; i++) if (SOURCE_OPTIONS[i].value === key) return SOURCE_OPTIONS[i].label;
     return (seen && seen[key]) || capital(key);
   }
@@ -77,7 +104,7 @@
 
   /**
    * opts: { orders: OrdersModel.load() list (all periods), spend: entries of the period, period, paidOnly, now, costIdx }
-   * -> { rows, total, marginKnown, costed, ordersCount }
+   * -> { rows (paid-link orders by source, plus spend-only sources), total, paidChannels, organic (all other orders), marginOn, marginPartial, range }
    */
   function build(opts) {
     opts = opts || {};
@@ -98,30 +125,34 @@
       if (!(c > 0) || c !== Math.floor(c)) return;
       row(spendKey(s)).spendC += c;
     });
+    // Orders of paid links go to their source's row; every other order to the one organic bucket, which has no spend.
+    var organicE = { key: '__organic', spendC: 0, list: [], newCustomers: 0 };
     selected.forEach(function (r) {
+      if (!fromPaidLink(r)) { organicE.list.push(r); return; }
       var k = orderKey(r);
       var label = FM.sourceOf(r);
       if (k !== 'direct' && !seen[k]) seen[k] = label;
       row(k).list.push(r);
     });
-    news.forEach(function (r) { row(orderKey(r)).newCustomers++; });
+    news.forEach(function (r) { (fromPaidLink(r) ? row(orderKey(r)) : organicE).newCustomers++; });
 
     var marginOn = !!opts.costIdx;
-    var rows = keys.map(function (k) {
-      var e = map[k];
+    function shape(e, label) {
       var revenueC = e.list.reduce(function (s, r) { return s + cents(r.toPay || 0); }, 0);
       var m = marginOn && e.list.length ? FM.margin(e.list, opts.costIdx) : null;
       var profitC = null;
       if (marginOn && !e.list.length) profitC = 0;
       else if (m && m.costed > 0) profitC = cents(m.profit);
       return {
-        key: k, label: labelOf(k, seen), spendC: e.spendC, orders: e.list.length, revenueC: revenueC, newCustomers: e.newCustomers,
+        key: e.key, label: label, spendC: e.spendC, orders: e.list.length, revenueC: revenueC, newCustomers: e.newCustomers,
         cacC: e.spendC > 0 && e.newCustomers > 0 ? Math.round(e.spendC / e.newCustomers) : null,
         roas: e.spendC > 0 ? revenueC / e.spendC : null,
         profitC: profitC, costed: m ? m.costed : 0,
         afterAdsC: profitC === null ? null : profitC - e.spendC
       };
-    });
+    }
+    var rows = keys.map(function (k) { return shape(map[k], labelOf(k, seen)); });
+    var organic = shape(organicE, 'Organic / free');
     rows.sort(function (a, b) { return b.spendC - a.spendC || b.revenueC - a.revenueC || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0); });
 
     var marginPartial = false;
@@ -140,11 +171,11 @@
     }
     var total = sum(rows, 'Total');
     var paidChannels = sum(rows.filter(function (r) { return r.spendC > 0; }), 'Paid channels');
-    return { rows: rows, total: total, paidChannels: paidChannels, marginOn: marginOn, marginPartial: marginPartial, range: range };
+    return { rows: rows, total: total, paidChannels: paidChannels, organic: organic, marginOn: marginOn, marginPartial: marginPartial, range: range };
   }
 
   var api = { SOURCE_OPTIONS: SOURCE_OPTIONS, periodRange: periodRange, build: build,
-    orderKey: orderKey, spendKey: spendKey, newCustomerOrders: newCustomerOrders };
+    orderKey: orderKey, spendKey: spendKey, newCustomerOrders: newCustomerOrders, fromPaidLink: fromPaidLink };
   global.AdSpendModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : global);

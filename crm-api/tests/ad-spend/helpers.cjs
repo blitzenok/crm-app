@@ -18,7 +18,7 @@ const ADSECTION = ADMODEL.replace('adspend-model.js', 'adspend-section.js');
 // Default: the snapshot of 2026-09-30 (before this deploy).
 const SERVER_FILE = process.env.SERVER_FILE || (INFRA ? path.join(__dirname, 'fixtures', 'server_v14.orig.cjs') : path.join(__dirname, '..', '..', 'server_v14.cjs'));
 const CRM_DIR = process.env.CRM_DIR || (INFRA ? path.join(SNAP, 'var/www/mastersol/html/CRM') : path.join(__dirname, '..', '..', '..', 'crm-web'));
-const PRODUCTS_API = process.env.PRODUCTS_API_FILE || path.join(SNAP, 'var/www/mastersol/html/MSOLPEPTIDES/products-api.cjs');
+const PRODUCTS_API = process.env.PRODUCTS_API_FILE || (INFRA ? path.join(SNAP, 'var/www/mastersol/html/MSOLPEPTIDES/products-api.cjs') : path.join(__dirname, '..', '..', '..', 'products-api', 'products-api.cjs'));
 
 // The text of `function name(...) { ... }` (or `async function`) by brace counting from its first `{`.
 function extractFunction(src, header) {
@@ -101,4 +101,7 @@ function loadJs(file) {
   return require(tmp);
 }
 
-module.exports = { loadJs, SNAP, SPEND, ADMODEL, ADSECTION, SERVER_FILE, CRM_DIR, PRODUCTS_API, extractFunction, makeServerWriters, tmpDir, listen, call };
+// OrdersModel as the CRM page has it. crm-app: orders-model.js already keeps medium / click / click_id of the trail (the ROAS change of this PR).
+function loadOrdersModel() { return loadJs(path.join(CRM_DIR, 'orders-model.js')); }
+
+module.exports = { loadOrdersModel, loadJs, SNAP, SPEND, ADMODEL, ADSECTION, SERVER_FILE, CRM_DIR, PRODUCTS_API, extractFunction, makeServerWriters, tmpDir, listen, call };
