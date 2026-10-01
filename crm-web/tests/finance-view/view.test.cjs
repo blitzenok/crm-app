@@ -4,25 +4,15 @@
 // is none (words, never a dash or a $0.00), and nothing is named "ad-".
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
-// Two layouts. biofirst-hosting: services/finance-view/{crm,test} next to server-snapshot/. crm-app: crm-web/finance-view.js with
-// this file in crm-web/tests/finance-view/. CRM_DIR overrides both (fresh live copies before a deploy).
-const INFRA = fs.existsSync(path.join(__dirname, '..', 'crm', 'finance-view.js'));
-const CRM_DIR = process.env.CRM_DIR || (INFRA ? path.join(__dirname, '..', '..', '..', 'server-snapshot', 'var/www/mastersol/html/CRM') : path.join(__dirname, '..', '..'));
+// Two layouts (see helpers.cjs): biofirst-hosting, with the model patched in memory when it has no repeatReport() yet, and crm-app.
+const { INFRA, CRM_DIR, load, loadModel } = require('./helpers.cjs');
 const VIEW = INFRA ? path.join(__dirname, '..', 'crm', 'finance-view.js') : path.join(CRM_DIR, 'finance-view.js');
-// crm-app's package.json says "type": "module", so a classic page script is loaded through a .cjs copy
-function load(file) {
-  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'finview-js-')), path.basename(file, '.js') + '.cjs');
-  fs.copyFileSync(file, tmp);
-  return require(tmp);
-}
 load(path.join(CRM_DIR, 'crm-utils.js'));              // the real esc / escAttr (they register on globalThis)
 const OM = load(path.join(CRM_DIR, 'orders-model.js'));
-const FM = load(path.join(CRM_DIR, 'finance-model.js'));
 global.OrdersModel = OM;
+const FM = loadModel();
 global.FinanceModel = FM;
 
 const nodes = {};
@@ -83,7 +73,7 @@ test('overview: five tiles from the model, the figure split into number and smal
   assert.match(tileOf(s, 'o-value'), /\$180<span class="finv-small">\.00<\/span>/);
   assert.match(tileOf(s, 'o-average'), /\$60<span class="finv-small">\.00<\/span>/);
   assert.match(tileOf(s, 'o-margin'), /cost known for 2 of 3 orders<\/div><div class="tile-value">80<span class="finv-small">%<\/span>/);   // (150 - 30) / 150
-  assert.match(tileOf(s, 'o-repeat'), /1 of 2 bought twice or more<\/div><div class="tile-value">50<span class="finv-small">%<\/span>/);
+  assert.match(tileOf(s, 'o-repeat'), /1 of 2 ordered again<\/div><div class="tile-value">50<span class="finv-small">%<\/span>/);
   assert.match(s, /class="fin-caption">Order value = amount due \(not cash received\) · paid orders, all time</);
 });
 
@@ -120,7 +110,9 @@ test('sections: month columns and best month, product share bars, margin with it
 
   const rep = bodies['fin-repeat'].innerHTML;
   assert.match(tileOf(rep, 'customers'), />2<\/div>/);
-  assert.match(tileOf(rep, 'repeat'), />1<\/div>/);
+  assert.match(tileOf(rep, 'new'), />2<\/div>/);
+  assert.match(tileOf(rep, 'returning'), /50% of customers ordered again<\/div><div class="tile-value">1<\/div>/);   // Ann's 2nd order
+  assert.match(tileOf(rep, 'repeat-revenue'), /56% of order value<\/div><div class="tile-value">\$100<span class="finv-small">\.00<\/span>/);   // 100 / 180
   assert.match(rep, /<td>Ann<\/td><td>a@x\.com<\/td><td class="finv-num">2<\/td><td class="finv-num">\$130\.00<\/td><td class="finv-num">Jul 15, 2026<\/td><td class="finv-num">Sep 26, 2026<\/td>/);
 });
 
@@ -128,13 +120,13 @@ test('no number where there is none: words, never a dash, a $0.00 or NaN; one mo
   V.render(ctx({ orders: OM.load([rawOrder('BLR-9010', 'c@x.com', '2026-07-30', '', 89.99, [tb(1, 89.99)], 'C')]) }));
   const s = node('fin-summary').innerHTML;
   assert.match(tileOf(s, 'o-margin'), /class="tile-value finv-quiet">cost unknown</);
-  assert.match(tileOf(s, 'o-repeat'), /0 of 1 bought twice or more<\/div><div class="tile-value">0<span/);
+  assert.match(tileOf(s, 'o-repeat'), /0 of 1 ordered again<\/div><div class="tile-value">0<span/);
   const mar = bodies['fin-margin'].innerHTML;
   assert.equal((mar.match(/class="tile-value finv-quiet">cost unknown</g) || []).length, 4, 'all four margin tiles');
   assert.doesNotMatch(mar, /\$0\.00|\$0</);
   assert.doesNotMatch(bodies['fin-aov'].innerHTML, /finv-months/, 'one month is a table row, not a chart');
-  assert.match(bodies['fin-repeat'].innerHTML, /class="finv-empty">Nobody has bought twice in this period yet</);
-  assert.doesNotMatch(bodies['fin-repeat'].innerHTML, /data-table="repeat"/, 'no empty table head');
+  assert.match(bodies['fin-repeat'].innerHTML, /class="finv-empty">Nobody has come back in this period yet</);
+  assert.doesNotMatch(bodies['fin-repeat'].innerHTML, /data-table="repeat"[ >]|Customers with two or more orders|Nobody has bought twice/, 'no heading and no empty list under the one sentence');
   assert.doesNotMatch(all(), /—|NaN|Infinity|undefined|null/);
 });
 
@@ -161,7 +153,7 @@ test('every piece of order text is escaped: product, source, customer name and e
   V.render(ctx({ orders: OM.load([
     rawOrder('BLR-9020', 'e@x.com', '2026-09-01', 'a<b>c', 10, [{ slug: '', name: evil, mg: '', qty: 1, price: 10 }], evil),
     rawOrder('BLR-9021', 'e@x.com', '2026-09-02', 'a<b>c', 10, [{ slug: '', name: evil, mg: '', qty: 1, price: 10 }], evil)]) }));
-  assert.doesNotMatch(all(), /<img|<b>/);
+  assert.doesNotMatch(all(), /<img|<b>c/);
   assert.match(bodies['fin-repeat'].innerHTML, /&lt;img/);
   assert.match(bodies['fin-products'].innerHTML, /&lt;img/);
 });
@@ -220,4 +212,134 @@ test('no class, id or data attribute starts with "ad-" (ad blockers hide such el
   const markup = all() + panelEl.children[0].innerHTML;
   assert.doesNotMatch(markup, /(class|id|for)="([^"]* )?ad-|data-ad-/);
   assert.doesNotMatch(styles[0].textContent, /[.#]ad-/);
+});
+
+test('repeat section: tiles, the two-column chart by month, the table by month with a whole-period row, the old list below', () => {
+  V.render(ctx());                                                         // all time -> months: Jul, Aug, Sep
+  const rep = bodies['fin-repeat'].innerHTML;
+  assert.equal((rep.match(/<div class="finv-month">/g) || []).length, 4);   // Jul, Aug, Sep and the current month, empty
+  assert.match(rep, /data-chart="repeat"/);
+  assert.match(rep, /Customers by month/);
+  assert.match(rep, /<span class="finv-dot" style="background:#B8C4DC"><\/span>New<\/span><span><span class="finv-dot" style="background:#0E9F6E"><\/span>Returning/);
+  // Jul: Ann's first; Aug: Bob's first; Sep: Ann's second (returning). Tallest column = 1 customer = 96px, no column for zero
+  assert.match(rep, /<div class="finv-month"><b>0<\/b><div class="finv-pair"><i class="finv-c-new" title="[^"]*" style="height:96px"><\/i><i class="finv-c-back" title="[^"]*" style="height:0px"><\/i><\/div><span>Jul 2026<\/span>/);
+  assert.match(rep, /<div class="finv-month"><b>1<\/b><div class="finv-pair"><i class="finv-c-new" title="[^"]*" style="height:0px"><\/i><i class="finv-c-back" title="[^"]*" style="height:96px"><\/i><\/div><span>Sep 2026<\/span>/);
+  const tbl = rep.match(/data-table="repeat-periods">[^]*?<\/table>/)[0];
+  assert.match(tbl, /<th>Month<\/th><th>Customers<\/th><th>New<\/th><th>Returning<\/th><th>First orders<\/th><th>Repeat orders<\/th><th>First revenue<\/th><th>Repeat revenue<\/th><th>Repeat share<\/th>/);
+  assert.match(tbl, /data-bucket="2026-09"><td class="finv-nowrap">Sep 2026<\/td><td class="finv-num">1<\/td><td class="finv-num">0<\/td><td class="finv-num">1<\/td><td class="finv-num">0<\/td><td class="finv-num">1<\/td><td class="finv-num">\$0\.00<\/td><td class="finv-num">\$100\.00<\/td><td class="finv-num">100%<\/td>/);
+  assert.match(tbl, /data-bucket="2026-07"><td class="finv-nowrap">Jul 2026<\/td>[^]*?<td class="finv-num">0%<\/td>/);
+  assert.match(tbl, /<tr class="finv-total" data-bucket="total"><td class="finv-nowrap">Whole period<\/td><td class="finv-num">2<\/td><td class="finv-num">2<\/td><td class="finv-num">1<\/td><td class="finv-num">2<\/td><td class="finv-num">1<\/td><td class="finv-num">\$80\.00<\/td><td class="finv-num">\$100\.00<\/td><td class="finv-num">56%<\/td>/);
+  assert.match(rep, /Customers with two or more orders in this period<\/div><div class="fin-table-wrap"><table data-table="repeat">/);
+  assert.match(rep, /id="finv-how-repeat" hidden>A customer is the e-mail/);
+  assert.doesNotMatch(rep, /<svg|min-width/);
+});
+
+test('repeat section: 30 days is by week (Monday dates), the first order before the period still makes the next one a repeat', () => {
+  V.render(ctx({ period: '30d' }));                                        // Sep 1 .. Oct 1: only Ann's Sep 26 order, her first is in July
+  const rep = bodies['fin-repeat'].innerHTML;
+  assert.match(tileOf(rep, 'new'), />0<\/div>/);
+  assert.match(tileOf(rep, 'returning'), /100% of customers ordered again<\/div><div class="tile-value">1<\/div>/);
+  assert.match(rep, /Customers by week/);
+  assert.match(rep, /weeks start on Monday/);
+  assert.match(rep, /<th>Week of<\/th>/);
+  assert.match(rep, /data-bucket="2026-09-21"><td class="finv-nowrap">Sep 21, 2026<\/td>/);
+  assert.equal((rep.match(/<div class="finv-month">/g) || []).length, 5);  // Aug 31 .. Sep 28, weeks with nobody are columns without bars
+});
+
+test('repeat section: Paid only off counts the unpaid order as a purchase', () => {
+  const unpaid = rawOrder('BLR-9030', 'a@x.com', '2026-06-01', '', 25, [bpc(1, 25)], 'Ann');
+  delete unpaid.payments;
+  const orders = OM.load([unpaid, rawOrder('BLR-9031', 'a@x.com', '2026-09-26', '', 100, [bpc(2, 50)], 'Ann')]);
+  V.render(ctx({ orders, paidOnly: true, period: '30d' }));
+  assert.match(tileOf(bodies['fin-repeat'].innerHTML, 'new'), />1<\/div>/, 'the unpaid June order is not a purchase');
+  V.render(ctx({ orders, paidOnly: false, period: '30d' }));
+  assert.match(tileOf(bodies['fin-repeat'].innerHTML, 'new'), />0<\/div>/, 'it is the first one, so the September order is a repeat');
+  assert.match(tileOf(bodies['fin-repeat'].innerHTML, 'returning'), />1<\/div>/);
+});
+
+test('repeat section: nobody came back, or nothing with an e-mail: a sentence, no chart, no empty axes, no NaN', () => {
+  V.render(ctx({ orders: OM.load([rawOrder('BLR-9040', 'c@x.com', '2026-07-30', '', 89.99, [tb(1, 89.99)], 'C'), rawOrder('BLR-9041', 'd@x.com', '2026-09-20', '', 20, [tb(1, 20)], 'D')]) }));
+  const rep = bodies['fin-repeat'].innerHTML;
+  assert.match(rep, /class="finv-empty">Nobody has come back in this period yet</);
+  assert.doesNotMatch(rep, /finv-months|finv-legend/);
+  assert.match(tileOf(rep, 'repeat-revenue'), /0% of order value<\/div><div class="tile-value">\$0<span class="finv-small">\.00/);
+  assert.match(rep, /data-table="repeat-periods"/, 'the table of firsts per month is still informative');
+  const noMail = OM.load([rawOrder('BLR-9042', '', '2026-09-20', '', 20, [tb(1, 20)], 'D')]);
+  V.render(ctx({ orders: noMail }));
+  assert.equal(bodies['fin-repeat'].innerHTML, '<div class="finv-empty">No orders with an e-mail in this period</div>');
+  assert.doesNotMatch(all(), /NaN|Infinity|undefined|null/);
+});
+
+test('without repeatReport() in the model the section is drawn the old way (the model file is deployed first, but a stale cache must not break the page)', () => {
+  const keep = FM.repeatReport;
+  delete FM.repeatReport;
+  try {
+    V.render(ctx());
+    const rep = bodies['fin-repeat'].innerHTML;
+    assert.match(tileOf(rep, 'repeat'), />1<\/div>/);
+    assert.match(rep, /data-table="repeat"/);
+    assert.doesNotMatch(rep, /repeat-periods/);
+  } finally { FM.repeatReport = keep; }
+});
+
+test('the overview tile and the section say the same on every period: Returning, not "bought twice inside the period"', () => {
+  // Ann: first order in July, second on Sep 26. Over 30 days only the second is inside: the old count saw one order and no repeat.
+  for (const period of ['30d', '90d', 'ytd', 'all']) {
+    V.render(ctx({ period }));
+    const top = tileOf(node('fin-summary').innerHTML, 'o-repeat');
+    const sec = bodies['fin-repeat'].innerHTML;
+    const counts = /(\d+) of (\d+) ordered again/.exec(top);
+    assert.equal(counts[1], /tile-value">(\d+)</.exec(tileOf(sec, 'returning'))[1], period + ': returning');
+    assert.equal(counts[2], /tile-value">(\d+)</.exec(tileOf(sec, 'customers'))[1], period + ': customers');
+    assert.equal(/tile-value">(\d+)<span class="finv-small">%/.exec(top)[1] + '%', /(\d+%) of customers ordered again/.exec(tileOf(sec, 'returning'))[1], period + ': share');
+  }
+  V.render(ctx({ period: '30d' }));
+  assert.match(tileOf(node('fin-summary').innerHTML, 'o-repeat'), /1 of 1 ordered again<\/div><div class="tile-value">100<span/);
+});
+
+test('a failing repeat report does not take the page down: the old tile and the old section are drawn, the error goes to the console', () => {
+  const keep = FM.repeatReport, log = console.error;
+  const seen = [];
+  FM.repeatReport = () => { throw new Error('boom'); };
+  console.error = e => seen.push(String(e));
+  try {
+    V.render(ctx());
+    assert.match(tileOf(node('fin-summary').innerHTML, 'o-repeat'), /1 of 2 bought twice or more/);
+    assert.match(bodies['fin-repeat'].innerHTML, /data-table="repeat"/);
+    assert.doesNotMatch(bodies['fin-repeat'].innerHTML, /repeat-periods/);
+    assert.match(bodies['fin-aov'].innerHTML, /data-table="aov"/, 'the other sections are drawn');
+  } finally { FM.repeatReport = keep; console.error = log; }
+  assert.deepEqual(seen, ['Error: boom']);
+});
+
+test('the weekly note says the first week is partial; the first column of the table is left-aligned and does not wrap', () => {
+  V.render(ctx({ period: '30d' }));
+  assert.match(bodies['fin-repeat'].innerHTML, /the first week of a 30 or 90 days period shows only the days inside the period/);
+  assert.match(styles[0].textContent, /\.finv \.finv-nowrap\{white-space:nowrap;text-align:left;\}/);
+});
+
+test('a report that is returned but cannot be drawn falls back too: the old tile and the old section, the error in the console', () => {
+  const keep = FM.repeatReport, log = console.error;
+  const seen = [];
+  FM.repeatReport = () => ({ customers: 1, newCustomers: 0, returning: 1, returningShare: 1, revenueRepeat: 10, repeatRevenueShare: 1, bucket: 'week', buckets: null });
+  console.error = e => seen.push(e instanceof Error);
+  try {
+    V.render(ctx());
+    assert.match(tileOf(node('fin-summary').innerHTML, 'o-repeat'), /1 of 2 bought twice or more/);
+    assert.match(bodies['fin-repeat'].innerHTML, /data-table="repeat"/);
+    assert.doesNotMatch(bodies['fin-repeat'].innerHTML, /repeat-periods/);
+  } finally { FM.repeatReport = keep; console.error = log; }
+  assert.deepEqual(seen, [true]);
+});
+
+test('the list of customers with two or more orders is there when there are such customers, and only then', () => {
+  // 30 days: Ann is "returning" (July order before the period) but has one order inside it, so the list is empty and says nothing
+  V.render(ctx({ period: '30d' }));
+  let rep = bodies['fin-repeat'].innerHTML;
+  assert.match(tileOf(rep, 'returning'), /tile-value">1</);
+  assert.doesNotMatch(rep, /Customers with two or more orders|Nobody has bought twice|data-table="repeat"[ >]/);
+  // all time: two orders of Ann inside the period, the heading and the row are there
+  V.render(ctx({ period: 'all' }));
+  rep = bodies['fin-repeat'].innerHTML;
+  assert.match(rep, /Customers with two or more orders in this period<\/div><div class="fin-table-wrap"><table data-table="repeat">[^]*<td>Ann<\/td>/);
 });

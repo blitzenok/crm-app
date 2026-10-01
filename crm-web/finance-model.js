@@ -235,6 +235,110 @@
     };
   }
 
+  // Repeat report (2026-10-02): first purchase vs second-and-later purchases of the same buyer, per period and per time bucket.
+  // The buyer is the e-mail (trimmed, lower-cased); orders without one are not counted. A purchase is what select() lets through:
+  // a primary order, not a copy or a test, not cancelled, and with opts.paidOnly only paid or partly paid ones. The order number
+  // of a buyer is taken over the whole history (period "all"), so an order in the period is a repeat one when the buyer has any
+  // earlier purchase, even outside the period. Orders without a readable date come after the dated ones (as RepeatBuyer.numbers
+  // on orders.html); they count in the period totals only for period "all" and sit in no bucket.
+  // A buyer whose first and second purchase both fall in the period is counted in newCustomers and in returning, so
+  // customers is not newCustomers + returning. Money is summed in cents and given in dollars, like the other aggregators.
+  function repeatBucketStart(t, bucket) {
+    var d = new Date(t);
+    if (bucket === 'month') return new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (d.getDay() + 6) % 7).getTime();   // Monday
+  }
+
+  function repeatBucketNext(ms, bucket) {
+    var d = new Date(ms);
+    if (bucket === 'month') return new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7).getTime();
+  }
+
+  function repeatTally() {
+    return { cust: Object.create(null), fresh: Object.create(null), back: Object.create(null), of: 0, or: 0, rf: 0, rr: 0 };
+  }
+
+  function repeatAdd(t, o) {
+    t.cust[o.email] = 1;
+    if (o.n === 1) { t.fresh[o.email] = 1; t.of++; t.rf += o.c; }
+    else { t.back[o.email] = 1; t.or++; t.rr += o.c; }
+  }
+
+  function repeatFinish(t, extra) {
+    var customers = Object.keys(t.cust).length;
+    var returning = Object.keys(t.back).length;
+    var total = t.rf + t.rr;
+    var out = {
+      customers: customers,
+      newCustomers: Object.keys(t.fresh).length,
+      returning: returning,
+      ordersFirst: t.of,
+      ordersRepeat: t.or,
+      revenueFirst: t.rf / 100,
+      revenueRepeat: t.rr / 100,
+      revenue: total / 100,
+      repeatRevenueShare: total ? t.rr / total : 0,
+      returningShare: customers ? returning / customers : 0
+    };
+    Object.keys(extra || {}).forEach(function (k) { out[k] = extra[k]; });
+    return out;
+  }
+
+  // opts: { period: '30d' | '90d' | 'ytd' | 'all', paidOnly, now, bucket: 'week' | 'month' } (bucket defaults to week for 30d/90d, month otherwise).
+  function repeatReport(list, opts) {
+    opts = opts || {};
+    var period = opts.period || 'all';
+    var now = opts.now ? new Date(opts.now) : new Date();
+    var bucket = opts.bucket === 'week' || opts.bucket === 'month' ? opts.bucket : (period === '30d' || period === '90d' ? 'week' : 'month');
+    var history = select(list, { period: 'all', paidOnly: !!opts.paidOnly, now: now });
+    var byEmail = Object.create(null);
+    history.forEach(function (r, i) {
+      var email = String((r && r.email) || '').trim().toLowerCase();
+      if (!email) return;
+      (byEmail[email] || (byEmail[email] = [])).push({ r: r, i: i, t: whenOf(r) });
+    });
+    var inside = [];
+    Object.keys(byEmail).forEach(function (email) {
+      byEmail[email].sort(function (a, b) {
+        var an = Number.isNaN(a.t), bn = Number.isNaN(b.t);
+        if (an !== bn) return an ? 1 : -1;
+        return (an ? 0 : a.t - b.t) || a.i - b.i;
+      }).forEach(function (e, pos) {
+        if (inPeriod(e.r, period, now)) inside.push({ email: email, n: pos + 1, t: e.t, c: cents(e.r.toPay || 0) });
+      });
+    });
+
+    // The axis ends with the bucket of today; an order dated later (a typo in the date) goes into that last bucket, so a wrong
+    // year cannot stretch the axis into hundreds of empty buckets.
+    var stop = repeatBucketStart(now.getTime(), bucket);
+    var total = repeatTally();
+    var cells = Object.create(null);
+    var firstT = NaN;
+    inside.forEach(function (o) {
+      repeatAdd(total, o);
+      if (Number.isNaN(o.t)) return;
+      if (Number.isNaN(firstT) || o.t < firstT) firstT = o.t;
+      var b = Math.min(repeatBucketStart(o.t, bucket), stop);
+      repeatAdd(cells[b] || (cells[b] = repeatTally()), o);
+    });
+
+    // A continuous axis: from the start of the period (the first order for "all") to the bucket of today.
+    var buckets = [];
+    if (!Number.isNaN(firstT)) {
+      var from = period === '30d' ? now.getTime() - 30 * DAY : period === '90d' ? now.getTime() - 90 * DAY
+        : period === 'ytd' ? new Date(now.getFullYear(), 0, 1).getTime() : firstT;
+      for (var ms = Math.min(repeatBucketStart(Math.min(from, firstT), bucket), stop); ms <= stop; ms = repeatBucketNext(ms, bucket)) {
+        var d = new Date(ms);
+        var y = d.getFullYear(), m = d.getMonth();
+        var key = y + '-' + String(m + 1).padStart(2, '0') + (bucket === 'month' ? '' : '-' + String(d.getDate()).padStart(2, '0'));
+        var label = bucket === 'month' ? MON[m] + ' ' + y : MON[m] + ' ' + d.getDate();
+        buckets.push(repeatFinish(cells[ms] || repeatTally(), { key: key, label: label, start: ms }));
+      }
+    }
+    return repeatFinish(total, { period: period, bucket: bucket, buckets: buckets });
+  }
+
   // Gross margin (2026-09-30). Unit costs come from GET /api/unit-costs ({ items: [{ id, cost, source, match: [{ slug, mg }] }] }):
   // source 'purchase' = weighted average purchase price of the warehouse stock (orders ship from the warehouse), 'pod' = the
   // supplier's POD price where no purchase is recorded. A line is matched by slug + strength only; a strength missing from
@@ -319,6 +423,7 @@
 
   var api = { select: select, aov: aov, products: products, sources: sources, sourceOf: sourceOf, repeat: repeat, whenOf: whenOf,
     costIndex: costIndex, itemCost: itemCost, margin: margin };
+  api.repeatReport = repeatReport;
   global.FinanceModel = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : global);

@@ -23,6 +23,8 @@
   var PALETTE = ['#0E9F6E', '#F59E0B', '#06B6D4', '#EC4899', '#8B5CF6', '#84CC16'];
   var COST_BASIS = { purchase: 'Purchase avg', pod: 'POD price' };
   var MAX_MONTHS = 12;
+  var MAX_BARS = { week: 14, month: 12 };   // columns of the repeat chart; the table under it has every bucket
+  var NEW_COLOR = '#B8C4DC', BACK_COLOR = '#0E9F6E';
 
   var CSS = [
     '.finv .fin-panel>*:not(.finv-ctl){display:none;}',
@@ -53,6 +55,7 @@
     '.finv .report-card thead th{text-transform:none!important;letter-spacing:0!important;font-size:12px!important;font-weight:500!important;color:#8A94A6!important;background:transparent!important;border-bottom:1px solid #E8ECF4!important;}',
     '.finv .report-card tbody td{font-weight:400;letter-spacing:0;color:#1B2A4A;}',
     '.finv .finv-num{white-space:nowrap;font-variant-numeric:tabular-nums;}',
+    '.finv .finv-nowrap{white-space:nowrap;text-align:left;}',
     '.finv .finv-quiet{color:#8A94A6;}',
     '.finv .finv-h{font-size:13px;font-weight:600;color:#1B2A4A;margin:20px 0 8px;}',
     '.finv .finv-link{border:none;background:none;padding:0;margin-top:12px;font-size:12px;font-weight:500;color:#5A6685;cursor:pointer;text-decoration:underline;text-underline-offset:3px;}',
@@ -68,6 +71,14 @@
     '.finv .finv-bar{display:inline-block;vertical-align:middle;width:110px;max-width:30vw;height:6px;border-radius:6px;background:#EEF2F7;margin-left:10px;overflow:hidden;}',
     '.finv .finv-bar i{display:block;height:100%;border-radius:6px;background:#55B685;}',
     '.finv .finv-stack{display:flex;height:10px;border-radius:10px;overflow:hidden;background:#EEF2F7;margin:2px 0 16px;}',
+    // repeat customers by week or month: two columns per bucket (new, returning), the returning count above them
+    '.finv .finv-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:#5A6685;margin:0 0 8px;}',
+    '.finv .finv-months[data-chart="repeat"]{gap:6px;}',
+    '.finv .finv-pair{display:flex;align-items:flex-end;gap:3px;}',
+    '.finv .finv-pair i{width:14px;}',
+    '.finv .finv-pair i.finv-c-new{background:#B8C4DC;}',
+    '.finv .finv-pair i.finv-c-back{background:#0E9F6E;}',
+    '.finv .report-card .finv-total td{font-weight:600;border-top:1px solid #E8ECF4;}',
     '.finv .finv-stack i{display:block;height:100%;}',
     '@media(max-width:768px){',
     '.finv .fin-tiles{grid-template-columns:1fr 1fr;}',
@@ -130,15 +141,18 @@
     return figure(text, name === 'profit' && m.profit < 0 ? 'finv-neg' : '');
   }
 
-  function overview(ctx, aov, m, rep) {
+  // rr = FinanceModel.repeatReport(): the Repeat customers tile says what the section's Returning tile says; null = the old count.
+  function overview(ctx, aov, m, rep, rr) {
     var partial = m && !ctx.costsError && m.costed > 0 && m.costed < m.orders ? 'cost known for ' + m.costed + ' of ' + m.orders + ' orders' : '';
     return '<div class="fin-tiles" data-tiles="overview">' +
       tile('o-orders', 'Orders', figure(String(aov.orders))) +
       tile('o-value', 'Order value', figure(money(aov.value))) +
       tile('o-average', 'Average order', aov.orders ? figure(money(aov.average)) : figure('no orders', 'finv-quiet')) +
       tile('o-margin', 'Gross margin', marginTile('pct', ctx, m, m && m.pct !== null ? pct1(m.pct) : 'cost unknown'), partial) +
-      tile('o-repeat', 'Repeat customers', rep.customers ? figure(pct(rep.share)) : figure('no customers', 'finv-quiet'),
-        rep.customers ? rep.repeat + ' of ' + rep.customers + ' bought twice or more' : '') +
+      (rr ? tile('o-repeat', 'Repeat customers', rr.customers ? figure(pct(rr.returningShare)) : figure('no customers', 'finv-quiet'),
+        rr.customers ? rr.returning + ' of ' + rr.customers + ' ordered again' : '')
+        : tile('o-repeat', 'Repeat customers', rep.customers ? figure(pct(rep.share)) : figure('no customers', 'finv-quiet'),
+          rep.customers ? rep.repeat + ' of ' + rep.customers + ' bought twice or more' : '')) +
       '</div><span class="fin-caption">' + esc('Order value = amount due (not cash received) · ' + (ctx.paidOnly ? 'paid orders, ' : 'all orders, ') +
         (PERIOD_TEXT[ctx.period] || ctx.period)) + '</span>';
   }
@@ -215,18 +229,69 @@
       })) + '<p class="fin-note">Source is recorded for orders placed after the shop update (stage B); older orders show what the coupon tells.</p>';
   }
 
+  var REPEAT_LIST_NOTE = 'Customers are matched by e-mail; orders without e-mail are not counted here.';
+  function repeatListHtml(rep) {
+    return rep.list.length ? table('repeat', ['Name', 'Email', 'Orders', 'Value', 'First', 'Last'], rep.list.map(function (c) {
+      return '<tr>' + td(c.name ? esc(c.name) : quiet('no name')) + td(esc(c.email)) + td(String(c.orders), true) + td(esc(money(c.value)), true) +
+        td(esc(fmtDay(c.first)), true) + td(esc(fmtDay(c.last)), true) + '</tr>';
+    })) : empty('Nobody has bought twice in this period yet');
+  }
+
+  // The way the section looked before the repeat report; drawn only while finance-model.js has no repeatReport().
   function repeatHtml(rep, none) {
     if (none) return empty('No orders in this period');
     return '<div class="fin-tiles">' +
       tile('customers', 'Customers', figure(String(rep.customers))) +
       tile('repeat', 'Bought twice or more', figure(String(rep.repeat))) +
       tile('share', 'Share', rep.customers ? figure(pct(rep.share)) : figure('no customers', 'finv-quiet')) +
-      '</div>' +
-      (rep.list.length ? table('repeat', ['Name', 'Email', 'Orders', 'Value', 'First', 'Last'], rep.list.map(function (c) {
-        return '<tr>' + td(c.name ? esc(c.name) : quiet('no name')) + td(esc(c.email)) + td(String(c.orders), true) + td(esc(money(c.value)), true) +
-          td(esc(fmtDay(c.first)), true) + td(esc(fmtDay(c.last)), true) + '</tr>';
-      })) : empty('Nobody has bought twice in this period yet')) +
-      '<p class="fin-note">Customers are matched by e-mail; orders without e-mail are not counted here.</p>';
+      '</div>' + repeatListHtml(rep) + '<p class="fin-note">' + REPEAT_LIST_NOTE + '</p>';
+  }
+
+  function repeatPair(x, max) {
+    function col(v, cls, name) {
+      return '<i class="' + cls + '" title="' + global.escAttr(name + ': ' + v) + '" style="height:' + (v > 0 ? Math.max(2, Math.round(v / max * 96)) : 0) + 'px"></i>';
+    }
+    return '<div class="finv-pair">' + col(x.newCustomers, 'finv-c-new', 'New') + col(x.returning, 'finv-c-back', 'Returning') + '</div>';
+  }
+
+  function repeatReportHtml(rr, rep, none) {
+    if (none) return empty('No orders in this period');
+    if (!rr.customers) return empty('No orders with an e-mail in this period');
+    var weekly = rr.bucket === 'week';
+    var html = '<div class="fin-tiles">' +
+      tile('customers', 'Customers', figure(String(rr.customers)), 'with an order in this period') +
+      tile('new', 'New customers', figure(String(rr.newCustomers)), 'first purchase in this period') +
+      tile('returning', 'Returning customers', figure(String(rr.returning)), pct(rr.returningShare) + ' of customers ordered again') +
+      tile('repeat-revenue', 'Repeat revenue', figure(money(rr.revenueRepeat)), pct(rr.repeatRevenueShare) + ' of order value') +
+      '</div>';
+    var bars = rr.buckets.slice(-MAX_BARS[rr.bucket]);
+    if (!rr.returning) {
+      html += empty('Nobody has come back in this period yet');
+    } else if (bars.length > 1) {
+      var max = bars.reduce(function (s, x) { return Math.max(s, x.newCustomers, x.returning); }, 0);
+      html += '<div class="finv-h" style="margin-top:0">Customers by ' + (weekly ? 'week' : 'month') +
+        (rr.buckets.length > bars.length ? ' ' + quiet('(last ' + bars.length + ')') : '') + '</div>' +
+        '<div class="finv-legend">' + '<span>' + dot(NEW_COLOR) + 'New</span><span>' + dot(BACK_COLOR) + 'Returning</span>' +
+        (weekly ? '<span>' + quiet('weeks start on Monday') + '</span>' : '') + '</div>' +
+        '<div class="finv-months" data-chart="repeat">' + bars.map(function (x) {
+          return '<div class="finv-month"><b>' + x.returning + '</b>' + repeatPair(x, max) + '<span>' + esc(x.label) + '</span></div>';
+        }).join('') + '</div>';
+    }
+    function row(name, x, cls) {
+      return '<tr' + (cls ? ' class="' + cls + '"' : '') + ' data-bucket="' + global.escAttr(x.key || 'total') + '"><td class="finv-nowrap">' + name + '</td>' + td(String(x.customers), true) + td(String(x.newCustomers), true) +
+        td(String(x.returning), true) + td(String(x.ordersFirst), true) + td(String(x.ordersRepeat), true) + td(esc(money(x.revenueFirst)), true) +
+        td(esc(money(x.revenueRepeat)), true) + td(x.revenue > 0 ? pct(x.repeatRevenueShare) : quiet('no orders'), true) + '</tr>';
+    }
+    html += '<div class="finv-h">By ' + (weekly ? 'week' : 'month') + '</div>' +
+      table('repeat-periods', [weekly ? 'Week of' : 'Month', 'Customers', 'New', 'Returning', 'First orders', 'Repeat orders', 'First revenue', 'Repeat revenue', 'Repeat share'],
+        rr.buckets.map(function (x) { return row(esc(weekly ? fmtDay(x.key) : x.label), x); }).concat([row('Whole period', rr, 'finv-total')]));
+    if (rep.list.length) html += '<div class="finv-h">Customers with two or more orders in this period</div>' + repeatListHtml(rep);
+    return html +
+      how('repeat', 'A customer is the e-mail on the order; orders without one are not counted. A purchase follows the Paid only switch: on = paid orders, off = every order that is not cancelled. ' +
+        'The order number of a customer runs over their whole history, so an order is a repeat one when the customer has any earlier purchase, even before this period. ' +
+        'New = first purchase falls in this period. Returning = a second or later order falls in this period. Someone whose first and second order are both in the period is in New and in Returning, so Customers is not New + Returning. ' +
+        'Weeks start on Monday, so the first week of a 30 or 90 days period shows only the days inside the period, and the current week only the days so far. ' +
+        'Repeat revenue = amount due of second and later orders (not cash received). The Repeat marks on the Orders page count every order, so they match this report with Paid only off.');
   }
 
   /* ── the period switch ──────────────────────────────────────────────── */
@@ -301,12 +366,18 @@
     var none = aov.orders === 0;
     var m = ctx.costIdx && !ctx.costsError ? FM.margin(selected, ctx.costIdx) : null;
     var rep = FM.repeat(selected);
-    byId('fin-summary').innerHTML = overview(ctx, aov, m, rep);
+    // The report numbers a customer's orders over the whole list, not over the selected period.
+    var rr = null, repeatSection;
+    try {
+      if (typeof FM.repeatReport === 'function') rr = FM.repeatReport(ctx.orders, { period: ctx.period, paidOnly: ctx.paidOnly, now: ctx.now || new Date() });
+      repeatSection = rr ? repeatReportHtml(rr, rep, none) : repeatHtml(rep, none);
+    } catch (e) { console.error(e); rr = null; repeatSection = repeatHtml(rep, none); }   // the old count and the old section stand in: a failing report or its drawing must not take the page down
+    byId('fin-summary').innerHTML = overview(ctx, aov, m, rep, rr);
     bodyOf('fin-aov').innerHTML = aovHtml(aov);
     bodyOf('fin-products').innerHTML = productsHtml(FM.products(selected, { top: 20 }), none);
     bodyOf('fin-margin').innerHTML = marginHtml(ctx, m || FM.margin(selected, null), none);
     bodyOf('fin-sources').innerHTML = sourcesHtml(FM.sources(selected), none);
-    bodyOf('fin-repeat').innerHTML = repeatHtml(rep, none);
+    bodyOf('fin-repeat').innerHTML = repeatSection;
   }
 
   global.FinanceView = { render: render, panel: panel };
