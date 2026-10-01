@@ -3,6 +3,7 @@
  *
  *   GET    /api/marketing/spend?from=YYYY-MM-DD&to=YYYY-MM-DD   entries of the period (both ends optional, inclusive)
  *   POST   /api/marketing/spend   { date, source, campaign?, amount, note? }   -> 201 { entry }
+ *   PUT    /api/marketing/spend/<id>   { date, source, campaign?, amount, note? }   -> 200 { entry }
  *   DELETE /api/marketing/spend/<id>                                            -> 200 { ok: true, id }
  *
  * Mounted in server_v14.cjs behind requireAuth:
@@ -13,7 +14,8 @@
  * other tables). A deleted entry is NOT removed from the array: it gets deleted: { by, at } and stops showing in GET. That is
  * the "deleted" journal of the brief, in the same file and the same atomic write, so a crash cannot leave an entry gone and
  * its journal line missing; lockedUpdate only takes arrays, so a second file would be a second write. Every change also goes
- * to the audit log (table marketing-spend) through lockedUpdate's meta argument.
+ * to the audit log (table marketing-spend) through lockedUpdate's meta argument. An edit (PUT) keeps what the entry was in
+ * its own edits: [{ by, at, was }] list, for the same reason and in the same write.
  *
  * Money is integer cents in the file (amountCents); the API takes dollars with at most two decimals, > 0 and <= 100000.
  *
@@ -146,8 +148,10 @@ module.exports = function marketingSpend(opts) {
   }
 
   function publicEntry(e) {
-    return { id: e.id, date: e.date, source: e.source, campaign: e.campaign || '', amountCents: e.amountCents, note: e.note || '',
+    const out = { id: e.id, date: e.date, source: e.source, campaign: e.campaign || '', amountCents: e.amountCents, note: e.note || '',
       createdBy: e.createdBy || '', createdAt: e.createdAt || '' };
+    if (e.updatedBy) { out.updatedBy = e.updatedBy; out.updatedAt = e.updatedAt || ''; }
+    return out;
   }
 
   function list(req, res, query) {
@@ -168,6 +172,34 @@ module.exports = function marketingSpend(opts) {
       { action: 'create', user: entry.createdBy, details: entry.id + ' ' + entry.date + ' ' + entry.source + ' ' + (entry.amountCents / 100).toFixed(2) });
     if (!r || !r.ok) return send(res, 500, { error: 'Could not save the entry' });
     send(res, 201, { entry: publicEntry(entry) });
+  }
+
+  // The whole entry is sent again (the same fields and the same checks as POST). What it was goes into the entry's edits list;
+  // a save that changes nothing writes nothing.
+  async function update(req, res, id) {
+    const v = validate(await readBody(req));
+    const by = whoami(req);
+    let found = null, changed = false, line = '';
+    const brief = e => e.date + ' ' + e.source + ' ' + (e.amountCents / 100).toFixed(2);
+    const r = await lockedUpdate(FILE, () => {
+      const all = loadAll();
+      const i = all.findIndex(e => e && e.id === id && !e.deleted);
+      if (i === -1) return null;               // nothing to write
+      const cur = all[i];
+      const was = { date: cur.date, source: cur.source, campaign: cur.campaign || '', amountCents: cur.amountCents, note: cur.note || '' };
+      found = cur;
+      if (Object.keys(was).every(k => was[k] === v[k])) return null;
+      changed = true;
+      const at = new Date(clock()).toISOString();
+      found = Object.assign({}, cur, v, { updatedBy: by, updatedAt: at, edits: (Array.isArray(cur.edits) ? cur.edits : []).concat([{ by, at, was }]) });
+      line = id + ' ' + brief(was) + ' -> ' + brief(v);
+      const next = all.slice();
+      next[i] = found;
+      return next;
+    }, () => ({ action: 'update', user: by, details: line }));   // lockedUpdate asks for the meta after the write: the line exists by then
+    if (!found) return send(res, 404, { error: 'No such entry' });
+    if (changed && (!r || !r.ok)) return send(res, 500, { error: 'Could not save the change' });
+    send(res, 200, { entry: publicEntry(found) });
   }
 
   async function remove(req, res, id) {
@@ -194,8 +226,9 @@ module.exports = function marketingSpend(opts) {
     if (rest === '') {
       if (req.method === 'GET') run = () => list(req, res, u.searchParams);
       else if (req.method === 'POST') run = () => create(req, res);
-    } else if (req.method === 'DELETE' && /^sp_[0-9a-f]{12}$/.test(rest)) {
-      run = () => remove(req, res, rest);
+    } else if (/^sp_[0-9a-f]{12}$/.test(rest)) {
+      if (req.method === 'DELETE') run = () => remove(req, res, rest);
+      else if (req.method === 'PUT') run = () => update(req, res, rest);
     }
     if (!run) return next();
     Promise.resolve().then(run).catch(e => {

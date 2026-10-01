@@ -159,6 +159,61 @@ test('DELETE: the entry goes to the journal (deleted: by/at) in the same file, a
   } finally { t.stop(); }
 });
 
+test('PUT: changes the fields, keeps id / createdBy / createdAt, records who and when and what it was; the audit line says was -> now', async () => {
+  const t = await setup();
+  try {
+    const made = (await call(t.server, 'POST', '', good, 'ann@example.com')).body.entry;
+    const other = (await call(t.server, 'POST', '', good, 'ann@example.com')).body.entry;
+    const r = await call(t.server, 'PUT', '/' + made.id, { date: '2026-09-29', source: 'Google', campaign: 'Brand', amount: '200', note: '' }, 'bob@example.com');
+    assert.equal(r.status, 200, r.text);
+    assert.deepEqual(r.body.entry, { id: made.id, date: '2026-09-29', source: 'google', campaign: 'Brand', amountCents: 20000, note: '',
+      createdBy: 'ann@example.com', createdAt: '2026-10-01T12:00:00.000Z', updatedBy: 'bob@example.com', updatedAt: '2026-10-01T12:00:00.000Z' });
+    const onDisk = JSON.parse(fs.readFileSync(t.file, 'utf8'));
+    assert.equal(onDisk.length, 2);
+    const e = onDisk.find(x => x.id === made.id);
+    assert.equal(e.amountCents, 20000);
+    assert.deepEqual(e.edits, [{ by: 'bob@example.com', at: '2026-10-01T12:00:00.000Z',
+      was: { date: '2026-09-30', source: 'facebook', campaign: 'Launch A', amountCents: 12345, note: 'test' } }]);
+    assert.deepEqual(onDisk.find(x => x.id === other.id), JSON.parse(JSON.stringify(Object.assign({}, other))), 'the other entry is untouched');
+    assert.deepEqual(t.audit[t.audit.length - 1], { table: 'marketing-spend', action: 'update', user: 'bob@example.com',
+      details: made.id + ' 2026-09-30 facebook 123.45 -> 2026-09-29 google 200.00' });
+    const g = await call(t.server, 'GET', '');
+    assert.equal(g.body.totalCents, 20000 + 12345);
+    assert.equal(g.body.entries.find(x => x.id === made.id).updatedBy, 'bob@example.com');
+    assert.equal('updatedBy' in g.body.entries.find(x => x.id === other.id), false, 'an entry nobody edited has no updated fields');
+    assert.equal('edits' in g.body.entries.find(x => x.id === made.id), false, 'the history stays in the file');
+    // a second edit adds to the history
+    await call(t.server, 'PUT', '/' + made.id, { date: '2026-09-29', source: 'google', campaign: 'Brand', amount: '210', note: '' }, 'ann@example.com');
+    assert.equal(JSON.parse(fs.readFileSync(t.file, 'utf8')).find(x => x.id === made.id).edits.length, 2);
+    assert.deepEqual(fs.readdirSync(t.dir), ['marketing-spend.json']);
+  } finally { t.stop(); }
+});
+
+test('PUT: the same validation as POST and nothing written on 400; no change writes nothing; a deleted or unknown entry is 404', async () => {
+  const t = await setup();
+  try {
+    const id = (await call(t.server, 'POST', '', good, 'ann@example.com')).body.entry.id;
+    const before = fs.readFileSync(t.file, 'utf8');
+    const auditLen = t.audit.length;
+    for (const bad of [{ amount: '0' }, { amount: 'abc' }, { source: 'direct' }, { source: 'ram' }, { date: '2026-13-01' }, { date: '2026-10-03' }, { note: 5 }]) {
+      const r = await call(t.server, 'PUT', '/' + id, Object.assign({}, good, bad), 'bob@example.com');
+      assert.equal(r.status, 400, JSON.stringify(bad));
+    }
+    const same = await call(t.server, 'PUT', '/' + id, Object.assign({}, good, { source: ' Facebook ', amount: '123.450'.slice(0, 6) }), 'bob@example.com');
+    assert.equal(same.status, 200);
+    assert.equal('updatedBy' in same.body.entry, false, 'nothing changed: nobody "updated" it');
+    assert.equal(fs.readFileSync(t.file, 'utf8'), before);
+    assert.equal(t.audit.length, auditLen, 'no audit line for a 400 or for an unchanged save');
+    assert.equal((await call(t.server, 'PUT', '/sp_000000000000', good)).status, 404);
+    assert.equal((await call(t.server, 'PUT', '/not-an-id', good)).status, 404);
+    assert.equal((await call(t.server, 'PUT', '/' + id, good, null)).status, 401);
+    await call(t.server, 'DELETE', '/' + id);
+    const gone = await call(t.server, 'PUT', '/' + id, Object.assign({}, good, { amount: '1' }));
+    assert.equal(gone.status, 404);
+    assert.equal(JSON.parse(fs.readFileSync(t.file, 'utf8'))[0].amountCents, 12345, 'a deleted entry is not edited');
+  } finally { t.stop(); }
+});
+
 test('an unreadable file is 503 and is never overwritten; a missing file is an empty list', async () => {
   const t = await setup();
   try {
