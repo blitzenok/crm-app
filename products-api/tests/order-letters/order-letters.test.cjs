@@ -27,10 +27,10 @@ test('letterTypeForStatus: four statuses give a letter, the rest none; case and 
 
 test('kinds: every type has its queue kind and back; confirmation keeps the old mail_customer kind', () => {
   assert.equal(L.kindForType('confirmation'), 'mail_customer');
-  assert.deepEqual(['paid', 'shipped', 'in_transit', 'delivered'].map(L.kindForType), ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered']);
+  assert.deepEqual(['paid', 'shipped', 'in_transit', 'delivered', 'rating'].map(L.kindForType), ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'letter_rating']);
   for (const t of L.TYPES) assert.equal(L.typeForKind(L.kindForType(t)), t);
   assert.equal(L.typeForKind('cio_order_status'), null);
-  assert.deepEqual(L.LETTER_KINDS, ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered']);
+  assert.deepEqual(L.LETTER_KINDS, ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'letter_rating']);
 });
 
 test('paymentState: paid only for a card record the import wrote and the CRM has as paid; a crypto or wire order never reads as a card payment', () => {
@@ -115,9 +115,9 @@ test('parseConfig: nothing set = off; test and on need a valid SINCE, otherwise 
 
 test('templateIds: env names per type, the missing ones listed', () => {
   const r = L.templateIds({ CIO_ORDER_CUSTOMER_MSG_ID: '3', CIO_LETTER_PAID_MSG_ID: '11', CIO_LETTER_SHIPPED_MSG_ID: ' 12 ' }, { CIO_LETTER_DELIVERED_MSG_ID: '14' });
-  assert.deepEqual(r.ids, { confirmation: '3', paid: '11', shipped: '12', in_transit: '', delivered: '14' });
-  assert.deepEqual(r.missing, ['in_transit']);
-  assert.deepEqual(L.ENV_ID, { confirmation: 'CIO_ORDER_CUSTOMER_MSG_ID', paid: 'CIO_LETTER_PAID_MSG_ID', shipped: 'CIO_LETTER_SHIPPED_MSG_ID', in_transit: 'CIO_LETTER_IN_TRANSIT_MSG_ID', delivered: 'CIO_LETTER_DELIVERED_MSG_ID' });
+  assert.deepEqual(r.ids, { confirmation: '3', paid: '11', shipped: '12', in_transit: '', delivered: '14', rating: '' });
+  assert.deepEqual(r.missing, ['in_transit', 'rating']);
+  assert.deepEqual(L.ENV_ID, { confirmation: 'CIO_ORDER_CUSTOMER_MSG_ID', paid: 'CIO_LETTER_PAID_MSG_ID', shipped: 'CIO_LETTER_SHIPPED_MSG_ID', in_transit: 'CIO_LETTER_IN_TRANSIT_MSG_ID', delivered: 'CIO_LETTER_DELIVERED_MSG_ID', rating: 'CIO_LETTER_RATING_MSG_ID' });
 });
 
 test('letterAllowed: a live shop order may get any letter; every listed exclusion says why not', () => {
@@ -173,6 +173,17 @@ test('letterData: exactly the contract fields per type', () => {
   assert.deepEqual(keys('paid'), COMMON);
   assert.deepEqual(keys('confirmation'), COMMON.concat(['discount_pct_server', 'discount_server', 'discount_source', 'items', 'shipping_server', 'subtotal_server']).sort());
   for (const t of ['shipped', 'in_transit', 'delivered']) assert.deepEqual(keys(t), COMMON.concat(['carrier', 'tracking_number', 'tracking_url']).sort(), t);
+  assert.deepEqual(keys('rating'), ['first_name', 'ref'], 'the rating letter reads the number and the name only (review_url is added by products-api)');
+});
+
+test('rating letter (services/reviews): no status means it, it has its own queue kind, and its data carries no money, address or tracking', () => {
+  for (const s of ['rating', 'delivered-rating', 'letter_rating']) assert.equal(L.letterTypeForStatus(s), null, s);
+  assert.equal(L.typeForKind('letter_rating'), 'rating');
+  const d = L.letterData(shopOrder({ status: 'delivered', trackingNumber: '123456789012', carrier: 'FedEx', customer: { firstName: '<b>Ann</b>', email: 'ann.lee@realmail.net' } }), 'rating');
+  assert.deepEqual(d, { ref: 'BF-1001', first_name: '&lt;b&gt;Ann&lt;/b&gt;' }, 'typed text goes through the same scrub');
+  assert.deepEqual(L.letterAllowed(shopOrder({ status: 'delivered' }), 'rating', CFG), { ok: true });
+  assert.deepEqual(L.letterAllowed(shopOrder({ status: 'cancelled' }), 'rating', CFG), { ok: false, reason: 'cancelled' });
+  assert.deepEqual(L.letterAllowed(shopOrder({ status: 'delivered', letters: { rating: { sentAt: '2026-10-09T10:00:00.000Z' } } }), 'rating', CFG), { ok: false, reason: 'already_sent' });
 });
 
 test('letterData: values are the server figures, escaped strings and a link only for a known carrier', () => {

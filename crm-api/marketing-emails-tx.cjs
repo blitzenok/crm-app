@@ -55,7 +55,8 @@ const CONTRACT = {
   'order-paid': COMMON_FIELDS.slice(),
   'order-shipped': COMMON_FIELDS.concat(TRACK_FIELDS),
   'order-in-transit': COMMON_FIELDS.concat(TRACK_FIELDS),
-  'order-delivered': COMMON_FIELDS.concat(TRACK_FIELDS, ['review_url'])   // review_url (2026-10-01, services/reviews): the link of "How was your order?", sent only while REVIEWS_MODE allows the address
+  'order-delivered': COMMON_FIELDS.concat(TRACK_FIELDS, ['review_url']),   // review_url (2026-10-01, services/reviews): no longer sent with this letter (02.10, the rating letter has it); the field stays allowed so that a saved text that reads it still saves
+  'order-rating': ['ref', 'first_name', 'review_url']                     // 02.10, services/reviews: "How was your order?", a letter of its own some days after delivery; review_url is always sent with it
 };
 
 function normalizeName(name) {
@@ -164,7 +165,7 @@ function sampleData(key) {
 // .env at start, so the numbers are in process.env here (read at call time).
 const ENV_IDS = {
   'order-customer': 'CIO_ORDER_CUSTOMER_MSG_ID', 'order-paid': 'CIO_LETTER_PAID_MSG_ID', 'order-shipped': 'CIO_LETTER_SHIPPED_MSG_ID',
-  'order-in-transit': 'CIO_LETTER_IN_TRANSIT_MSG_ID', 'order-delivered': 'CIO_LETTER_DELIVERED_MSG_ID'
+  'order-in-transit': 'CIO_LETTER_IN_TRANSIT_MSG_ID', 'order-delivered': 'CIO_LETTER_DELIVERED_MSG_ID', 'order-rating': 'CIO_LETTER_RATING_MSG_ID'
 };
 const envId = key => String(process.env[ENV_IDS[key]] || '').trim();
 

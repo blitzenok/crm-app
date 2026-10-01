@@ -9,11 +9,13 @@
 // The template fields are the contract of stage 1 (.scratch/stage1-order-letters-2026-09-30/contract.md): a field that
 // is not listed there is not sent, and a template that reads one that is not listed there renders it empty.
 
-const TYPES = ['confirmation', 'paid', 'shipped', 'in_transit', 'delivered'];
-// confirmation keeps the queue kind it always had (mail_customer); the four status letters have kinds of their own.
-const KIND = { confirmation: 'mail_customer', paid: 'letter_paid', shipped: 'letter_shipped', in_transit: 'letter_in_transit', delivered: 'letter_delivered' };
-const LETTER_KINDS = ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered'];
-const ENV_ID = { confirmation: 'CIO_ORDER_CUSTOMER_MSG_ID', paid: 'CIO_LETTER_PAID_MSG_ID', shipped: 'CIO_LETTER_SHIPPED_MSG_ID', in_transit: 'CIO_LETTER_IN_TRANSIT_MSG_ID', delivered: 'CIO_LETTER_DELIVERED_MSG_ID' };
+// rating (2026-10-02, services/reviews): "How was your order?", a letter of its own some days after delivery. No status means it (it is not in
+// STATUS_TYPE): products-api queues it from an hourly pass, and the rules of services/reviews/reviews.cjs decide whether the order is due.
+const TYPES = ['confirmation', 'paid', 'shipped', 'in_transit', 'delivered', 'rating'];
+// confirmation keeps the queue kind it always had (mail_customer); the status letters and the rating letter have kinds of their own.
+const KIND = { confirmation: 'mail_customer', paid: 'letter_paid', shipped: 'letter_shipped', in_transit: 'letter_in_transit', delivered: 'letter_delivered', rating: 'letter_rating' };
+const LETTER_KINDS = ['letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'letter_rating'];
+const ENV_ID = { confirmation: 'CIO_ORDER_CUSTOMER_MSG_ID', paid: 'CIO_LETTER_PAID_MSG_ID', shipped: 'CIO_LETTER_SHIPPED_MSG_ID', in_transit: 'CIO_LETTER_IN_TRANSIT_MSG_ID', delivered: 'CIO_LETTER_DELIVERED_MSG_ID', rating: 'CIO_LETTER_RATING_MSG_ID' };
 // Lookup tables are looked up by own keys only: a status such as "constructor" must not reach Object.prototype.
 const STATUS_TYPE = Object.assign(Object.create(null), { 'paid': 'paid', 'payment-confirmed': 'paid', 'shipped': 'shipped', 'in-transit': 'in_transit', 'delivered': 'delivered' });
 // Same list as products-api ORDER_PAID_STATUSES after this stage (in-transit counts as money received, like shipped).
@@ -196,6 +198,8 @@ function letterData(order, type, opts) {
   const txt = (opts && typeof opts.mailSafe === 'function') ? opts.mailSafe : defaultMailSafe;
   const o = order || {};
   const c = o.customer || {}, s = o.shipping || {};
+  // The rating letter reads three fields: the number, the name and (added by products-api, services/reviews) review_url. No money, address or tracking.
+  if (type === 'rating') return { ref: txt(o.ref), first_name: txt(c.firstName) };
   const cityLine = [s.city, s.state, s.zip].map(txt).filter(Boolean).join(' ');
   const totalsAvailable = o.price_check !== 'skipped' && o.subtotal_server !== undefined;
   const data = {

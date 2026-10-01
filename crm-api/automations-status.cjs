@@ -42,10 +42,10 @@ const MODE_KEYS = {
   CRYPTO_IMPORT_MODE: OFF_DRY_ON,
   WINBACK_MODE: OFF_DRY_ON
 };
-const SINCE_KEYS = ['ORDER_LETTERS_SINCE', 'TG_ALERTS_SINCE', 'CRYPTO_IMPORT_SINCE', 'CARD_IMPORT_EVENTS_SINCE'];
+const SINCE_KEYS = ['ORDER_LETTERS_SINCE', 'TG_ALERTS_SINCE', 'CRYPTO_IMPORT_SINCE', 'CARD_IMPORT_EVENTS_SINCE', 'REVIEWS_RATING_SINCE'];
 const ENV_KEYS = new Set(Object.keys(MODE_KEYS).concat(SINCE_KEYS));
 
-const LETTER_TYPES = ['confirmation', 'paid', 'shipped', 'in_transit', 'delivered'];
+const LETTER_TYPES = ['confirmation', 'paid', 'shipped', 'in_transit', 'delivered', 'rating'];
 const ALERT_TYPES = ['order', 'paid'];
 
 function iso(ms) { return new Date(ms).toISOString(); }

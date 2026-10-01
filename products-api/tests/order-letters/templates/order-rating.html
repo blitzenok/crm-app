@@ -1,14 +1,12 @@
-<h2 style="margin:0 0 12px">Your order has been delivered</h2>
+<h2 style="margin:0 0 12px">How was your order?</h2>
 
 <p>Hi {{ trigger.first_name | default: "there" }},</p>
-<p>Your order <strong>{{ trigger.ref }}</strong> has been marked as delivered.</p>
-{% if trigger.tracking_number != "" %}<p>Carrier: {{ trigger.carrier }}<br>
-Tracking number: {{ trigger.tracking_number }}</p>{% endif %}
-<p>Please check that everything arrived complete and intact. If anything is missing or damaged, reply to this email and include your order number.</p>
-<p>Thank you for choosing BioLabs Research.</p>
-{% if trigger.review_url %}<p style="margin:20px 0 6px"><strong>How was your order?</strong></p>
+<p>Your order <strong>{{ trigger.ref }}</strong> was delivered a few days ago. We would like to know how it went, from ordering to delivery.</p>
+<p style="margin:20px 0 6px"><strong>Tap a star to rate your order</strong></p>
 <p style="margin:0 0 6px;font-size:30px;line-height:1.2"><a href="{{ trigger.review_url }}&r=1" title="1 star" style="color:#B8892B;text-decoration:none;padding:0 4px">★</a><a href="{{ trigger.review_url }}&r=2" title="2 stars" style="color:#B8892B;text-decoration:none;padding:0 4px">★</a><a href="{{ trigger.review_url }}&r=3" title="3 stars" style="color:#B8892B;text-decoration:none;padding:0 4px">★</a><a href="{{ trigger.review_url }}&r=4" title="4 stars" style="color:#B8892B;text-decoration:none;padding:0 4px">★</a><a href="{{ trigger.review_url }}&r=5" title="5 stars" style="color:#B8892B;text-decoration:none;padding:0 4px">★</a></p>
-<p style="margin:0 0 12px">Tap a star to rate your order. Your rating is private and only our team reads it. You can also <a href="{{ trigger.review_url }}">write a review of the products you received</a>.</p>{% endif %}
+<p style="margin:0 0 12px">Your rating is private and only our team reads it. You can add a few words on the page that opens.</p>
+<p>If you would like to tell other customers about a product, you can also <a href="{{ trigger.review_url }}">write a review of the products you received</a>. Reviews can cover ordering, packaging, delivery and product quality. A review appears on the product page only after our team has read it.</p>
+<p>If something was missing or damaged, reply to this email and include your order number so that we can look into it.</p>
 
 <p>All products are supplied for laboratory research use only. They are not medicines and are not for human or veterinary use.</p>
 <p>Best regards,<br>The BioLabs Research Team</p>

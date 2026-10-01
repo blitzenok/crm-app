@@ -226,6 +226,11 @@ function buildGroups(st, now) {
   var vc = newCard('reviews', 'Reviews & ratings', 'Buyers rate a product and may leave a text review; text reviews are published after approval.', modeOf(st, 'REVIEWS_MODE'));
   if (vc.mode === 'off' && st.modes && st.modes.REVIEWS_MODE === null) vc.facts.push(['Note', 'No setting for this yet: the module may not be installed.']);
   if (vc.mode === 'on' || vc.mode === 'test') vc.link = { href: 'reviews.html', label: 'Open Reviews' };   // the page comes with the reviews module
+  vc.since = st.since && st.since.REVIEWS_RATING_SINCE;   // the rating letter (a few days after delivery) counts from here
+  if (LET) sentFact(vc, LET.rating, 'Rating letter last sent');
+  if (vc.mode === 'test') vc.facts.push(['Mode', 'Test: only the test addresses get the rating letter.']);
+  needOutbox(vc, st);
+  queueProblems(vc, st, ['letter_rating'], now);
   g3.cards.push(vc);
   groups.push(g3);
 

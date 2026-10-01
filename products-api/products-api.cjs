@@ -4351,7 +4351,10 @@ function orderLettersSend(item, order, cb) {
   let data;
   try { data = orderLetters.letterData(order, type, { mailSafe: mailSafe }); }
   catch (e) { return cb({ ok: false, status: 'not_built', error: 'letter data: ' + ((e && e.message) || e) }); }
-  if (type === 'delivered') Object.assign(data, reviewsLetterFields(order));   // reviews (2026-10-01): review_url, only when REVIEWS_MODE allows this address
+  // rating letter (2026-10-02, services/reviews): the link (review_url) now goes with the rating letter, a letter of its own some days after delivery; it was
+  // "if (type === 'delivered') Object.assign(data, reviewsLetterFields(order))" until then, and the delivered letter has no link any more. The rating letter is sent by reviewsRatingSend:
+  // the rules again at the moment of sending, an attempt mark before the HTTP call, no repeat after an unconfirmed attempt.
+  if (type === 'rating') return reviewsRatingSend(order, id, to, data, ref, cb);
   cioSendEmail(id, to, to, data, 'letter-' + type, ref, (ok, status, errorText) => {
     if (ok) orderLettersMark(order.ref, type);
     cb({ ok: ok, status: status, error: errorText });
@@ -4899,7 +4902,7 @@ function reviewsReplyAdmin(res) {
   if (!reviews) { jsonReply(res, 503, {error:'Reviews module not started'}); return; }
   try {
     res.setHeader('Cache-Control', 'no-store');
-    jsonReply(res, 200, Object.assign({ mode: REVIEWS_CFG.mode }, reviews.adminView(reviewsReadCached(REVIEWS_FILE, reviewsParseData))));
+    jsonReply(res, 200, Object.assign({ mode: REVIEWS_CFG.mode }, reviews.adminView(reviewsReadCached(REVIEWS_FILE, reviewsParseData), reviewsRatingOrders())));   // rating letters (2026-10-02): the report also counts letters, which live in orders.json
   } catch (e) {
     console.error('[reviews] ERROR file not readable: ' + reviewsErr(e));
     jsonReply(res, 500, {error:'Could not read the reviews file'});
@@ -4951,6 +4954,161 @@ function checkoutEmailRefused(res, value, where) {
   console.log('[checkout-email] refused ' + where);
   jsonReply(res, 400, { ok: false, error: 'invalid_email', field: 'email', charged: false, message: msg });
   return true;
+}
+// Rating letter (2026-10-02, services/reviews/): "How was your order?" as a letter of its own, REVIEWS_RATING_DELAY_DAYS (default 3) after the order was
+// delivered; the delivered letter no longer carries the link. Which order is due and why not is decided in reviews.cjs. Here: an hourly pass over orders.json
+// inside this process (the one writer of that file, like the restock tick), the queue item (mail-outbox kind letter_rating, sent by orderLettersSend, which
+// asks reviewsRatingGate again), the mark of an order that was rated before the letter was due, and the numbers for the Ratings report. One letter per order:
+// order.letters.rating.sentAt, written after Customer.io accepted it, and AT MOST ONCE, whatever goes wrong: (1) the pass first writes order.letters.rating.queuedAt into orders.json
+// and only if that write succeeded asks the queue (a failed write queues nothing), and an order with a queuedAt is never queued again; (2) the sender writes order.letters.rating.tryAt
+// into orders.json BEFORE the HTTP call (no write, no call: the queue tries again later) and an item that finds a tryAt without a sentAt is an attempt nobody confirmed (timeout, lost
+// answer, crash between the 2xx and the removal of the item from the queue): it is dropped as skipped, with a line, and never repeated; only an explicit HTTP refusal (Customer.io did not take
+// it) removes the tryAt and lets the queue repeat (401, 403, 429, 5xx). So a sentAt that cannot be written, a timeout on an accepted letter, a crash, a repeat of the queue's own retries (1, 5, 15,
+// 60, 180, 360 minutes for 48 hours, no idempotency key at Customer.io) can never produce a second letter. The price: after an unconfirmed attempt the letter may be missing
+// ("[mail-alert] RATING UNCONFIRMED" once, nothing repeated; a person decides). REVIEWS_MODE, REVIEWS_RATING_SINCE (required), REVIEWS_RATING_DELAY_DAYS,
+// REVIEWS_RATING_INTERVAL_MS and CIO_LETTER_RATING_MSG_ID live in ENV_FILE; a change needs a restart. Nothing here may stop the server.
+let REVIEWS_RATING_CFG = { enabled: false, delayMs: 0, sinceMs: NaN };
+const REVIEWS_RATING_MIN_INTERVAL_MS = 60000;   // the pass is at most once a minute whatever REVIEWS_RATING_INTERVAL_MS says
+const reviewsRatingWhy = { last: '' };   // why a pass did nothing, logged when it changes (not every hour)
+function reviewsRatingCtx(nowMs, data) {
+  return {
+    nowMs: nowMs, cfg: REVIEWS_CFG, rating: REVIEWS_RATING_CFG,
+    ratedRefs: new Set(data.ratings.filter(x => x && typeof x.ref === 'string').map(x => x.ref)),
+    lettersVerdict: (o) => orderLetters.letterAllowed(o, 'rating', ORDER_LETTERS_CFG),
+    isTestOrder: isTestOrderRef, looksLikeEmail: looksLikeEmail
+  };
+}
+// At the moment of sending: the same rules as the pass (a rating may have come in, the mode may have changed) and the link of the letter.
+function reviewsRatingGate(order) {
+  try {
+    if (!reviewsOn()) return { ok: false, reason: 'mode_off' };
+    const v = reviews.ratingLetterDecision(order, Object.assign(reviewsRatingCtx(Date.now(), reviewsReadCached(REVIEWS_FILE, reviewsParseData)), { sending: true }));   // sending: the queuedAt of the pass is what let this item in
+    if (!v.ok) return { ok: false, reason: v.reason };
+    const fields = reviews.letterFields(order, REVIEWS_CFG, { isTestOrder: isTestOrderRef, looksLikeEmail: looksLikeEmail });
+    if (!fields.review_url) return { ok: false, reason: 'no_link' };
+    return { ok: true, fields: fields };
+  } catch (e) { return { ok: false, reason: 'error: ' + reviewsErr(e) }; }
+}
+// One change of one order in orders.json, written at once (this process is the one writer of the file): true when the file was written.
+function reviewsRatingEditOrder(ref, edit) {
+  try {
+    const orders = mailOutboxReadOrders();
+    const found = orders.find(o => o && o.ref === ref);
+    if (!found) return false;
+    edit(found);
+    writeJsonAtomic(TRACK_ORDERS_FILE, orders);
+    return true;
+  } catch (e) { console.error('[rating] ERROR orders not written: ' + reviewsErr(e)); return false; }
+}
+// The queue's sender for the rating letter (called from orderLettersSend with the data it built). Every uncertainty ends in "not repeated".
+function reviewsRatingSend(order, id, to, data, ref, cb) {
+  const skipped = (why) => { console.log('[rating] skip ' + ref + ': ' + why); cb({ ok: true, status: 'skipped' }); };
+  const gate = reviewsRatingGate(order);
+  if (!gate.ok) return skipped(gate.reason === 'unconfirmed_attempt' ? 'unconfirmed attempt, not retried' : gate.reason);
+  Object.assign(data, gate.fields);
+  // The attempt is written and saved BEFORE the call. Not written: nothing was sent, so the queue may try again later (the disk may come back).
+  if (!reviewsRatingEditOrder(order.ref, o => reviews.markRatingTry(o, Date.now()))) {
+    console.error('[rating] ERROR ' + ref + ': the attempt mark could not be written, nothing sent (the queue tries again)');
+    return cb({ ok: false, status: 'try_mark_not_written', error: 'attempt mark not written' });
+  }
+  cioSendEmail(id, to, to, data, 'letter-rating', ref, (ok, status, errorText) => {
+    if (ok) { orderLettersMark(order.ref, 'rating'); return cb({ ok: true, status: status }); }
+    // An explicit HTTP answer that says the letter was NOT taken: the mark goes, and the queue decides (it repeats 401, 403, 429, 5xx and gives up on the other 4xx).
+    if (reviews.ratingNotTaken(status) && reviewsRatingEditOrder(order.ref, o => reviews.clearRatingTry(o))) return cb({ ok: false, status: status, error: errorText });
+    // No answer (timeout, network, 408), or the mark could not be removed: nobody knows if it went out. The mark stays, the item is done, nothing is repeated.
+    console.error('[mail-alert] RATING UNCONFIRMED ' + ref + ': the letter may or may not have gone out (' + (typeof status === 'number' ? 'HTTP ' + status : 'no answer') + '); it is NOT retried, a person decides');
+    cb({ ok: true, status: 'skipped' });
+  });
+}
+// The Ratings report counts letters from orders.json; null (unreadable) leaves those numbers out instead of failing the report.
+function reviewsRatingOrders() {
+  try {
+    const all = reviewsReadCached(TRACK_ORDERS_FILE, reviewsParseOrders);
+    return Array.isArray(all) ? all : null;
+  } catch (e) {
+    console.error('[rating] ERROR orders not readable for the report: ' + reviewsErr(e));
+    return null;
+  }
+}
+// The mark that comes first: queuedAt, saved before the queue is asked. -> the refs that were marked and saved (none if the file could not be written).
+function reviewsRatingMarkQueued(refs, nowMs) {
+  try {
+    const orders = mailOutboxReadOrders();
+    const marked = [];
+    for (const ref of refs) {
+      const found = orders.find(o => o && o.ref === ref);
+      const rec = found ? reviews.ratingRecord(found) : null;
+      if (!found || rec.sentAt || rec.queuedAt || rec.skipped) continue;
+      reviews.markRatingQueued(found, nowMs);
+      marked.push(ref);
+    }
+    if (marked.length) writeJsonAtomic(TRACK_ORDERS_FILE, orders);
+    return marked;
+  } catch (e) {
+    console.error('[rating] ERROR queue marks not written, nothing queued: ' + reviewsErr(e));
+    return [];
+  }
+}
+const reviewsRatingStaleSeen = new Set();   // "queued, never sent" once per order and process
+// An order that already has a rating when its letter is due gets no letter, and says so, so that the next pass does not look at it again.
+function reviewsRatingMarkRated(refs, nowMs) {
+  try {
+    const orders = mailOutboxReadOrders();
+    let n = 0;
+    for (const ref of refs) {
+      const found = orders.find(o => o && o.ref === ref);
+      if (!found || reviews.ratingRecord(found).sentAt || reviews.ratingRecord(found).skipped) continue;
+      reviews.markRatingSkipped(found, 'rated', nowMs);
+      n++;
+      console.log('[rating] skip ' + orderLetters.safeRef(ref) + ': rated (marked on the order)');
+    }
+    if (n) writeJsonAtomic(TRACK_ORDERS_FILE, orders);
+  } catch (e) { console.error('[rating] ERROR rated orders not marked: ' + reviewsErr(e)); }
+}
+function reviewsRatingSweep() {
+  try {
+    if (!reviews || !reviewsOn() || !REVIEWS_RATING_CFG.enabled) return;
+    const why = !orderLetters || ORDER_LETTERS_CFG.mode === 'off' ? 'order letters are off' : !mailOutbox ? 'the mail queue is off' : !CIO_READY ? 'Customer.io is not ready'
+      : !ORDER_LETTERS_IDS.rating ? 'no template id (CIO_LETTER_RATING_MSG_ID)' : '';
+    if (why) {
+      if (reviewsRatingWhy.last !== why) { reviewsRatingWhy.last = why; console.log('[rating] pass skipped: ' + why); }
+      return;
+    }
+    reviewsRatingWhy.last = '';
+    const nowMs = Date.now();
+    const r = reviews.ratingSweep(mailOutboxReadOrders(), reviewsRatingCtx(nowMs, reviewsReadCached(REVIEWS_FILE, reviewsParseData)), reviews.RATING_SWEEP_MAX);
+    let queued = 0;
+    for (const ref of reviewsRatingMarkQueued(r.queue, nowMs)) {
+      if (mailOutbox.enqueue('letter_rating', ref)) { queued++; console.log('[rating] queued ' + orderLetters.safeRef(ref)); }
+      else console.error('[rating] ERROR ' + orderLetters.safeRef(ref) + ' marked (queuedAt) but the queue returned false: it was already in the queue, or the queue file could not be written (then the outbox sent it once directly, see its [mail-alert] line, and the attempt mark applies there too); the pass never queues it again');
+    }
+    for (const ref of r.stale) if (!reviewsRatingStaleSeen.has(ref)) {
+      reviewsRatingStaleSeen.add(ref);
+      console.log('[rating] queued, never sent ' + orderLetters.safeRef(ref) + ': marked more than 2 hours ago and no sentAt; still in the mail queue, or lost; no automatic retry');
+    }
+    if (r.markRated.length) reviewsRatingMarkRated(r.markRated, nowMs);
+    const other = Object.keys(r.counts).map(k => k + ' ' + r.counts[k]).join(', ');
+    console.log('[rating] pass: ' + r.examined + ' delivered, ' + queued + ' queued' + (r.markRated.length ? ', ' + r.markRated.length + ' rated before the letter' : '') + (other ? ', ' + other : ''));
+  } catch (e) { console.error('[rating] ERROR pass failed: ' + reviewsErr(e)); }
+}
+try {
+  if (reviews) {
+    const ratingEnv = readEnvFile(ENV_FILE);
+    REVIEWS_RATING_CFG = reviews.parseRatingConfig(ratingEnv);
+    if (REVIEWS_CFG.mode !== 'off') for (const p of REVIEWS_RATING_CFG.problems) console.error('[rating] ERROR ' + p);
+    if (REVIEWS_CFG.mode !== 'off' && REVIEWS_RATING_CFG.enabled && !ORDER_LETTERS_IDS.rating) console.error('[rating] ERROR no template id (CIO_LETTER_RATING_MSG_ID), the rating letter waits');
+    const ratingOn = REVIEWS_CFG.mode !== 'off' && REVIEWS_RATING_CFG.enabled;
+    console.log('[rating] ' + (ratingOn ? REVIEWS_CFG.mode + ', ' + (REVIEWS_RATING_CFG.delayMs / 86400000) + ' days after delivery, since ' + new Date(REVIEWS_RATING_CFG.sinceMs).toISOString() : 'off'));
+    let ratingEvery = Number(ratingEnv.REVIEWS_RATING_INTERVAL_MS) > 0 ? Number(ratingEnv.REVIEWS_RATING_INTERVAL_MS) : 3600 * 1000;
+    if (ratingEvery < REVIEWS_RATING_MIN_INTERVAL_MS) { console.log('[rating] interval raised to ' + REVIEWS_RATING_MIN_INTERVAL_MS + ' ms (the shortest allowed)'); ratingEvery = REVIEWS_RATING_MIN_INTERVAL_MS; }
+    const ratingFirst = setTimeout(reviewsRatingSweep, Math.min(45000, ratingEvery));
+    const ratingTimer = setInterval(reviewsRatingSweep, ratingEvery);
+    if (ratingFirst.unref) ratingFirst.unref();
+    if (ratingTimer.unref) ratingTimer.unref();
+  }
+} catch (e) {
+  REVIEWS_RATING_CFG = { enabled: false, delayMs: 0, sinceMs: NaN };
+  console.error('[rating] ERROR not started: ' + ((e && e.message) || e));
 }
 const server = http.createServer((req, res) => {
   applyCors(req, res);

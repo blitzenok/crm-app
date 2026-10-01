@@ -16,7 +16,7 @@ const ALLOWED = {
   paid: COMMON,
   shipped: COMMON.concat(['carrier', 'tracking_number', 'tracking_url']),
   in_transit: COMMON.concat(['carrier', 'tracking_number', 'tracking_url']),
-  delivered: COMMON.concat(['carrier', 'tracking_number', 'tracking_url'])
+  delivered: COMMON.concat(['carrier', 'tracking_number', 'tracking_url', 'review_url'])   // review_url: services/reviews, present only while REVIEWS_MODE allows the address
 };
 const STOP_WORDS = [/\bdose\b/i, /\bdosage\b/i, /\binject/i, /\badminister/i, /\bper kg\b/i, /\bdaily\b/i];
 

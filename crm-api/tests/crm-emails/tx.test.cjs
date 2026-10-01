@@ -11,10 +11,11 @@ const ITEMS = ['items', 'subtotal_server', 'shipping_server', 'discount_server',
 const TRACK = ['carrier', 'tracking_number', 'tracking_url'];
 const EXPECTED = {
   'order-customer': COMMON.concat(ITEMS), 'order-paid': COMMON,
-  'order-shipped': COMMON.concat(TRACK), 'order-in-transit': COMMON.concat(TRACK), 'order-delivered': COMMON.concat(TRACK, ['review_url'])
+  'order-shipped': COMMON.concat(TRACK), 'order-in-transit': COMMON.concat(TRACK), 'order-delivered': COMMON.concat(TRACK, ['review_url']),
+  'order-rating': ['ref', 'first_name', 'review_url']   // services/reviews, 02.10
 };
 
-test('contract: five letters, fields exactly as in contract.md', () => {
+test('contract: six letters, fields exactly as in contract.md (the sixth is the rating letter of services/reviews)', () => {
   assert.deepEqual(Object.keys(tx.CONTRACT).sort(), Object.keys(EXPECTED).sort());
   for (const k of Object.keys(EXPECTED)) assert.deepEqual([...tx.CONTRACT[k]].sort(), [...EXPECTED[k]].sort(), k);
 });

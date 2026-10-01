@@ -202,6 +202,17 @@ function renderRatingStats(stats) {
   });
   return out + '</div>';
 }
+// Rating letter (2026-10-02): how many "How was your order?" letters went out and how many of those orders were rated; the numbers come from the orders file.
+function renderRatingLetters(rl) {
+  if (!rl) return '';
+  var rate = (rl.rate === null || rl.rate === undefined) ? 'n/a' : String(rl.rate) + '%';
+  return '<div class="muted" style="margin-bottom:6px">Rating letter: sent a few days after delivery, once per order</div>' +
+    '<div class="rv-stats">' +
+    '<div class="rv-stat"><div class="v">' + esc(num(rl.sent)) + '</div><div class="l">Letters sent</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(num(rl.answered)) + '</div><div class="l">Of those orders rated</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(rate) + '</div><div class="l">Response rate</div></div>' +
+    '<div class="rv-stat"><div class="v">' + esc(num(rl.skippedRated)) + '</div><div class="l">Rated before the letter was due (no letter)</div></div></div>';
+}
 function ratingRows(data, filter) {
   return (data && data.ratings || []).filter(function (x) {
     if (filter.lowOnly && !(x.rating <= 3)) return false;
@@ -246,7 +257,7 @@ function paint() {
   el('ratings').style.display = TAB === 'ratings' ? '' : 'none';
   el('modBar').innerHTML = renderModBar(DATA, FILTER);
   el('modList').innerHTML = renderModeration(DATA, FILTER);
-  el('ratingStats').innerHTML = renderRatingStats(DATA && DATA.stats);
+  el('ratingStats').innerHTML = renderRatingLetters(DATA && DATA.ratingLetters) + renderRatingStats(DATA && DATA.stats);
   el('ratBar').innerHTML = renderRatBar(DATA, RFILTER);
   el('ratList').innerHTML = renderRatings(DATA, RFILTER);
 }

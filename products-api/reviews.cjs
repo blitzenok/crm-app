@@ -9,7 +9,8 @@
 // Two things, never mixed:
 //   rating  — "how was your order", 1-5 and an optional comment, one per order, NEVER shown on the site, only the CRM report;
 //   review  — text about one product of the order, shown on the product card ONLY after a person approved it in the CRM.
-// The link in the delivered letter carries an HMAC token of (order number, address): whoever holds it may write for that order.
+// The link in the rating letter ("How was your order?", sent some days after delivery, see the section "the rating letter") carries an HMAC token of
+// (order number, address): whoever holds it may write for that order.
 // Opening the link writes nothing (mail scanners open links); only the POST of the page does.
 const crypto = require('crypto');
 
@@ -90,6 +91,140 @@ function letterFields(order, cfg, ctx) {
   if (!cfg || !cfg.secret || !modeAllows(cfg, emailOf(order))) return {};
   if (!orderAllowed(order, ctx).ok) return {};
   return { review_url: reviewUrl(cfg.secret, order.ref, emailOf(order)) };
+}
+
+// ---- the rating letter ----
+// A separate letter, REVIEWS_RATING_DELAY_DAYS (default 3) after the order was delivered; the delivered letter itself no longer carries the link.
+// Which orders are due is decided here from data products-api hands in; products-api queues the letter (mail-outbox kind letter_rating), the
+// queue's sender asks the same function again before it sends, and order.letters.rating.sentAt makes it one letter per order.
+// The moment of delivery is the one the delivered letter went out (order.letters.delivered.sentAt): the order has no status history, and an
+// order without that mark is skipped, never counted as "long ago".
+const RATING_DELAY_DEFAULT_DAYS = 3;
+const RATING_DELAY_MAX_DAYS = 60;
+const RATING_SWEEP_MAX = 20;                // letters queued by one sweep; the rest wait for the next one
+const RATING_STALE_QUEUE_MS = 2 * 3600 * 1000;   // queued (marked on the order) this long ago and still no sentAt: the pass says so once; it never queues again
+const DAY_MS = 86400 * 1000;
+
+// REVIEWS_RATING_SINCE (an ISO date) is required: without a moment to count from, every order delivered since the shop opened would get a
+// letter on the first sweep. A missing or bad value, or a bad delay, switches the rating letter off (the rest of the feature is not touched).
+function parseRatingConfig(env) {
+  const e = env || {};
+  const problems = [];
+  let enabled = true, delayMs = RATING_DELAY_DEFAULT_DAYS * DAY_MS;
+  const rawDelay = String(e.REVIEWS_RATING_DELAY_DAYS === undefined || e.REVIEWS_RATING_DELAY_DAYS === null ? '' : e.REVIEWS_RATING_DELAY_DAYS).trim();
+  if (rawDelay) {
+    const d = /^\d+(?:\.\d+)?$/.test(rawDelay) ? Number(rawDelay) : NaN;
+    if (Number.isFinite(d) && d <= RATING_DELAY_MAX_DAYS) delayMs = d * DAY_MS;
+    else { problems.push('REVIEWS_RATING_DELAY_DAYS is not a number from 0 to ' + RATING_DELAY_MAX_DAYS + ', the rating letter is off'); enabled = false; }
+  }
+  const rawSince = String(e.REVIEWS_RATING_SINCE === undefined || e.REVIEWS_RATING_SINCE === null ? '' : e.REVIEWS_RATING_SINCE).trim();
+  const sinceMs = /^\d{4}-\d{2}-\d{2}/.test(rawSince) ? Date.parse(rawSince) : NaN;
+  if (!Number.isFinite(sinceMs)) { problems.push('REVIEWS_RATING_SINCE missing or not a date, the rating letter is off'); enabled = false; }
+  return { enabled, delayMs, sinceMs, problems };
+}
+function ratingRecord(order) {
+  const l = order && order.letters;
+  const r = l && typeof l === 'object' && !Array.isArray(l) ? l.rating : null;
+  return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
+}
+// When the order was delivered, as far as we can tell: the moment its delivered letter went out. NaN = unknown.
+function deliveredMs(order) {
+  const l = order && order.letters;
+  const d = l && typeof l === 'object' && !Array.isArray(l) ? l.delivered : null;
+  const t = d && typeof d === 'object' ? Date.parse(d.sentAt) : NaN;
+  return Number.isFinite(t) ? t : NaN;
+}
+// One answer for "is this order due its rating letter now": {ok:true} or {ok:false, reason}. ctx:
+//   nowMs; cfg (reviews parseConfig: mode, testTo); rating (parseRatingConfig); ratedRefs (Set of order numbers that already have a rating);
+//   lettersVerdict(order) -> {ok, reason}: the rules every order letter follows (order-letters.letterAllowed(order, 'rating'): shop orders only,
+//   not cancelled, not our own probe addresses, the order date); isTestOrder and looksLikeEmail as for orderAllowed.
+// At most once: the pass writes order.letters.rating.queuedAt BEFORE it queues the letter, and a queuedAt (like a sentAt) ends the pass's interest in the order for good. A letter
+// that was accepted by Customer.io but whose sentAt could not be written, or a pass that died between the mark and the queue, therefore never produces a second letter; the cost is
+// that in the second case the letter is simply not sent (the pass says "queued, never sent", see ratingSweep). ctx.sending = true is the check of the queue's sender, which is
+// the one that acts on a queuedAt: it skips that refusal. The sender then writes order.letters.rating.tryAt BEFORE the HTTP call; an item that finds a tryAt (and no sentAt) is an
+// attempt whose outcome nobody confirmed (timeout, crash, a lost answer): it is refused as 'unconfirmed_attempt' and never repeated. Only an explicit HTTP refusal clears the tryAt.
+// 'rated' is the one refusal the caller writes down on the order (a rating was given before the letter was due). It is asked last, so that in
+// test mode nothing is ever written on a real buyer's order.
+function ratingLetterDecision(order, ctx) {
+  const c = ctx || {}, cfg = c.cfg || {}, rc = c.rating || {};
+  const no = (reason) => ({ ok: false, reason });
+  if (cfg.mode !== 'test' && cfg.mode !== 'on') return no('mode_off');
+  if (!rc.enabled) return no('rating_off');
+  if (!(c.ratedRefs instanceof Set) || !Number.isFinite(c.nowMs)) return no('bad_context');
+  const allowed = orderAllowed(order, c);
+  if (!allowed.ok) return no(allowed.reason);
+  const rec = ratingRecord(order);
+  if (rec.sentAt) return no('already_sent');
+  if (rec.skipped) return no('already_skipped');
+  if (rec.queuedAt && !c.sending) return no('already_queued');
+  if (rec.tryAt && c.sending) return no('unconfirmed_attempt');
+  const at = deliveredMs(order);
+  if (!Number.isFinite(at)) return no('no_delivery_moment');
+  if (at < rc.sinceMs) return no('before_since');
+  if (!(c.nowMs - at >= rc.delayMs)) return no('too_early');
+  if (typeof c.lettersVerdict === 'function') { const v = c.lettersVerdict(order); if (!v || !v.ok) return no('letter_' + String((v && v.reason) || 'refused')); }
+  if (!modeAllows(cfg, emailOf(order))) return no('not_test_recipient');
+  if (c.ratedRefs.has(order.ref)) return no('rated');
+  return { ok: true };
+}
+// What one pass does with the delivered orders of orders.json. Changes nothing: -> { examined, queue: [ref], markRated: [ref], counts: {reason: n} }.
+function ratingSweep(orders, ctx, max) {
+  const cap = Number.isInteger(max) && max > 0 ? max : RATING_SWEEP_MAX;
+  const out = { examined: 0, queue: [], markRated: [], stale: [], counts: {} };
+  const count = (k) => { out.counts[k] = (out.counts[k] || 0) + 1; };
+  for (const o of Array.isArray(orders) ? orders : []) {
+    if (!o || typeof o !== 'object' || String(o.status || '').trim().toLowerCase() !== 'delivered') continue;
+    out.examined++;
+    let v;
+    try { v = ratingLetterDecision(o, ctx); } catch (e) { v = { ok: false, reason: 'error' }; }
+    if (v.ok) { if (out.queue.length < cap) out.queue.push(o.ref); else count('over_cap'); }
+    else if (v.reason === 'rated') out.markRated.push(o.ref);
+    else {
+      count(v.reason);
+      if (v.reason === 'already_queued' && Number.isFinite(ctx.nowMs) && ctx.nowMs - Date.parse(ratingRecord(o).queuedAt) > RATING_STALE_QUEUE_MS) out.stale.push(o.ref);
+    }
+  }
+  return out;
+}
+// "This order's letter is being queued now": written (and the file saved) before the queue is asked, see ratingLetterDecision.
+function markRatingQueued(order, nowMs) {
+  const l = order.letters && typeof order.letters === 'object' && !Array.isArray(order.letters) ? order.letters : {};
+  order.letters = Object.assign({}, l, { rating: { queuedAt: new Date(nowMs).toISOString() } });
+  return order;
+}
+// The attempt mark (written and saved before the HTTP call) and its removal after an explicit HTTP refusal. The caller writes the file.
+function markRatingTry(order, nowMs) {
+  const l = order.letters && typeof order.letters === 'object' && !Array.isArray(order.letters) ? order.letters : {};
+  order.letters = Object.assign({}, l, { rating: Object.assign({}, ratingRecord(order), { tryAt: new Date(nowMs).toISOString() }) });
+  return order;
+}
+function clearRatingTry(order) {
+  const l = order.letters && typeof order.letters === 'object' && !Array.isArray(order.letters) ? order.letters : {};
+  const rec = Object.assign({}, ratingRecord(order)); delete rec.tryAt;
+  order.letters = Object.assign({}, l, { rating: rec });
+  return order;
+}
+// An HTTP answer that says for certain that Customer.io did NOT take the letter (3xx, 4xx except 408, 5xx): the attempt mark is removed and the queue decides whether to try again
+// (it does for 401, 403, 429, 5xx; for the other 4xx it gives up and says so: dead list, [mail-alert]). Everything else that is not 2xx (a timeout, a network error, 408, no status at
+// all) leaves it unknown whether the letter went out: the mark stays, nothing is repeated.
+function ratingNotTaken(status) { return typeof status === 'number' && status >= 300 && status !== 408; }
+// "No letter for this order, and why", written on the order so that the next pass does not look at it again. The caller writes the file.
+function markRatingSkipped(order, reason, nowMs) {
+  const l = order.letters && typeof order.letters === 'object' && !Array.isArray(order.letters) ? order.letters : {};
+  order.letters = Object.assign({}, l, { rating: { skipped: String(reason), at: new Date(nowMs).toISOString() } });
+  return order;
+}
+// For the report: letters sent, how many of those orders now have a rating, and how many orders had a rating before the letter was due.
+function ratingLetterStats(orders, ratings) {
+  const rated = new Set((Array.isArray(ratings) ? ratings : []).filter(x => x && typeof x.ref === 'string').map(x => x.ref));
+  let sent = 0, answered = 0, skippedRated = 0;
+  for (const o of Array.isArray(orders) ? orders : []) {
+    if (!o || typeof o !== 'object') continue;
+    const rec = ratingRecord(o);
+    if (Number.isFinite(Date.parse(rec.sentAt))) { sent++; if (rated.has(o.ref)) answered++; }
+    else if (rec.skipped === 'rated') skippedRated++;
+  }
+  return { sent, answered, rate: sent ? Math.round(answered * 1000 / sent) / 10 : null, skippedRated };
 }
 
 // ---- names and items ----
@@ -292,14 +427,16 @@ function ratingStats(ratings) {
   };
 }
 // Everything the CRM page needs. The buyer's address is shown to staff (they see it on the order anyway); the public list never has it.
-function adminView(data) {
+function adminView(data, orders) {
   const reviews = data.reviews.filter(Boolean).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, ADMIN_REVIEWS_LIMIT)
     .map(r => ({ id: r.id, ref: r.ref, email: r.email, slug: r.slug, productName: r.productName || r.slug, displayName: r.displayName, text: r.text, status: r.status, flags: Array.isArray(r.flags) ? r.flags : [], createdAt: r.createdAt, decidedAt: r.decidedAt || null, decidedBy: r.decidedBy || null }));
   const ratings = data.ratings.filter(Boolean).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, ADMIN_RATINGS_LIMIT)
     .map(x => ({ id: x.id, ref: x.ref, email: x.email, rating: x.rating, comment: x.comment || '', flags: Array.isArray(x.flags) ? x.flags : [], createdAt: x.createdAt, updatedAt: x.updatedAt || x.createdAt }));
   const counts = { pending: 0, approved: 0, rejected: 0 };
   for (const r of data.reviews) if (r && Object.prototype.hasOwnProperty.call(counts, r.status)) counts[r.status]++;
-  return { reviews, ratings, counts, stats: ratingStats(data.ratings) };
+  const view = { reviews, ratings, counts, stats: ratingStats(data.ratings) };
+  if (Array.isArray(orders)) view.ratingLetters = ratingLetterStats(orders, data.ratings);   // the orders are another file, read by the caller; without them the report has no letter numbers
+  return view;
 }
 
 // ---- a small in-memory counter: attempts per key in a rolling window (kept per process, never written) ----
@@ -332,5 +469,6 @@ function safeId(v) {
 module.exports = {
   MODES, SHOP, TOKEN_LEN, MIN_SECRET_LEN, RATING_EDIT_MS, TEXT_MIN, TEXT_MAX, COMMENT_MAX, MAX_PENDING, MAX_REVIEWS, MAX_RATINGS, PUBLIC_LIMIT, STOP_PATTERNS,
   parseConfig, tokenFor, tokenOk, reviewUrl, emailOf, orderAllowed, modeAllows, letterFields, cleanLine, cleanText, validName, defaultName, itemsOf, flagsOf,
+  RATING_DELAY_DEFAULT_DAYS, RATING_SWEEP_MAX, RATING_STALE_QUEUE_MS, parseRatingConfig, ratingRecord, deliveredMs, ratingLetterDecision, ratingSweep, markRatingSkipped, markRatingQueued, markRatingTry, clearRatingTry, ratingNotTaken, ratingLetterStats,
   emptyData, normalizeData, validateRating, findRating, ratingLocked, setRating, validateReview, addReview, publicReviews, decide, ratingStats, adminView, createLimiter, safeId
 };

@@ -11,13 +11,14 @@
 
 const crypto = require('crypto');
 
-// letter_* (stage 1 RET, 30.09): the status letters of services/order-letters, one queue item per letter type and order.
+// letter_* (stage 1 RET, 30.09): the status letters of services/order-letters, one queue item per letter type and order. letter_rating (02.10,
+// services/reviews) is the "How was your order?" letter, queued by an hourly pass of products-api some days after delivery.
 // cio_order_delivered (services/cio-events, 30.09): the event the post-delivery journeys start on.
 // tg_order / tg_paid (services/tg-alerts, 30.09): the team's Telegram alerts about a new order and a payment received.
 // tg_contact (services/tg-alerts, 30.09): the Telegram line about a contact-form message; its ref is a message id in messages.json.
 // letter_restock (services/restock, 30.09): "back in stock" letter; its ref is a subscription id, not an order ref — RECORD_KINDS are
 // looked up with deps.findRecord(kind, ref) instead of in orders.json, and the record goes to send() where an order goes.
-const KINDS = ['mail_manager', 'mail_customer', 'cio_order_placed', 'cio_order_status', 'letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'cio_order_delivered', 'tg_order', 'tg_paid', 'tg_contact', 'letter_restock'];
+const KINDS = ['mail_manager', 'mail_customer', 'cio_order_placed', 'cio_order_status', 'letter_paid', 'letter_shipped', 'letter_in_transit', 'letter_delivered', 'cio_order_delivered', 'tg_order', 'tg_paid', 'tg_contact', 'letter_restock', 'letter_rating'];
 const RECORD_KINDS = ['letter_restock', 'tg_contact'];
 const RETRY_MIN = [1, 5, 15, 60, 180, 360];      // after the 1st, 2nd, ... failure; the last step repeats
 const GIVE_UP_MS = 48 * 3600 * 1000;
