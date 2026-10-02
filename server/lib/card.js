@@ -43,10 +43,12 @@ const COUNTRY3 = {
 
 export function countryCode(country) {
   const raw = String(country || "").trim().toUpperCase();
-  if (!raw) return "USA";
+  // infra 2026-10-01 ship48 (Legal): never invent a country. Blank or unmappable -> "" (the ship48 check refuses it before any charge).
+  if (!raw) return "";
   if (raw.length === 3) return raw;
   if (raw.length === 2) return COUNTRY3[raw] || raw;
-  return raw.slice(0, 3);
+  if (raw === "UNITED STATES" || raw === "UNITED STATES OF AMERICA") return "USA";
+  return "";
 }
 
 export function phoneDigits(phone) {

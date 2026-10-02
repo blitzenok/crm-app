@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import "./helpers/ship48-default-address.js"; // infra 2026-10-01 ship48 test data
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,6 +14,8 @@ const CFG = { env: "sandbox", baseUrl: "https://apis-dev.cleffo.com", clientKey:
 const CONSENT = { checks: { "ck-terms": true, "ck-ruo": true }, acceptedAt: "2026-09-28T15:40:00.000Z", pageVersion: "v-test" };
 const CARD = { name: "Q A", number: "4242424242424242", month: "12", year: "28", cvv: "123" };
 const HARD_CARD = { name: "Q A", number: "4111111111110003", month: "11", year: "29", cvv: "123" };
+// A new Cleffo order needs a server-side price (cleffo part 4): tests price every cart at 20.00.
+const cardPricer = (b) => ({ ok: true, amount: "20.00", clientAmount: b.amount, mismatch: false, source: "test", subtotal: "20.00", shipping: "0.00", shipMethod: "", lines: [] });
 const ON = { cleffoEnabled: true, cleffoEnv: "sandbox", splitPct: 50, maxAttempts: 3, retryWindowMin: 120 };
 
 function emailIn(bucket, tag) {
@@ -59,6 +62,7 @@ async function setup({ routing = ON, umg } = {}) {
     consentLog,
     publicUrl: "https://crm.test",
     routingConfig: () => routing,
+    cardPricer,
     cleffoDeps: { config: CFG, fetchImpl: cl.fetchImpl },
     forwardFetch: async (url, init) => { forwards.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ ok: true }), text: async () => "{}" }; },
     adapters: {
@@ -163,7 +167,7 @@ test("consent missing / invalid / unconfirmable -> no redirect and no payment li
     t2.server.close();
     const store = createStore({ memoryOnly: true });
     const cl = cleffoMock();
-    const s = await startCrmServer(0, { store, consentLog: brokenLog, publicUrl: "https://crm.test", routingConfig: () => ON, cleffoDeps: { config: CFG, fetchImpl: cl.fetchImpl }, adapters: { umg: {}, tagada: {}, centrobill: {} } });
+    const s = await startCrmServer(0, { store, consentLog: brokenLog, publicUrl: "https://crm.test", routingConfig: () => ON, cardPricer, cleffoDeps: { config: CFG, fetchImpl: cl.fetchImpl }, adapters: { umg: {}, tagada: {}, centrobill: {} } });
     const r = await fetch(`http://127.0.0.1:${s.address().port}/api/checkout/charge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ idempotencyKey: "K-C3", customer: { email: e, first_name: "Q" }, amount: "20.00", items: [], consent: CONSENT }) });
     const b = await r.json();
     s.close();

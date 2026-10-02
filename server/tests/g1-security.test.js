@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import "./helpers/ship48-default-address.js"; // infra 2026-10-01 ship48 test data
 import assert from "node:assert/strict";
 import { createStore } from "../lib/store.js";
 import { buildLeadsDigest, jerusalemDay, publicAttribution, sanitizeAttribution, scoreLead } from "../lib/leads-digest.js";

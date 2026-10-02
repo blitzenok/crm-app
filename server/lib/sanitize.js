@@ -44,3 +44,14 @@ export function cardFingerprint(card = {}) {
     year: card.year ? String(card.year).slice(-2) : "",
   };
 }
+
+/**
+ * Request-derived text for ONE log line: control characters (CR / LF / ESC ...) become a space, length capped, and the
+ * literal alert tag is defused (ops-watch takes a [pay-alert] anywhere in a line, not only at its start).
+ */
+export function logSafe(value, max = 200) {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+    .replace(/\[\s*pay-alert\s*\]/gi, "(pay-alert)")
+    .slice(0, max);
+}

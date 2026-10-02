@@ -48,7 +48,7 @@ const SKU_MAP = { "bpc-157-10mg": { product_id: "RC06-10", name: "RC-06 10mg via
 const paidCard = (over = {}) => ({
   id: "BLR-1042", createdAt: "2026-09-28T10:00:00.000Z", status: "approved", amount: "169.09", currency: "USD",
   customer: { first_name: "Ada", last_name: "Lovelace", email: "ada@lab.example", phone: "5551234567", address: "1 Main St", city: "Austin", state: "TX", zip: "78701", country: "USA" },
-  items: [{ sku: "bpc-157-10mg", name: "BPC-157 10mg", qty: 2, amount: "79.00" }, { sku: "research-solvent-10ml", name: "BAC", qty: 1, amount: "0.00" }],
+  items: [{ sku: "bpc-157-10mg", name: "BPC-157 10mg", qty: 2, amount: "79.00" }], // 2026-09-30: the BAC gift is stopped (no gift line)
   priceCheck: { subtotal: "158.00", shipping: "18.99", shipMethod: "express", volumeDiscount: { pct: 5, discount: "7.90" }, lines: [{ sku: "bpc-157-10mg", qty: 2, unit: "79.00", line: "158.00" }] },
   ...over,
 });
@@ -131,8 +131,8 @@ test("mapping: ISO2 country, SKU map, prices, totals, ship method, custom_data o
   assert.equal(d.billing_address.county, "TX");
   assert.equal(d.billing_address.customer_id, "BLR1042");
   assert.deepEqual(d.products[0], { product_id: "RC06-10", name: "RC-06 10mg vial", qty: 2, unit_price: "79.00", total_price: "158.00" });
-  assert.equal(d.products.length, 1); // gift omitted
-  assert.deepEqual(d.manualPack, [{ sku: "research-solvent-10ml", qty: 1, reason: "free gift line: not on packing slip, pack manually" }]);
+  assert.equal(d.products.length, 1);
+  assert.deepEqual(d.manualPack, []); // 2026-09-30: no gift line any more
   assert.equal(d.shipping_method, "usps_rrd_priority");
   assert.equal(d.total_cost, "169.09");
   assert.equal(d.discount, "7.90");
@@ -370,15 +370,15 @@ function printable(d) {
 
 test("legal: every draft SKU maps to a neutral id/name; no INN or compound name anywhere printable; gift never printed", () => {
   const map = loadSkuMap(DRAFT_MAP_PATH);
-  const skus = Object.keys(map);
-  assert.ok(skus.length >= 30);
+  const skus = Object.keys(map).filter((s) => !s.startsWith("research-solvent")); // 2026-09-30: gift stopped (refused if present)
+  assert.ok(skus.length >= 29);
   // one order holding every catalog SKU, with the storefront's real (compound) item names and the BAC gift
   const order = paidCard({
     items: skus.map((sku) => ({ sku, name: sku.startsWith("research-solvent") ? "Research solvent 10mL" : `${sku.replace(/-/g, " ")} BPC-157 NAD+`, qty: 1, amount: "1.00" })),
     notes: "customer wants BPC-157 and bacteriostatic water",
   });
   const d = mapOrderToRapid(order, { cfg: cfgOf(), skuMap: map });
-  assert.equal(d.products.length, skus.length - 1);
+  assert.equal(d.products.length, skus.length);
   const text = printable(d);
   for (const term of INN) assert.equal(new RegExp(`(^|[^a-z0-9])${term.replace(/[+]/g, "\\+")}($|[^a-z0-9])`, "i").test(text) || text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(term.toLowerCase().replace(/[^a-z0-9]/g, "")) && term.length > 4, false, `INN leaked: ${term}`);
   for (const p of d.products) {
@@ -387,7 +387,7 @@ test("legal: every draft SKU maps to a neutral id/name; no INN or compound name 
     assert.ok(p.product_id.length <= 16);
   }
   assert.equal(findCompoundLeaks(d).length, 0);
-  assert.equal(d.manualPack.length, 1);
+  assert.equal(d.manualPack.length, 0);
   assert.equal(/research-solvent|GIFT/i.test(text), false);
   // stealth products keep the site's code names
   assert.ok(d.products.some((p) => p.name === "G3-R 10mg vial"));
@@ -421,22 +421,17 @@ test("legal: a compound name in the SKU map, extra, message or custom_data is bl
   assert.equal(t.count("orders_new"), 0);
 });
 
-test("legal: BAC gift omitted by default and flagged for manual packing; neutral mode sends a neutral insert line", async () => {
+test("legal: the BAC / research-solvent gift is stopped (2026-09-30): an order carrying one is refused before anything is sent", async () => {
   const db = createStore({ memoryOnly: true });
-  db.upsertOrder(paidCard());
+  db.upsertOrder(paidCard({ items: [...paidCard().items, { sku: "research-solvent-10ml", name: "BAC", qty: 1, amount: "0.00" }] }));
   const t = mockTransport(baseHandlers({ orders_new: () => bool("orders_new") }));
   const r = await pushOrderToRapid(db, "BLR-1042", { client: client(t), cfg: cfgOf({ RAPID_ALLOW_REAL_ORDERS: "true" }), skuMap: SKU_MAP });
-  assert.equal(r.ok, true);
-  assert.deepEqual(db.getOrder("BLR-1042").rapid.manualPack, [{ sku: "research-solvent-10ml", qty: 1, reason: "free gift line: not on packing slip, pack manually" }]);
-  const x = t.calls.find((c) => c.method === "orders_new").xml;
-  assert.equal(/solvent|bac|research-solvent|GIFT/i.test(x.replace(/biolabsresearch/g, "")), false);
-  assert.match(x, /ordersProductsData\[1\]/);
-  // gift detected by name too (no map entry)
-  const byName = mapOrderToRapid(paidCard({ items: [{ sku: "bpc-157-10mg", qty: 1 }, { sku: "free-gift", name: "Research solvent 10mL", qty: 1 }] }), { cfg: cfgOf(), skuMap: SKU_MAP });
-  assert.equal(byName.products.length, 1);
-  const neutral = mapOrderToRapid(paidCard(), { cfg: cfgOf({ RAPID_GIFT_MODE: "neutral" }), skuMap: SKU_MAP });
-  assert.deepEqual(neutral.products[1], { product_id: "INS-01", name: "Accessory insert", qty: 1 });
-  assert.equal(neutral.manualPack.length, 0);
+  assert.equal(r.ok, false);
+  assert.equal(r.error, "gift_line_refused");
+  assert.equal(t.count("orders_new"), 0);
+  // detected by name too (no map entry), and neutral mode no longer sends an insert
+  assert.throws(() => mapOrderToRapid(paidCard({ items: [{ sku: "bpc-157-10mg", qty: 1 }, { sku: "free-gift", name: "Research solvent 10mL", qty: 1 }] }), { cfg: cfgOf(), skuMap: SKU_MAP }), /gift_line_refused/);
+  assert.throws(() => mapOrderToRapid(paidCard({ items: [{ sku: "bpc-157-10mg", qty: 1 }, { sku: "research-solvent-10ml", qty: 1 }] }), { cfg: cfgOf({ RAPID_GIFT_MODE: "neutral" }), skuMap: SKU_MAP }), /gift_line_refused/);
 });
 
 test("legal: street/slang blend name 'Wolverine' is blocked (any case, any printable field)", async () => {

@@ -1,33 +1,17 @@
 import { test } from "node:test";
+import "./helpers/ship48-default-address.js"; // infra 2026-10-01 ship48 test data
 import assert from "node:assert/strict";
 import { createStore } from "../lib/store.js";
 import { priceCryptoCart, priceCardCart, splitCartSku } from "../lib/pricing.js";
 import { buildNotifyPayload } from "../lib/store-forward.js";
 import { startCrmServer } from "../index.js";
+import { couponQuoteFake } from "./helpers/coupon-quote-fake.js";
 
 const KEY = "test-marketing-digest-key";
 const CUSTOMER = { first_name: "Ada", last_name: "N", email: "ada@lab.example" };
 
-// Mimics products-api coupon-quote: catalog unit U per strength, 2+ = round(U*89/99), 3+ = round(U*79/99).
-const CATALOG = { "bpc-157": { "10mg": 88, "20mg": 105 }, kpv: { "10mg": 79 }, semax: { "10mg": 99, "30mg": 119 } };
-function catalogQuote() {
-  const calls = [];
-  const fn = async (url, init) => {
-    const body = JSON.parse(init.body);
-    calls.push(body);
-    let sum = 0; const unknown = [];
-    for (const it of body.items) {
-      const p = CATALOG[it.slug];
-      const u = p ? (p[it.mg] ?? Object.values(p)[0]) : undefined;
-      if (u === undefined) { unknown.push(it.slug); continue; }
-      const unit = it.qty >= 3 ? Math.round(u * 79 / 99) : it.qty >= 2 ? Math.round(u * 89 / 99) : u;
-      sum += unit * it.qty;
-    }
-    return { ok: true, status: 200, json: async () => ({ ok: true, subtotal: sum.toFixed(2), ...(unknown.length ? { unknown_items: unknown } : {}) }) };
-  };
-  fn.calls = calls;
-  return fn;
-}
+// infra 2026-09-29 honest-charge: the fake is the full coupon-quote (coupon + ladder + shipping + total_due), see helpers.
+const catalogQuote = () => couponQuoteFake();
 const quoteStub = () => catalogQuote();
 
 test("sku split", () => {
@@ -38,18 +22,24 @@ test("server amount wins over a tampered browser amount; express shipping inferr
   const f = catalogQuote();
   const tampered = await priceCryptoCart({ amount: "1.00", items: [{ sku: "bpc-157-10mg", name: "BPC-157 10mg", qty: 2, amount: "1.00" }] }, { fetchImpl: f });
   assert.equal(tampered.ok, true);
-  assert.equal(tampered.amount, "158.00");
+  assert.equal(tampered.amount, "150.10"); // 158.00 merch, 5% ladder from coupon-quote
   assert.equal(tampered.mismatch, true);
   assert.equal(tampered.clientAmount, "1.00");
   assert.equal(tampered.lines[0].rule, "repriced");
   assert.equal(f.calls[0].items[0].slug, "bpc-157");
   assert.equal(f.calls[0].items[0].mg, "10mg");
 
-  const honestExpress = await priceCryptoCart({ amount: "194.99", items: [{ sku: "bpc-157-10mg", name: "BPC-157", qty: 2, amount: "176.00" }] }, { fetchImpl: catalogQuote() });
-  assert.equal(honestExpress.amount, "194.99");
-  assert.equal(honestExpress.lines[0].rule, "single_bottle");
+  // infra 2026-09-29 honest-charge: an honest pack-tier line with the discounted total and the chosen shipping method
+  const honestExpress = await priceCryptoCart({ amount: "169.09", shipMethod: "express", items: [{ sku: "bpc-157-10mg", name: "BPC-157", qty: 2, amount: "158.00" }] }, { fetchImpl: catalogQuote() });
+  assert.equal(honestExpress.amount, "169.09");
+  assert.equal(honestExpress.lines[0].rule, "pack_tier");
   assert.equal(honestExpress.shipping, "18.99");
   assert.equal(honestExpress.mismatch, false);
+  // the old 1-bottle price at qty 2 is no longer honoured: repriced to the catalog tier and flagged
+  const oldSingle = await priceCryptoCart({ amount: "194.99", shipMethod: "express", items: [{ sku: "bpc-157-10mg", name: "BPC-157", qty: 2, amount: "176.00" }] }, { fetchImpl: catalogQuote() });
+  assert.equal(oldSingle.amount, "169.09");
+  assert.equal(oldSingle.lines[0].rule, "repriced");
+  assert.equal(oldSingle.mismatch, true);
 });
 
 test("unknown items and a dead catalog fail closed", async () => {
@@ -108,25 +98,25 @@ test("crypto route stores + returns the server amount, flags mismatch; staff del
   }
 });
 
-test("card pricing: honest carts charge exactly the storefront total (packs, single-bottle, gift, both shipping)", async () => {
+test("card pricing: honest carts charge exactly the storefront total (packs, gift, both shipping, ladder)", async () => {
   const cases = [
-    // [items (unit prices as the storefront sends), storefront total]
+    // [items (unit prices as the storefront sends), storefront total incl. the ladder discount, shipMethod]
     [[{ sku: "bpc-157-10mg", qty: 1, amount: "88.00" }], "88.00"],
-    [[{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }], "158.00"],
-    [[{ sku: "bpc-157-10mg", qty: 3, amount: "70.00" }], "210.00"],
-    [[{ sku: "bpc-157-10mg", qty: 2, amount: "88.00" }], "176.00"],
-    [[{ sku: "semax-30mg", qty: 1, amount: "119.00" }, { sku: "kpv-10mg", qty: 3, amount: "63.00" }, { sku: "research-solvent-10ml", qty: 1, amount: "0.00" }], "308.00"],
-    [[{ sku: "kpv-10mg", qty: 1, amount: "79.00" }], "97.99"],
+    [[{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }], "150.10"],
+    [[{ sku: "bpc-157-10mg", qty: 3, amount: "70.00" }], "199.50"],
+    [[{ sku: "semax-30mg", qty: 1, amount: "119.00" }, { sku: "kpv-10mg", qty: 3, amount: "63.00" }, { sku: "research-solvent-10ml", qty: 1, amount: "0.00" }], "277.20"],
+    [[{ sku: "kpv-10mg", qty: 1, amount: "79.00" }], "97.99"], // express inferred from total - items = 18.99
+    [[{ sku: "kpv-10mg", qty: 1, amount: "79.00" }], "97.99", "express"],
   ];
-  for (const [items, total] of cases) {
-    const r = await priceCardCart({ amount: total, items }, { fetchImpl: catalogQuote() });
+  for (const [items, total, shipMethod] of cases) {
+    const r = await priceCardCart({ amount: total, items, ...(shipMethod ? { shipMethod } : {}) }, { fetchImpl: catalogQuote() });
     assert.equal(r.ok, true, JSON.stringify(items));
     assert.equal(r.amount, total, JSON.stringify(items));
     assert.equal(r.mismatch, false);
   }
   const cheat = await priceCardCart({ amount: "18.99", items: [{ sku: "kpv-10mg", qty: 3, amount: "0.00" }] }, { fetchImpl: catalogQuote() });
-  // item prices zeroed: lines repriced to the catalog; the leftover 18.99 reads as express shipping and is charged
-  assert.equal(cheat.amount, "207.99");
+  // item prices zeroed: lines repriced to the catalog (3 x 63 = 189, 5% off); the leftover 18.99 reads as express shipping
+  assert.equal(cheat.amount, "198.54");
   assert.equal(cheat.shipping, "18.99");
   assert.equal(cheat.mismatch, true);
 });
@@ -151,23 +141,24 @@ test("card charge route: UMG gets the server amount, response returns it, pricin
   const card = { name: "Ada", number: "4242424242424242", month: "12", year: "28", cvv: "123" };
   const post = (b) => fetch(`${base}/api/checkout/charge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer: CUSTOMER, card, ...b }) });
   try {
-    const honest = await post({ idempotencyKey: "C-1", amount: "176.99", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }] });
+    const honest = await post({ idempotencyKey: "C-1", amount: "150.10", shipMethod: "ground", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }] });
     const hb = await honest.json();
     assert.equal(honest.status, 200);
-    assert.equal(hb.chargedAmount, "176.99");
+    assert.equal(hb.chargedAmount, "150.10");
     assert.equal(hb.priceAdjusted, false);
-    assert.deepEqual(charged, ["176.99"]);
+    assert.deepEqual(charged, ["150.10"]);
 
-    const cheat = await post({ idempotencyKey: "C-2", amount: "1.00", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "0.50" }] });
+    // another buyer: the same buyer with the same cart within 15 min is refused as a repeat (honest-charge.test.js)
+    const cheat = await post({ idempotencyKey: "C-2", customer: { ...CUSTOMER, email: "cheat@lab.example" }, amount: "1.00", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "0.50" }] });
     const cb = await cheat.json();
-    assert.equal(cb.chargedAmount, "158.00");
+    assert.equal(cb.chargedAmount, "150.10");
     assert.equal(cb.priceAdjusted, true);
-    assert.equal(charged[1], "158.00");
+    assert.equal(charged[1], "150.10");
     const saved = store.getOrder(cb.order.id);
     assert.equal(saved.clientAmount, "1.00");
-    assert.equal(saved.priceCheck.serverAmount, "158.00");
+    assert.equal(saved.priceCheck.serverAmount, "150.10");
     const fwd = buildNotifyPayload(saved);
-    assert.equal(fwd.orderData.total, "158.00");
+    assert.equal(fwd.orderData.total, "150.10");
     assert.equal(fwd.orderData.subtotal, "158.00");
     assert.equal(fwd.orderData.items[0].price, 79);
 
@@ -182,8 +173,8 @@ test("card charge route: UMG gets the server amount, response returns it, pricin
     assert.equal(store.getOrderByIdempotency("C-4"), null);
 
     // replay of an approved order: no re-pricing, no second charge
-    const replay = await post({ idempotencyKey: "C-1", amount: "176.99", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }] });
-    assert.equal((await replay.json()).chargedAmount, "176.99");
+    const replay = await post({ idempotencyKey: "C-1", amount: "150.10", items: [{ sku: "bpc-157-10mg", qty: 2, amount: "79.00" }] });
+    assert.equal((await replay.json()).chargedAmount, "150.10");
     assert.equal(charged.length, 2);
   } finally {
     await new Promise((r) => server.close(r));

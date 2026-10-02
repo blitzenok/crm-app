@@ -33,6 +33,11 @@ registerEmailType(CANCEL_EMAIL_TYPE, {
  */
 export async function sendCancelEmail(order, deps = {}) {
   const at = new Date().toISOString();
+  // 2026-09-30 launch: CRYPTO_CANCEL_EMAIL_ENABLED=false (live) -> an expired / unpaid crypto order never emails the customer.
+  if ((deps.env || process.env).CRYPTO_CANCEL_EMAIL_ENABLED === "false") {
+    process.stdout.write(`[crypto] cancel email for ${order.id}: skipped (CRYPTO_CANCEL_EMAIL_ENABLED=false)\n`);
+    return { status: "skipped_no_customer_email_for_unpaid", at };
+  }
   const emailer = deps.orderEmailer;
   if (!emailer || typeof emailer.send !== "function") {
     process.stdout.write(`[crypto] cancel email for ${order.id}: skipped_disabled (no order emailer)\n`);
@@ -102,6 +107,7 @@ export async function sendGa4Purchase(order, { env = process.env, fetchImpl = gl
   const at = new Date().toISOString();
   if (!cfg.enabled) return { status: "skipped_disabled", at };
   if (order.test === true) return { status: "skipped_test_order", at };
+  if (order.cryptoPayment?.ga4?.status === "sent") return { status: "skipped_already_sent", at: order.cryptoPayment.ga4.at || at }; // once per order
   if (!cfg.apiSecret || !cfg.measurementId) return { status: "skipped_missing_api_secret", at };
   const url = `${cfg.endpoint}?measurement_id=${encodeURIComponent(cfg.measurementId)}&api_secret=${encodeURIComponent(cfg.apiSecret)}`;
   try {

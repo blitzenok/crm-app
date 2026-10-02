@@ -10,6 +10,7 @@ import nodemailer from "nodemailer";
 import { TEMPLATES, renderEmail, loadNameMap, SUPPORT_EMAIL } from "./email-templates.js";
 import { isPaidOrder } from "./rapid-orders.js";
 import { isDryRunOrder } from "./store-forward.js";
+import { humanUseBlocks } from "./human-use.js"; // 2026-09-30: no customer email for a COMPLIANCE_HOLD order
 
 export const FINAL_STATUSES = new Set(["sent", "skipped_disabled", "blocked_guard", "failed", "failed_unknown", "no_recipient"]);
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -160,6 +161,7 @@ export function createOrderEmailer(opts = {}) {
     const order = orderOf(orderOrId);
     if (!order) return { ok: false, status: "not_found" };
     if (!registry[type]) return { ok: false, status: "unknown_type" };
+    if (humanUseBlocks(order)) return { ok: false, status: "skipped_compliance_hold" }; // not recorded: nothing is sent while held
     const prev = order.emails?.[type];
     if (prev && !o.force && (FINAL_STATUSES.has(prev.status) || prev.status === "sending" || prev.status === "pending")) {
       return { ok: true, status: "duplicate", previous: prev.status };
@@ -221,6 +223,7 @@ export function createOrderEmailer(opts = {}) {
     for (const o of orders) {
       if (!qa && !afterSince(o)) continue; // orders from before go-live never get a late email
       if (isDryRunOrder(o) && !qa) continue;
+      if (humanUseBlocks(o)) continue; // COMPLIANCE_HOLD: never emails the customer
       out.checked += 1;
       // a "sending"/"pending" state left by a restart is not retried automatically (it may have gone out): flag it
       for (const [type, st] of Object.entries(o.emails || {})) {

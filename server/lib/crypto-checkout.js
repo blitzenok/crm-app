@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { humanUseBlocks } from "./human-use.js"; // 2026-09-30 COMPLIANCE_HOLD
 import { formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import { stripSecrets } from "./sanitize.js";
@@ -174,7 +175,7 @@ export function validateCryptoCheckout(input) {
       notes: String(input.notes || "").slice(0, 2000),
       session_id: String(input.session_id || input.sessionId || "").trim(),
       test: input.test === true,
-      gaClientId: /^\d{1,12}\.\d{1,12}$/.test(String(input.gaClientId || "")) ? String(input.gaClientId) : null,
+      gaClientId: /^\d{1,12}\.\d{1,12}$/.test(String(input.gaClientId || input.client_id || "")) ? String(input.gaClientId || input.client_id) : null,
     },
   };
 }
@@ -186,6 +187,7 @@ export function isCryptoPaid(order) {
 
 export function isShippable(order) {
   if (!order || order.fulfillment?.status === "shipped") return false;
+  if (humanUseBlocks(order)) return false; // 2026-09-30 COMPLIANCE_HOLD
   if (order.paymentMethod === "crypto" || order.status === AWAITING_CRYPTO || order.status === CRYPTO_PAID || order.status === CRYPTO_REVIEW || order.status === CRYPTO_CANCELLED) {
     return isCryptoPaid(order) && order.fulfillment?.status !== "shipped";
   }
@@ -314,7 +316,7 @@ export function createCryptoCheckout(input, deps) {
   }
   const nowMs = deps.now ? deps.now().getTime() : Date.now();
   // Unique exact amount among open orders on this network, so a deposit can be matched to exactly one order.
-  const alloc = allocatePayAmount(store.listOrders(), { baseAmount: amount, network: parsed.value.network, cfg, nowMs, rand: deps.rand });
+  const alloc = allocatePayAmount(store.listOrders(), { baseAmount: amount, network: cfg.uniqueAcrossNetworks ? null : parsed.value.network, cfg, nowMs, rand: deps.rand });
   if (!alloc) return { ok: false, error: "pay_amount_unavailable", status: 503 };
 
   const createdAt = new Date(nowMs).toISOString();

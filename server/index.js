@@ -5,9 +5,14 @@ import { createStore } from "./lib/store.js";
 import { secretHealth } from "./lib/secrets.js";
 import { chargeCart, ADAPTERS } from "./lib/cascade.js";
 import { handleProcessorWebhook } from "./lib/webhooks.js";
-import { pollPending, startPoller } from "./lib/poller.js";
+import { pollPending, startPoller, recoverInFlight } from "./lib/poller.js";
 import { forwardOrder, startForwardSweeper } from "./lib/store-forward.js";
 import { priceCryptoCart, priceCardCart } from "./lib/pricing.js";
+import { findUnavailableItems, itemUnavailableBody } from "./lib/catalog-guard.js"; // infra 2026-09-30 P0 3.01
+import { checkShipRegion, shipRegionErrorBody } from "./lib/ship-region.js"; // infra 2026-10-01 ship48
+import { launchFields, launchStatus, orderTokenFrom, tokenOk, resolveAdmin } from "./lib/crypto-launch.js"; // 2026-09-30 crypto awaiting-payment launch
+import { createHumanUse, setActiveHumanUse, humanUseBlocks } from "./lib/human-use.js"; // 2026-09-30 human-use flag + COMPLIANCE_HOLD
+import { stripGiftLines } from "./lib/pricing.js"; // 2026-09-30 research-solvent gift stopped
 import { createMockUmg } from "./lib/processors/umg.js";
 import * as tagada from "./lib/processors/tagada.js";
 import * as centrobill from "./lib/processors/centrobill.js";
@@ -37,11 +42,13 @@ import {
 } from "./lib/crypto-checkout.js";
 import { createCryptoVerifier, staffCryptoView } from "./lib/crypto-verify.js";
 import { confirmSecret, verifyConfirmToken, isCryptoVerified } from "./lib/crypto-payment.js";
+import { isLocalRequest, internalKeyCheck, normalizeEmail, pendingCryptoForEmail } from "./lib/internal-crypto.js"; // 2026-10-01 internal pending-crypto lookup
 import { ga4Config } from "./lib/crypto-notify.js";
 import { recordCryptoPaymentConfirmed } from "./lib/consent.js";
 import { createInventoryStore, INVENTORY_PATH } from "./lib/inventory.js";
 import { createConsentLog, recordCheckoutConsent } from "./lib/consent.js";
 import { createEmailLog, createOrderEmailer, emailConfig, emailTypes, maskEmail, canSend, sampleOrder } from "./lib/order-emails.js";
+import { createCioOrderNotifier } from "./lib/cio-orders.js"; // 2026-10-01 order emails via Customer.io
 import { createRapidClient, rapidConfig, RapidError } from "./lib/rapid.js";
 import { createRapidScheduler, isPaidOrder, loadSkuMap, pushOrderToRapid, pushSyntheticTestOrder } from "./lib/rapid-orders.js";
 import { seedInventory } from "./lib/inventory-seed.js";
@@ -53,12 +60,15 @@ import {
   nextStepFor,
   recordUmgRouting,
   routeCharge,
+  acquireKeyLock,
   startCleffoAttempt,
   startCleffoSweeper,
   storefrontReturnUrl,
 } from "./lib/cleffo-checkout.js";
-import { routingConfig } from "./lib/routing.js";
-import { loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
+import { routingConfig, capDecision } from "./lib/routing.js";
+import { publicChargeBody } from "./lib/no-descriptor.js"; // 2026-10-01 no descriptor in the charge answer
+import { logSafe } from "./lib/sanitize.js";
+import { getPaymentStatus, loadCleffoConfig, verifyReturnToken, verifySignature } from "./lib/cleffo.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -80,6 +90,11 @@ function sharedInventoryStore() {
     seedInventory(defaultInventoryStore);
   }
   return defaultInventoryStore;
+}
+
+function isUnknownOutcome(order) {
+  const last = [...(order.attempts || [])].reverse()[0];
+  return order.status === "pending" && last?.reason === "unknown_outcome" && !last.processorTxnId;
 }
 
 function liveAdapters() {
@@ -145,6 +160,16 @@ function readBodySilent(req) {
 
 export function createHandler(deps = {}) {
   const db = deps.store || store;
+  // 2026-09-30 human-use rule: every order / quote write is screened; flagged customers' open orders go on COMPLIANCE_HOLD.
+  const humanUse = deps.humanUse || (process.env.HUMAN_USE_ENABLED === "true" ? createHumanUse({ db }) : null);
+  if (humanUse) { humanUse.install(); setActiveHumanUse(humanUse); }
+  // 2026-09-30 (Yehuda): research-solvent / BAC gift lines are silently stripped from every incoming cart (never charged/persisted).
+  function stripGift(body) {
+    if (!body || !Array.isArray(body.items)) return 0;
+    const r = stripGiftLines(body.items);
+    if (r.stripped) { body.items = r.items; process.stdout.write(`[gift-strip] removed ${r.stripped} research-solvent/gift line(s)\n`); }
+    return r.stripped;
+  }
   function resolveInventory() {
     if (deps.inventory) return deps.inventory;
     return sharedInventoryStore();
@@ -162,6 +187,34 @@ export function createHandler(deps = {}) {
   const cryptoPricer = deps.cryptoPricer || (process.env.CRYPTO_SERVER_PRICING === "true" ? (input) => priceCryptoCart(input) : null);
   // Card amount from the catalog too (CARD_SERVER_PRICING=true on the host). Injected in tests.
   const cardPricer = deps.cardPricer || (process.env.CARD_SERVER_PRICING === "true" ? (input) => priceCardCart(input) : null);
+  // infra 2026-09-30 P0 3.01: hidden catalog items (is_active:false / hidden_strengths, same rule as products-api) are refused
+  // before routing, pricing, order creation or any processor call. A replay of an approved / pending / in-flight order
+  // under its own key is still answered from the stored order (nothing new is created or charged there).
+  function unavailableLines(body) {
+    stripGift(body); // charge, route, crypto and quote all pass here first
+    const items = Array.isArray(body?.items) ? body.items : [];
+    if (!items.length) return null;
+    const key = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+    const existing = key ? db.getOrderByIdempotency(key) : null;
+    const st = String(existing?.status || "").toLowerCase();
+    if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return null;
+    const r = findUnavailableItems(items);
+    if (r.ok) return null;
+    process.stdout.write(`[catalog-guard] refused ${r.items.map((i) => `${i.slug}${i.mg ? "-" + i.mg : ""}:${i.reason}`).join(",")}\n`);
+    return r.items;
+  }
+  // infra 2026-10-01 ship48 (Yehuda): contiguous US (lower 48) + DC only. Checked right after the hidden-item guard, before
+  // routing, pricing, record creation or any processor call. Same replay exemption as the hidden-item guard.
+  function shipRegionRefusal(body) {
+    const key = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+    const existing = key ? db.getOrderByIdempotency(key) : null;
+    const st = String(existing?.status || "").toLowerCase();
+    if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return null;
+    const r = checkShipRegion(body?.customer && typeof body.customer === "object" ? body.customer : {});
+    if (r.ok) return null;
+    process.stdout.write(`[ship48] refused reason=${r.reason}\n`);
+    return shipRegionErrorBody();
+  }
   async function priceCardBody(body) {
     if (!cardPricer) return { ok: true, pricing: null };
     const key = String(body?.idempotencyKey || body?.extOrderId || "").trim();
@@ -170,7 +223,7 @@ export function createHandler(deps = {}) {
     // Replays of an approved / pending / in-flight order are answered from the stored order; no new price, no charge.
     if (existing && (st === "approved" || st === "pending" || existing.inFlight)) return { ok: true, pricing: null };
     const pricing = await cardPricer(body || {});
-    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems };
+    if (!pricing.ok) return { ok: false, status: pricing.status || 503, error: pricing.error, unknownItems: pricing.unknownItems, ...(pricing.error === "shipping_mismatch" ? { message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod } : {}) };
     return { ok: true, pricing };
   }
   // Consent proof log. A test that injects its own store gets no log unless it injects one too (never the live file).
@@ -208,6 +261,9 @@ export function createHandler(deps = {}) {
   const cryptoEnv = deps.cryptoEnv || process.env;
   const cryptoSecret = () => deps.cryptoConfirmSecret || confirmSecret(cryptoEnv);
   const cryptoConfirmLimiter = deps.cryptoConfirmLimiter || createRateLimiter({ max: 10, windowMs: 10 * 60 * 1000 });
+  const cryptoTxidLimiter = deps.cryptoTxidLimiter || createRateLimiter({ max: 10, windowMs: 10 * 60 * 1000 });
+  const cryptoStatusLimiter = deps.cryptoStatusLimiter || createRateLimiter({ max: 120, windowMs: 10 * 60 * 1000 });
+  const internalLimiter = deps.internalLimiter || createRateLimiter({ max: 60, windowMs: 60 * 1000 }); // 2026-10-01 per key
   const cryptoVerifier = deps.cryptoVerifier || createCryptoVerifier({
     store: db, env: cryptoEnv, chains: deps.cryptoChains, screener: deps.cryptoScreener, fetchImpl: deps.cryptoFetch || globalThis.fetch,
     skuMap: () => rapidSkuMap(), now: deps.now, onPaid: (id) => onCryptoPaid(id),
@@ -216,6 +272,7 @@ export function createHandler(deps = {}) {
   // Cleffo: config / fetch injectable for tests; the routing config is read per request (env flags).
   const cleffoDeps = deps.cleffoDeps || {};
   const routingCfg = () => (deps.routingConfig ? deps.routingConfig() : routingConfig());
+  const callbackUnverified = new Set(); // one CLEFFO_CALLBACK_UNVERIFIED alert per order + reference
   const cleffoSigKey = () => (cleffoDeps.config || loadCleffoConfig()).signatureKey;
   // Transactional customer emails (confirmation / shipping / follow-up). A test with its own store gets no log file
   // unless it injects one. kickEmails never throws and never delays the response.
@@ -225,7 +282,12 @@ export function createHandler(deps = {}) {
     ...(deps.emailTransportFactory ? { transportFactory: deps.emailTransportFactory } : {}),
     ...(deps.emailSleep ? { sleep: deps.emailSleep } : {}),
   });
-  const kickEmails = (orderId) => { try { orderEmailer.kick(orderId); } catch { /* never block the order flow */ } };
+  // 2026-10-01: Customer.io order emails (flags CIO_ORDER_EMAILS_INTERNAL / _CUSTOMER). Not created for tests with their own store.
+  const cioOrders = deps.cioOrders !== undefined ? deps.cioOrders : (deps.store ? null : createCioOrderNotifier({ db }));
+  const kickEmails = (orderId) => {
+    try { orderEmailer.kick(orderId); } catch { /* never block the order flow */ }
+    try { if (cioOrders) cioOrders.kick(orderId); } catch { /* never block the order flow */ }
+  };
   function onCleffoPaid(order) {
     markConvertedBySession(db, order.session_id, { via: "cleffo", id: order.id });
     forwardInBackground(order.id, "cleffo");
@@ -416,6 +478,19 @@ export function createHandler(deps = {}) {
       if (!op.ok) return json(401, { error: "unauthorized" });
       const id = decodeURIComponent(cryptoAction[1]);
       const action = cryptoAction[2];
+      if (action === "mark-paid" && cryptoVerifier.config.adminMarkPaidRequired) {
+        // 2026-09-30 launch: ADMIN "Mark crypto paid" {txHash, network, override?, note?}. Needs a green 4-point on-chain check
+        // (recipient, token contract, unique amount, confirmations) or an explicit override with a note (logged + alert).
+        const adm = await resolveAdmin(req, { checkCrmSession: deps.checkCrmSession, fetchImpl: deps.fetchImpl });
+        if (!adm.ok) return json(adm.error === "unauthorized" ? 401 : 403, { ok: false, error: adm.error });
+        const body = await readBody(req);
+        const target = db.getOrder(id) || db.getOrderByRef(id);
+        if (!target || target.paymentMethod !== "crypto" || !target.cryptoPayment) return json(404, { ok: false, error: "not_found" });
+        const r = await cryptoVerifier.staffAction(target.id, { action: "admin_mark_paid", txHash: body.txHash ?? body.tx_hash, network: body.network, override: body.override === true, note: body.note }, adm.actor, { admin: true });
+        const order = db.getOrder(target.id);
+        if (r.ok && isCryptoVerified(order)) onCryptoPaid(order.id);
+        return json(r.ok ? 200 : r.status || 400, { ok: r.ok, error: r.error, reused: Boolean(r.reused), paymentConfirmed: isCryptoVerified(order), orderStatus: order.status, fulfillment: order.fulfillment?.status || null, check: r.check || null, crypto: staffCryptoView(order, cryptoEnv) });
+      }
       if (action === "mark-paid") {
         // 2026-09-28: staff give the tx hash they found; the sidecar verifies it on-chain. No blind flip to paid.
         const body = await readBody(req);
@@ -483,8 +558,25 @@ export function createHandler(deps = {}) {
         return json(503, paymentsDisabledBody());
       }
       const body = await readBody(req);
+      { const bad = unavailableLines(body); if (bad) return json(409, itemUnavailableBody(bad)); }
+      { const shipBad = shipRegionRefusal(body); if (shipBad) return json(400, shipBad); }   // infra 2026-10-01 ship48
+      // infra 2026-09-29 cleffo: USD only, checked before anything is created or charged (either processor).
+      if (body?.currency != null && String(body.currency).trim() !== "" && String(body.currency).trim().toUpperCase() !== "USD") {
+        return json(400, { ok: false, error: "currency_unsupported", charged: false, message: "Only USD payments are supported. You were not charged." });
+      }
+      const rc0 = routingCfg();
+      const cleffoOnly = rc0.cleffoEnabled === true && rc0.cleffoOnly === true;
+      // Cleffo on: an email is always required (a bot without one must not slip past Cleffo to UMG).
+      if (rc0.cleffoEnabled === true && !String(body?.customer?.email || "").trim()) {
+        return json(400, { ok: false, error: "email_required", charged: false, message: "Please enter your email address to continue to secure payment. You were not charged." });
+      }
+      let route, config, cardKey, priced, umgRoute;
+      // Same order key: one request at a time through "route + price + create the link", so a double click cannot make two attempts.
+      const releaseKey = await acquireKeyLock(String(body?.idempotencyKey || body?.extOrderId || "").trim());
+      try {
       // Processor routing (UMG only unless CLEFFO_ENABLED=true): sticky email bucket, soft decline -> other once.
-      const { route, config, cardKey, reusable } = await routeCharge(db, body, { config: routingCfg(), cleffoDeps, onPaid: onCleffoPaid });
+      let reusable, history;
+      ({ route, config, cardKey, reusable, history } = await routeCharge(db, body, { config: routingCfg(), cleffoDeps, onPaid: onCleffoPaid }));
       if (route.blocked) {
         process.stdout.write(`[routing] refused attempt=${route.attempt} reason=${route.reason}\n`);
         const message = route.reason === "hard_decline_same_card"
@@ -492,24 +584,73 @@ export function createHandler(deps = {}) {
           : "We could not complete payment after several attempts. You were not charged on this attempt. Please contact support, pay with crypto, or request a quote.";
         return json(429, { ok: false, error: route.reason, charged: false, attempt: route.attempt, message });
       }
-      const priced = await priceCardBody(body);
+      priced = await priceCardBody(body);
       if (!priced.ok) {
-        const message = priced.error === "unknown_item"
+        const message = priced.error === "shipping_mismatch" && priced.message
+          ? priced.message
+          : priced.error === "unknown_item"
           ? "One of the items in your cart is no longer available. Please refresh the cart and try again."
           : "We could not confirm the price right now. Your card was not charged. Please try again in a minute.";
-        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false });
+        return json(priced.status, { ok: false, error: priced.error, unknownItems: priced.unknownItems, message, charged: false, ...(priced.error === "shipping_mismatch" ? { shipping: priced.shipping, shipMethod: priced.shipMethod } : {}) });
       }
-      let umgRoute = route;
+      // infra 2026-09-29 honest-charge: same buyer, same server amount, same lines within 15 min under a NEW key = the browser
+      // lost our answer and retried. Do not charge again; point at the existing order. Same key is handled by chargeCart (reused).
+      const dupKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
+      if (dupKey && !db.getOrderByIdempotency(dupKey)) {
+        const dup = db.findRecentCardDuplicate({
+          email: body?.customer?.email,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          items: body?.items,
+          excludeKey: dupKey,
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        });
+        if (dup) {
+          process.stdout.write(`[charge] duplicate_recent_order ${dup.id} for a new key: not charged again\n`);
+          return json(409, {
+            ok: false,
+            error: "duplicate_recent_order",
+            charged: false,
+            existingOrder: dup.id,
+            message: `This order was already placed a few minutes ago (order ${dup.id}). You were not charged again. If you want to buy again, please wait 15 minutes or contact support.`,
+          });
+        }
+      }
+      // Daily Cleffo cap (CLEFFO_DAILY_CAP_USD): today's PAID Cleffo total + open links younger than CLEFFO_CAP_PENDING_MIN (default 60) + this order's
+      // server total over the cap -> this new Cleffo payment goes to UMG instead (reason "cap"). docs/CLEFFO_DAILY_CAP.md.
       if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config,
+          amount: priced.pricing ? priced.pricing.amount : body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || body?.extOrderId || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
+      umgRoute = route;
+      // Capped to UMG but the page showed the Cleffo step (no card fields): ask for the card, nothing charged.
+      if (route.reason === "cap" && !hasCard(body)) {
+        return json(400, { ok: false, error: "card_required", processor: "umg", reason: "cap", charged: false, message: "Please enter your card details to pay. You were not charged." });
+      }
+      // Cleffo could not make a link and the storefront (Cleffo step, no card fields) sent no card: nothing to charge on UMG yet.
+      if (route.reason === "retry_switch_link_error" && !hasCard(body)) {
+        return json(400, { ok: false, error: "card_required", processor: "umg", charged: false, message: "Please enter your card details to pay. You were not charged." });
+      }
+      if (route.processor === "cleffo") {
+        if (cleffoOnly && body?.card) process.stdout.write("[routing] card_ignored\n"); // stale cached page still sends the card; it goes nowhere
         const cl = await startCleffoAttempt(db, {
           req, body, pricing: priced.pricing, route, config, consentLog, reusable,
           recordConsent: recordConsentFor(req, body),
-          publicUrl: PUBLIC_URL || deps.publicUrl || "",
+          publicUrl: PUBLIC_URL || deps.publicUrl || "", origin: req.headers.origin,
         }, { cleffoDeps });
         // Cleffo could not even create a link (no charge happened): UMG takes this attempt if the card is on hand.
-        if (!(cl.linkError && hasCard(body))) return json(cl.status, cl.body);
+        // Cleffo-only: never UMG, whatever the body carries.
+        // The spare is only for a plain "no link" answer, and only when no Cleffo link of this buyer is open or was left with an
+        // unknown outcome / a hard result (that one may still be paid: a UMG charge on top would be a double payment).
+        const spareBlocked = (history || []).some((h) => h.processor === "cleffo" && (!h.outcome || h.retryClass === "hard"));
+        if (!(cl.linkError && !cl.linkUnknown && hasCard(body) && !cleffoOnly && !spareBlocked)) return json(cl.status, publicChargeBody(cl.body));
         umgRoute = { ...route, processor: "umg", reason: "cleffo_unavailable_fallback" };
       }
+      } finally { releaseKey(); }
       const umgSettings = config.cleffoEnabled
         ? (() => { const st = db.getSettings(); return { ...st, processors: (st.processors || []).filter((p) => p.id === "umg") }; })()
         : undefined;
@@ -521,6 +662,15 @@ export function createHandler(deps = {}) {
       if (result.order) {
         result.chargedAmount = result.order.amount;
         result.priceAdjusted = Boolean(result.order.priceMismatch);
+      }
+      // infra 2026-09-29 honest-charge: UMG never answered and find-by-ext-id could not say whether the card was charged.
+      // Same shape as "pending" plus charged:"unknown", so the page keeps its retry key and does not offer a new attempt.
+      // A replay of an unfinished order (pending / 3DS / in flight) is pending too, never "authorized"; in flight = we do not know yet.
+      if (result.reused && result.order && String(result.order.status).toLowerCase() !== "approved") result.pending = true;
+      if (result.order && (isUnknownOutcome(result.order) || (result.reused && result.order.inFlight))) {
+        result.pending = true;
+        result.charged = "unknown";
+        result.message = "We are confirming your payment with the bank. Please do not pay again. If you do not receive an order confirmation within an hour, contact support.";
       }
       result.processor = "umg";
       result.attempt = result.order?.attemptNumber ?? umgRoute.attempt;
@@ -535,7 +685,7 @@ export function createHandler(deps = {}) {
           id: result.order?.id || null,
         });
       }
-      const out = json(result.ok ? 200 : 402, result);
+      const out = json(result.ok ? 200 : 402, publicChargeBody(result));
       // After the answer: a slow or broken order service must never cost the customer the charge response.
       if (result.ok && !result.reused && String(result.order?.status || "").toLowerCase() === "approved") {
         forwardInBackground(result.order.id, "charge");
@@ -545,16 +695,28 @@ export function createHandler(deps = {}) {
       return out;
     }
 
-    // Which processor the next card attempt goes to (no side effects), so checkout can show card fields (UMG) or the
+    // Which processor the next card attempt goes to (creates no order and no charge; it does ask Cleffo about this buyer's open
+    // links, may mark a stale one abandoned, and remembers a capped buyer for the cap), so checkout can show card fields (UMG) or the
     // "continue to secure payment page" step (Cleffo) and the matching statement line.
     if (path === "/api/checkout/route" && req.method === "POST") {
       const body = await readBody(req);
+      { const bad = unavailableLines(body); if (bad) return json(409, itemUnavailableBody(bad)); }
       const config = routingCfg();
       if (!config.cleffoEnabled) {
         return json(200, { ok: true, processor: "umg", cleffoEnabled: false, attempt: 1, ...pickDesc(descriptorFor("umg")) });
       }
-      const { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
+      let { route } = await routeCharge(db, body, { config, cleffoDeps, onPaid: onCleffoPaid });
       if (route.blocked) return json(200, { ok: true, processor: null, blocked: true, reason: route.reason, cleffoEnabled: true, attempt: route.attempt });
+      // Daily Cleffo cap: /route has no cart total (amount only if the page sends one), so it answers umg once the day's
+      // Cleffo total is used up or this buyer was already capped (then /charge agrees).
+      if (route.processor === "cleffo") {
+        route = capDecision(route, {
+          store: db, config, amount: body?.amount,
+          email: body?.customer?.email, sessionId: body?.session_id || body?.sessionId,
+          idempotencyKey: String(body?.idempotencyKey || "").trim(),
+          now: deps.now ? deps.now().getTime() : Date.now(),
+        }).route;
+      }
       return json(200, { ok: true, processor: route.processor, cleffoEnabled: true, attempt: route.attempt, reason: route.reason, ...pickDesc(descriptorFor(route.processor)) });
     }
 
@@ -564,20 +726,22 @@ export function createHandler(deps = {}) {
       const a = url.searchParams.get("a") || "";
       const t = url.searchParams.get("t") || "";
       if (!verifyReturnToken(o, a, t, cleffoSigKey())) {
-        process.stdout.write(`[cleffo] return with bad token for ${o.slice(0, 40)}\n`);
+        process.stdout.write(`[cleffo] return with bad token for ${logSafe(o, 40)}\n`);
         res.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
         return res.end("Invalid payment return link.");
       }
       const r = await confirmCleffoAttempt(db, o, a, { cleffoDeps, onPaid: onCleffoPaid, via: "return" });
       const status = r.ok ? r.status : "pending";
-      res.writeHead(302, { Location: storefrontReturnUrl(r.order || { id: o }, a, t, status), "Cache-Control": "no-store" });
+      res.writeHead(302, { Location: storefrontReturnUrl(r.order || { id: o }, a, t, status, process.env, r.attempt?.returnPage), "Cache-Control": "no-store" });
       return res.end();
     }
 
     if (path === "/api/checkout/cleffo/status" && req.method === "GET") {
       const o = url.searchParams.get("o") || "";
       const a = url.searchParams.get("a") || "";
-      const t = url.searchParams.get("t") || "";
+      // 2026-10-01: token preferably in the X-Order-Token header (kept out of access logs); ?t= stays as fallback.
+      const th = req.headers["x-order-token"];
+      const t = (typeof th === "string" && th) ? th : (url.searchParams.get("t") || "");
       if (!verifyReturnToken(o, a, t, cleffoSigKey())) return json(403, { ok: false, error: "invalid_token" });
       const r = await confirmCleffoAttempt(db, o, a, { cleffoDeps, onPaid: onCleffoPaid, via: "status" });
       if (!r.order) return json(404, { ok: false, error: "not_found" });
@@ -605,7 +769,41 @@ export function createHandler(deps = {}) {
       const sigState = sig ? (verifySignature(raw, sig, cleffoSigKey()) ? "valid" : "invalid") : "absent";
       const d = body.data && typeof body.data === "object" ? body.data : body;
       const ref = String(d.transaction_reference_number || d.transactionReferenceNumber || "").replace(/[^A-Za-z0-9_-]/g, "");
-      const found = ref ? db.findAttempt("cleffo", ref) : null;
+      let found = ref ? db.findAttempt("cleffo", ref) : null;
+      // A link whose creation timed out has no reference number on our side: match it by the merchant_order_id we sent. The
+      // callback is unsigned and that id is guessable (<order>A<n>), so the reference is taken only when Cleffo's own status
+      // API confirms it belongs to exactly that merchant_order_id; an attempt that already has a reference is never re-pointed.
+      if (!found) {
+        const byMerchant = db.findAttemptByMerchantId("cleffo", d.merchant_order_id ?? d.merchantOrderId);
+        const where = byMerchant ? `${logSafe(byMerchant.order.id, 40)} attempt=${byMerchant.attempt.routingAttempt}` : "";
+        if (byMerchant && !ref) {
+          process.stdout.write(`[cleffo] callback ref_missing ${where} (no transaction reference in the callback)\n`);
+        } else if (byMerchant && byMerchant.attempt.processorTxnId) {
+          process.stdout.write(`[cleffo] callback ref_conflict ${where} (already has a reference, not replaced)\n`);
+        } else if (byMerchant && byMerchant.attempt.processorStatus === "LINK_UNKNOWN") {
+          const st = await getPaymentStatus(ref, cleffoDeps);
+          if (!st.ok) {
+            // Cleffo's own status API did not answer: nothing can be confirmed. Nothing is written; 503 so Cleffo can send it again.
+            const seen = `${byMerchant.order.id}#${ref}`;
+            if (!callbackUnverified.has(seen)) {
+              callbackUnverified.add(seen);
+              process.stdout.write(`[pay-alert] CLEFFO_CALLBACK_UNVERIFIED ${where} ref=${logSafe(ref, 60)}\n`);
+            }
+            return json(503, { ok: false, error: "verification_unavailable" });
+          }
+          if (st.merchantOrderId === byMerchant.attempt.merchantOrderId) {
+            const o = db.getOrder(byMerchant.order.id);
+            const i = o.attempts.findIndex((x) => x.attemptId === byMerchant.attempt.attemptId);
+            if (i !== -1 && !o.attempts[i].processorTxnId) {
+              o.attempts[i] = { ...o.attempts[i], processorTxnId: ref, processorStatus: "LINK_CREATED", reason: "link_recovered_by_callback" };
+              db.upsertOrder(o);
+              found = db.findAttempt("cleffo", ref);
+            }
+          } else {
+            process.stdout.write(`[cleffo] callback ref_rejected ${where} (Cleffo does not tie that reference to this merchant_order_id)\n`);
+          }
+        }
+      }
       process.stdout.write(`[cleffo] callback ref=${ref || "-"} signature=${sigState} known=${Boolean(found)}\n`);
       if (!found) return json(200, { ok: false, error: "unknown_transaction" });
       const r = await confirmCleffoAttempt(db, found.order.id, found.attempt.routingAttempt, { cleffoDeps, onPaid: onCleffoPaid, via: "callback" });
@@ -618,16 +816,35 @@ export function createHandler(deps = {}) {
       return json(200, { ok: true, cleffo: cleffoSettingsView(db) });
     }
 
+    // 2026-10-01: internal, localhost-only lookup of a buyer's open crypto orders (account backend). No email/token in logs.
+    if (path.startsWith("/api/internal/")) {
+      if (!isLocalRequest(req)) return json(404, { ok: false, error: "not_found" });
+      if (path !== "/api/internal/crypto/pending" || req.method !== "GET") return json(404, { ok: false, error: "not_found" });
+      const auth = internalKeyCheck(req, process.env);
+      if (!auth.ok) return json(auth.status, { ok: false, error: auth.error });
+      if (!internalLimiter.allow("internal-key")) return json(429, { ok: false, error: "rate_limited" });
+      // Email only from the X-Customer-Email header, never the query (keeps it out of access logs).
+      if (url.searchParams.has("email")) return json(400, { ok: false, error: "email_in_query_not_allowed" });
+      const email = normalizeEmail(req.headers["x-customer-email"]);
+      if (!email) return json(400, { ok: false, error: "invalid_email" });
+      return json(200, pendingCryptoForEmail(db.listOrders(), email, { env: cryptoEnv, secret: cryptoSecret() }));
+    }
+
     if (path === "/api/checkout/crypto" && req.method === "POST") {
       if (!cryptoLimiter.allow(clientIp(req))) {
         return json(429, { ok: false, error: "rate_limited" });
       }
       const body = await readBody(req);
+      { const bad = unavailableLines(body); if (bad) return json(409, itemUnavailableBody(bad)); }
+      { const shipBad = shipRegionRefusal(body); if (shipBad) return json(400, shipBad); }   // infra 2026-10-01 ship48
       let pricing = null;
       const idemKey = String(body?.idempotencyKey || body?.extOrderId || "").trim();
       if (cryptoPricer && !(idemKey && db.getOrderByIdempotency(idemKey)) && Array.isArray(body?.items) && body.items.length) {
         pricing = await cryptoPricer(body);
         if (!pricing.ok) {
+          if (pricing.error === "shipping_mismatch") {
+            return json(400, { ok: false, error: "shipping_mismatch", charged: false, message: pricing.message, shipping: pricing.shipping, shipMethod: pricing.shipMethod });
+          }
           return json(pricing.status || 503, { ok: false, error: pricing.error, unknownItems: pricing.unknownItems });
         }
       }
@@ -642,7 +859,29 @@ export function createHandler(deps = {}) {
           id: result.order?.id || null,
         });
       }
-      return json(200, { ...result.public, reused: Boolean(result.reused) });
+      return json(200, { ...result.public, ...launchFields(result.order, cryptoEnv, result.public.confirmToken), reused: Boolean(result.reused) });
+    }
+
+    // 2026-09-30 launch: token-gated public status {status: awaiting|paid|expired}, no PII.
+    const cryptoStatus = path.match(/^\/api\/checkout\/crypto\/([^/]+)\/status$/);
+    if (cryptoStatus && req.method === "GET") {
+      if (!cryptoStatusLimiter.allow(clientIp(req))) return json(429, { ok: false, error: "rate_limited" });
+      const order = db.getOrderByRef(decodeURIComponent(cryptoStatus[1])) || null;
+      if (!tokenOk(order, orderTokenFrom(req, url), cryptoSecret())) return json(403, { ok: false, error: "invalid_token" });
+      return json(200, launchStatus(order, cryptoEnv));
+    }
+
+    // 2026-09-30 launch: customer pastes the TxID. {token, network: erc20|trc20, tx_hash, asset?} -> payment_submitted. Never pays.
+    const cryptoTxid = path.match(/^\/api\/checkout\/crypto\/([^/]+)\/txid$/);
+    if (cryptoTxid && req.method === "POST") {
+      if (!cryptoTxidLimiter.allow(clientIp(req))) return json(429, { ok: false, error: "rate_limited" });
+      const body = await readBody(req);
+      const order = db.getOrderByRef(decodeURIComponent(cryptoTxid[1])) || null;
+      if (!tokenOk(order, orderTokenFrom(req, url, body), cryptoSecret())) return json(403, { ok: false, error: "invalid_token" });
+      const r = cryptoVerifier.submitCustomerTx(order.id, { network: body.network, txHash: body.tx_hash ?? body.txHash, asset: body.asset });
+      if (!r.ok) return json(r.status || 400, { ok: false, error: r.error, ...(r.expected ? { expected: r.expected } : {}) });
+      const fresh = db.getOrder(order.id);
+      return json(200, { ...launchStatus(fresh, cryptoEnv), ok: true, order_status: "PAYMENT_SUBMITTED", reused: Boolean(r.reused) });
     }
 
     // Customer "I've sent the payment" (public, rate-limited, signed token). Never releases the order.
@@ -694,11 +933,41 @@ export function createHandler(deps = {}) {
         if (!one[2] && req.method === "GET") return json(200, { ok: true, order: staffCryptoView(order, cryptoEnv) });
         if (one[2] && req.method === "POST") {
           const body = await readBody(req);
-          const r = await cryptoVerifier.staffAction(order.id, body, op.actor || "operator");
+          let isAdmin = false;
+          if (body.action === "admin_mark_paid" || (body.action === "release" && cryptoVerifier.config.adminMarkPaidRequired)) {
+            const adm = await resolveAdmin(req, { checkCrmSession: deps.checkCrmSession, fetchImpl: deps.fetchImpl });
+            if (!adm.ok) return json(403, { ok: false, error: "admin_required" });
+            isAdmin = true;
+          }
+          const r = await cryptoVerifier.staffAction(order.id, body, op.actor || "operator", { admin: isAdmin });
           const fresh = db.getOrder(order.id);
           if (r.ok && isCryptoVerified(fresh)) onCryptoPaid(order.id);
           return json(r.ok ? 200 : r.status || 400, { ok: r.ok, error: r.error, order: staffCryptoView(fresh, cryptoEnv) });
         }
+      }
+      return json(404, { error: "not_found" });
+    }
+
+    // 2026-09-30 human-use flag (staff read; admin: clear false positive with note, cancel & refuse, scan now). All logged.
+    if (path === "/api/psp/compliance/human-use" || path.startsWith("/api/psp/compliance/human-use/")) {
+      if (!humanUse) return json(503, { ok: false, error: "human_use_disabled" });
+      const op = await operatorContext();
+      if (!op.ok) return json(401, { error: "unauthorized" });
+      if (req.method === "GET" && path === "/api/psp/compliance/human-use") return json(200, humanUse.view());
+      if (req.method === "GET" && path === "/api/psp/compliance/human-use/index") return json(200, humanUse.badgeIndex());
+      if (req.method === "POST") {
+        const adm = await resolveAdmin(req, { checkCrmSession: deps.checkCrmSession, fetchImpl: deps.fetchImpl });
+        if (!adm.ok) return json(403, { ok: false, error: "admin_required" });
+        const body = await readBody(req).catch(() => ({}));
+        let r;
+        if (path === "/api/psp/compliance/human-use/clear") r = humanUse.clearFlag(body.email, { actor: adm.actor, note: body.note });
+        else if (path === "/api/psp/compliance/human-use/cancel-refuse") r = humanUse.cancelRefuse(String(body.id || body.orderId || body.quoteId || ""), { actor: adm.actor, note: body.note });
+        else if (path === "/api/psp/compliance/human-use/scan-now") r = humanUse.scan();
+        // 2026-10-01 two-tier: weak-term review items -> escalate (flag + hold) or dismiss; note required, audited.
+        else if (path === "/api/psp/compliance/human-use/review/escalate") r = humanUse.escalateReview(String(body.id || ""), { actor: adm.actor, note: body.note });
+        else if (path === "/api/psp/compliance/human-use/review/dismiss") r = humanUse.dismissReview(String(body.id || ""), { actor: adm.actor, note: body.note });
+        else return json(404, { error: "not_found" });
+        return json(r.ok ? 200 : r.status || 400, r);
       }
       return json(404, { error: "not_found" });
     }
@@ -725,6 +994,7 @@ export function createHandler(deps = {}) {
       const number = String(body.trackingNumber || body.tracking_number || "").replace(/[^A-Za-z0-9 -]/g, "").trim().slice(0, 60);
       if (!number) return json(400, { ok: false, error: "tracking_number_required" });
       if (!isPaidOrder(order)) return json(409, { ok: false, error: "not_paid" });
+      if (humanUseBlocks(order)) return json(409, { ok: false, error: "compliance_hold" });
       const at = new Date().toISOString();
       const f = order.fulfillment || {};
       order.fulfillment = {
@@ -842,6 +1112,8 @@ export function createHandler(deps = {}) {
 
     if (path === "/api/checkout/quote" && req.method === "POST") {
       const body = await readBody(req);
+      { const bad = unavailableLines(body); if (bad) return json(409, itemUnavailableBody(bad)); }
+      { const shipBad = shipRegionRefusal(body); if (shipBad) return json(400, shipBad); }   // infra 2026-10-01 ship48
       const result = await createQuote(body, { store: db, sendQuoteEmail });
       if (!result.ok) {
         return json(result.status || 400, { ok: false, error: result.error });
@@ -889,6 +1161,7 @@ export function createHandler(deps = {}) {
         const parsed = await readBodySilent(req);
         if (!parsed.ok) return noContent();
         if (!abandonLimiter.allow(clientIp(req))) return noContent();
+        stripGift(parsed.body);
         const normalized = normalizeAbandonPayload(parsed.body);
         if (!normalized.ok) {
           if (normalized.silent) return noContent();
@@ -1035,9 +1308,11 @@ export function createHandler(deps = {}) {
   }
   };
   handlerFn.rapidScheduler = rapidScheduler;
+  handlerFn.humanUse = humanUse;
   handlerFn.cryptoVerifier = cryptoVerifier;
   handlerFn.onCleffoPaid = onCleffoPaid;
   handlerFn.orderEmailer = orderEmailer;
+  handlerFn.cioOrders = cioOrders;
   return handlerFn;
 }
 
@@ -1053,6 +1328,7 @@ export function startCrmServer(port = PORT, deps = {}) {
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
   sharedInventoryStore();
+  recoverInFlight(store);
   startPoller(store, { intervalMs: Number(process.env.UMG_POLL_MS || 30000), adapters: liveAdapters() });
   if (process.env.STORE_FORWARD_ENABLED === "true") {
     // Picks up approvals that arrive via webhook/poll and retries failed forwards (backoff inside).
@@ -1063,7 +1339,13 @@ if (isMain) {
     const c = rapidConfig();
     process.stdout.write(`[rapid] scheduler on env=${c.env} autoPush=${c.autoPush} allowRealOrders=${c.allowRealOrders}\n`);
   }
+  if (handler.humanUse) handler.humanUse.start(Number(process.env.HUMAN_USE_SCAN_MS || 60000)); // backfill on first start
   handler.orderEmailer.start(Number(process.env.ORDER_EMAILS_SWEEP_MS || 30000));
+  if (handler.cioOrders) {
+    handler.cioOrders.start(Number(process.env.CIO_SWEEP_MS || 60000));
+    const c = handler.cioOrders.cfg;
+    process.stdout.write(`[cio] order emails internal=${c.internal} customer=${c.customer} keySet=${c.keySet} managerTo=${c.managerTo.join(",")} since=${c.since}\n`);
+  }
   {
     const c = handler.orderEmailer.cfg;
     process.stdout.write(`[emails] sweeper on enabled=${c.enabled} canSend=${canSend(c)} since=${c.since ? new Date(c.since).toISOString() : "none"}\n`);

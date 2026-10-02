@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import "./helpers/ship48-default-address.js"; // infra 2026-10-01 ship48 test data
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,16 +8,12 @@ import { createStore } from "../lib/store.js";
 import { priceCardCart, priceCryptoCart } from "../lib/pricing.js";
 import { canonicalJson, createConsentLog, hashRecord, sanitizeConsent, MAX_CHECKS } from "../lib/consent.js";
 import { startCrmServer } from "../index.js";
+import { couponQuoteFake } from "./helpers/coupon-quote-fake.js";
 
 const KEY = "test-marketing-digest-key";
 const CUSTOMER = { first_name: "Ada", last_name: "N", email: "Ada@Lab.example" };
-const CATALOG = { "bpc-157": { "10mg": 88 } };
-const quote = () => async (url, init) => {
-  const body = JSON.parse(init.body);
-  let sum = 0;
-  for (const it of body.items) { const u = CATALOG[it.slug][it.mg]; sum += (it.qty >= 2 ? Math.round(u * 89 / 99) : u) * it.qty; }
-  return { ok: true, status: 200, json: async () => ({ ok: true, subtotal: sum.toFixed(2) }) };
-};
+// infra 2026-09-29 honest-charge: the charged amount is the whole-cart coupon-quote total_due, so the fake answers like products-api
+const quote = () => couponQuoteFake();
 const CONSENT = { checks: { "ck-terms": true, "ck-ruo": true }, acceptedAt: "2026-09-28T09:40:00.123Z", pageVersion: "v3.00k8m4d" };
 const tmpLog = () => join(mkdtempSync(join(tmpdir(), "consent-")), "consent-log.jsonl");
 

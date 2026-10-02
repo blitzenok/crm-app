@@ -199,5 +199,5 @@ test("store forward: Cleffo orders are labelled card-cleffo and never claim the 
   assert.doesNotMatch(c.body, /statement will show/);
   const u = buildNotifyPayload({ ...base, winningProcessor: "umg", descriptor: null });
   assert.equal(u.paymentMethod, "card-umg");
-  assert.match(u.body, /Your card statement will show: PEPTIDESS SHOP/);
+  assert.doesNotMatch(u.body, /PEPTIDESS|statement will show/); // 2026-10-01 no descriptor in the store note
 });

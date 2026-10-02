@@ -50,6 +50,9 @@ export function classifyForRetry(attempt = {}) {
   const mac = attempt.mac != null ? norm2(attempt.mac) : "";
 
   if (["APPROVED", "CAPTURED", "PAID"].includes(status)) return { retryClass: "none", code: code || null, basis: "approved" };
+  // infra 2026-09-29 honest-charge: the create call got no answer and find-by-ext-id could not say whether the card was
+  // charged. Not a decline (never "hard", never unlocks a switch): the order waits pending until the poller settles it.
+  if (reason === "unknown_outcome") return { retryClass: "none", code: null, basis: "unknown_outcome" };
   if (attempt.noChargeAttempted === true || status === "LINK_ERROR") return { retryClass: "none", code: null, basis: "no_charge_attempted" };
   if (mac && HARD_MAC.has(mac)) return { retryClass: "hard", code: `MAC${mac}`, basis: "mastercard_mac" };
   if (HARD_PATTERNS.some((re) => re.test(blob))) return { retryClass: "hard", code: code || null, basis: "hard_pattern" };

@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import "./helpers/ship48-default-address.js"; // infra 2026-10-01 ship48 test data
 import assert from "node:assert/strict";
 import { createStore } from "../lib/store.js";
 import { buildNotifyPayload, forwardOrder, sweepForward, splitSku, isDryRunOrder } from "../lib/store-forward.js";
@@ -46,7 +47,7 @@ test("sku split and payload mapping (server totals left to notify-order)", () =>
   assert.equal(p.orderData.subtotal, "158.00");
   assert.equal(p.orderData.shippingCost, "10.00");
   assert.equal(p.orderData.total, "168.00");
-  assert.match(p.body, /PEPTIDESS SHOP/);
+  assert.doesNotMatch(p.body, /PEPTIDESS|statement/i); // 2026-10-01 no descriptor in the store note
   assert.equal(JSON.stringify(p).includes("4242"), false);
 });
 

@@ -41,6 +41,11 @@ export function cryptoVerifyConfig(env = process.env) {
     acceptedByNetwork: Object.fromEntries(Object.entries(ACCEPTABLE_TOKENS).map(([n, list]) => [n, (tokens.length ? tokens : ["USDT"]).filter((t) => list.includes(t))])),
     clockSkewMs: 5 * 60 * 1000,
     maxHints: 5,
+    // 2026-09-30 launch (Yehuda): only an admin "Mark crypto paid" makes an order paid; on-chain auto-match holds for the admin.
+    adminMarkPaidRequired: env.CRYPTO_ADMIN_MARK_PAID_REQUIRED === "true",
+    // unique amount = total + 0.01..0.99 across ALL networks (no memo on ERC-20/TRC-20), never a 0.001 fallback
+    uniqueAcrossNetworks: env.CRYPTO_UNIQUE_ACROSS_NETWORKS === "true",
+    centsOnly: env.CRYPTO_UNIQUE_CENTS_ONLY === "true",
     backoffMaxMs: 15 * 60 * 1000,
   };
 }
@@ -59,8 +64,10 @@ export function isTokenAccepted(cfg, token, network, cp = null) {
 export function isCryptoVerified(order) {
   const cp = order?.cryptoPayment;
   return Boolean(
-    order && order.paymentMethod === "crypto" && cp && cp.status === PAY.PAID && cp.verifiedOnChain === true &&
-    cp.sanctions && (cp.sanctions.status === "clear" || cp.sanctions.status === "skipped_fail_open") && order.status === "crypto_paid" && order.paymentConfirmed === true,
+    order && order.paymentMethod === "crypto" && cp && cp.status === PAY.PAID &&
+    // on-chain verified, or an admin "Mark crypto paid" override (logged, with a note) — 2026-09-30 launch
+    (cp.verifiedOnChain === true || (cp.adminMarkPaid && cp.adminMarkPaid.override === true && Boolean(cp.adminMarkPaid.note))) &&
+    cp.sanctions && (cp.sanctions.status === "clear" || cp.sanctions.status === "skipped_fail_open" || cp.sanctions.status === "skipped_admin_override") && order.status === "crypto_paid" && order.paymentConfirmed === true,
   );
 }
 
@@ -98,7 +105,7 @@ export function allocatePayAmount(orders, { baseAmount, network, cfg, nowMs = Da
     for (const off of offs) { const u = base + off; if (!taken.has(u.toString())) return { off, u }; }
     return null;
   };
-  const hit = tryOffsets(10000n, 99) || tryOffsets(1000n, 999);
+  const hit = tryOffsets(10000n, 99) || (cfg.centsOnly ? null : tryOffsets(1000n, 999));
   if (!hit) return null;
   return { payUnits: hit.u.toString(), payAmount: fixed(hit.u), offsetUnits: hit.off.toString(), offset: fixed(hit.off) };
 }

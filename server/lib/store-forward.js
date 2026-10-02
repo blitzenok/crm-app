@@ -14,6 +14,7 @@
  *  - No card data leaves here (the order never holds any; stripSecrets already ran at charge time).
  */
 
+import { humanUseBlocks } from "./human-use.js"; // 2026-09-30 COMPLIANCE_HOLD
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 export const DEFAULT_FORWARD_URL = "http://127.0.0.1:4000/msolpeptides-api/notify-order";
 export const CARD_PAYMENT_METHOD = "card-umg";
@@ -31,6 +32,12 @@ function money(n) {
 }
 
 /** "bpc-157-10mg" -> { slug: "bpc-157", mg: "10mg" } (storefront builds sku = slug + "-" + mg). */
+/** A statement descriptor only when it is explicitly configured and not UNKNOWN; otherwise null. */
+export function confirmedDescriptor(raw) {
+  const v = String(raw || "").trim();
+  return v && v.toUpperCase() !== "UNKNOWN" ? v : null;
+}
+
 export function splitSku(sku) {
   const s = String(sku || "").trim();
   const m = s.match(/^(.+?)-(\d+(?:\.\d+)?(?:mg|mcg|g|iu|ml))$/i);
@@ -100,11 +107,13 @@ export function buildNotifyPayload(order, opts = {}) {
   // (CLEFFO_DESCRIPTOR confirmed) — never the UMG descriptor.
   const isCleffo = order.winningProcessor === "cleffo";
   const payMethod = isCleffo ? CLEFFO_PAYMENT_METHOD : CARD_PAYMENT_METHOD;
-  const descriptor = isCleffo ? (order.descriptor || null) : (order.descriptor || CARD_STATEMENT_DESCRIPTOR);
+  // 2026-10-01 (Yehuda: no statement descriptor anywhere): only a descriptor confirmed in the service env (UMG_DESCRIPTOR /
+  // CLEFFO_DESCRIPTOR, UNKNOWN = none); never the processor's echo and never a hardcoded fallback.
+  const descriptor = confirmedDescriptor(isCleffo ? process.env.CLEFFO_DESCRIPTOR : process.env.UMG_DESCRIPTOR);
   const noteParts = [
     `${tag}Card payment APPROVED via ${order.winningProcessor || "umg"}`,
     order.winningTxnId ? `processor txn ${order.winningTxnId}` : "",
-    descriptor ? `card statement shows: ${descriptor}` : "card statement descriptor: not confirmed yet",
+    descriptor ? `card statement shows: ${descriptor}` : "",
     discountNote(order.priceCheck),
     order.notes ? `customer notes: ${String(order.notes).slice(0, 800)}` : "",
   ].filter(Boolean);
@@ -165,6 +174,8 @@ export async function forwardOrder(store, orderId, opts = {}) {
   const order = store.getOrder(orderId);
   if (!order) return { ok: false, reason: "not_found" };
   if (!isForwardable(order)) return { ok: false, skipped: true, reason: "not_approved" };
+  // 2026-09-30: a COMPLIANCE_HOLD order is not forwarded (the legacy shop path triggers Customer.io order emails). Even with force.
+  if (humanUseBlocks(order)) return { ok: false, skipped: true, reason: "compliance_hold" };
   if (order.storeForward?.sentAt) return { ok: true, skipped: true, reason: "already_sent", ref: order.storeForward.ref };
   if (!opts.force && isDryRunOrder(order)) return { ok: false, skipped: true, reason: "dry_run_or_test" };
   const fetchImpl = opts.fetchImpl || globalThis.fetch;

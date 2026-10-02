@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { closeSync, copyFileSync, existsSync, fchmodSync, fsyncSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 export const PROCESSOR_IDS = ["umg", "tagada", "centrobill"];
 export const ABANDONED_MAX = 500;
+const DECIDED_STATUSES = new Set(["APPROVED", "CAPTURED", "PAID", "DECLINED", "CANCELED", "CANCELLED"]);
 
 export function defaultSettings() {
   return {
@@ -69,36 +70,100 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+/** infra 2026-09-29 honest-charge: "sku:qty" pairs, lower-cased and sorted: the same cart in any line order gives the same key. */
+export function itemsKey(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((it) => `${String(it?.sku || it?.slug || "").trim().toLowerCase()}:${Math.max(1, parseInt(it?.qty ?? it?.quantity, 10) || 1)}`)
+    .sort()
+    .join("|");
+}
+
+const normText = (v) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+/** What a Cleffo payment link carries about the buyer, normalised (case / spacing / phone punctuation do not matter). */
+function buyerKey(c = {}) {
+  return JSON.stringify([
+    normText(c?.first_name ?? c?.firstName), normText(c?.last_name ?? c?.lastName),
+    String(c?.phone ?? "").replace(/\D/g, ""),
+    normText(c?.country), normText(c?.state), normText(c?.city), normText(c?.zip), normText(c?.address),
+  ]);
+}
+
 export function createStore(opts = {}) {
   const memoryOnly = opts.memoryOnly === true;
   const filePath = opts.filePath || null;
   let data = emptyData();
 
-  if (!memoryOnly && filePath && existsSync(filePath)) {
+  // infra 2026-09-29 cleffo: an unreadable store.json must never mean "start empty" (the BLR counter would restart and
+  // hand out duplicate order numbers). Try the previous good version; if that fails too, refuse to start.
+  const prevPath = filePath ? `${filePath}.prev` : null;
+  function parseStore(path) {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not_an_object");
+    return parsed;
+  }
+  if (!memoryOnly && filePath && (existsSync(filePath) || existsSync(prevPath))) {
+    let parsed = null;
     try {
-      const parsed = JSON.parse(readFileSync(filePath, "utf8"));
-      data = {
-        settings: { ...defaultSettings(), ...(parsed.settings || {}) },
-        orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-        quotes: Array.isArray(parsed.quotes) ? parsed.quotes : [],
-        abandoned_checkouts: asAbandonedMap(parsed.abandoned_checkouts),
-        seq: Number(parsed.seq) || 1000,
-        quoteSeq: Number(parsed.quoteSeq) || 5000,
-        abandonedDigestAt: parsed.abandonedDigestAt || null,
-        crypto: asCrypto(parsed.crypto),
-      };
-      if (!Array.isArray(data.settings.processors) || data.settings.processors.length === 0) {
-        data.settings.processors = defaultSettings().processors;
-      }
+      parsed = parseStore(filePath);
     } catch {
-      data = emptyData();
+      try {
+        parsed = parseStore(prevPath);
+        // Keep the broken file for a post-mortem: the first write would replace it (and turn it into the next .prev).
+        try { if (existsSync(filePath)) renameSync(filePath, `${filePath}.corrupt-${new Date().toISOString().replace(/[^0-9A-Za-z]/g, "")}`); } catch { /* best effort */ }
+        process.stdout.write("[pay-alert] STORE_FROM_PREV store.json was unreadable, loaded store.json.prev (the last write may be lost)\n");
+      } catch {
+        process.stdout.write("[pay-alert] STORE_UNREADABLE store.json and store.json.prev cannot be read, refusing to start\n");
+        throw new Error("store_unreadable");
+      }
+    }
+    data = {
+      settings: { ...defaultSettings(), ...(parsed.settings || {}) },
+      orders: Array.isArray(parsed.orders) ? parsed.orders : [],
+      quotes: Array.isArray(parsed.quotes) ? parsed.quotes : [],
+      abandoned_checkouts: asAbandonedMap(parsed.abandoned_checkouts),
+      seq: Number(parsed.seq) || 1000,
+      quoteSeq: Number(parsed.quoteSeq) || 5000,
+      abandonedDigestAt: parsed.abandonedDigestAt || null,
+      crypto: asCrypto(parsed.crypto),
+    };
+    if (!Array.isArray(data.settings.processors) || data.settings.processors.length === 0) {
+      data.settings.processors = defaultSettings().processors;
     }
   }
 
+  // Temp files of earlier processes (a crash between write and rename) are just leftovers.
+  if (!memoryOnly && filePath) {
+    try {
+      const prefix = `.${basename(filePath)}.tmp-`;
+      for (const f of readdirSync(dirname(filePath))) if (f.startsWith(prefix)) { try { unlinkSync(join(dirname(filePath), f)); } catch { /* ignore */ } }
+    } catch { /* directory not there yet */ }
+  }
+
+  // Temp file next to the target (dot-prefixed: the vhosts hide dotfiles) + fsync + rename; the file being replaced is kept as .prev.
   function persist() {
     if (memoryOnly || !filePath) return;
-    mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, JSON.stringify(data, null, 2));
+    const dir = dirname(filePath);
+    mkdirSync(dir, { recursive: true });
+    const tmp = join(dir, `.${basename(filePath)}.tmp-${process.pid}`);
+    const fd = openSync(tmp, "w");
+    try {
+      // Same permissions as the file being replaced (the host runs the service as one user and reads the file as another);
+      // a first write gets 0644, as the file has had so far.
+      let mode = 0o644;
+      try { mode = statSync(filePath).mode & 0o777; } catch {
+        try { mode = statSync(prevPath).mode & 0o777; } catch { /* first write */ } // main file moved aside after a start from .prev
+      }
+      fchmodSync(fd, mode);
+      writeSync(fd, JSON.stringify(data, null, 2));
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    if (existsSync(filePath)) {
+      try { unlinkSync(prevPath); } catch { /* none yet */ }
+      try { linkSync(filePath, prevPath); } catch { try { copyFileSync(filePath, prevPath); } catch { /* keep going: main file is intact */ } }
+    }
+    renameSync(tmp, filePath);
   }
 
   return {
@@ -149,6 +214,51 @@ export function createStore(opts = {}) {
       if (!key) return null;
       const order = data.orders.find((o) => o.idempotencyKey === key);
       return order ? clone(order) : null;
+    },
+    /**
+     * infra 2026-09-29 honest-charge: a card order by the same buyer (email, any case) with the same server amount and the
+     * same set of lines, created within `windowMs`, still approved / pending / in flight, under a DIFFERENT key.
+     * Guards the "browser lost the answer, next click has a new key" double charge. Crypto orders do not count.
+     */
+    findRecentCardDuplicate({ email, amount, items, excludeKey, windowMs = 15 * 60 * 1000, now = Date.now() }) {
+      const em = String(email || "").trim().toLowerCase();
+      if (!em) return null;
+      const want = itemsKey(items);
+      let best = null;
+      for (const o of data.orders) {
+        if (o.paymentMethod === "crypto" || o.idempotencyKey === excludeKey) continue;
+        if (String(o.customer?.email || "").trim().toLowerCase() !== em) continue;
+        if (!(o.inFlight || ["approved", "pending"].includes(String(o.status || "").toLowerCase()))) continue;
+        if (now - (Date.parse(o.createdAt) || 0) > windowMs) continue;
+        if (Number(o.amount).toFixed(2) !== Number(amount).toFixed(2) || itemsKey(o.items) !== want) continue;
+        if (!best || String(o.createdAt) > String(best.createdAt)) best = o;
+      }
+      return best ? clone(best) : null;
+    },
+    /**
+     * infra 2026-09-29 cleffo round 3: an order of the same buyer (email) and the same cart (server amount + lines) that still
+     * waits on a Cleffo link created less than ttlMin ago (not abandoned), under a DIFFERENT key. The caller hands that link out
+     * again instead of creating a second one.
+     */
+    findLiveCleffoLink({ email, customer, amount, items, shipMethod = "", coupon = "", excludeKey, ttlMin = 60, now = Date.now() }) {
+      const em = String(email || "").trim().toLowerCase();
+      if (!em) return null;
+      const want = itemsKey(items);
+      const who = buyerKey(customer);
+      const ship = normText(shipMethod);
+      const cpn = normText(coupon);
+      let best = null;
+      for (const o of data.orders) {
+        if (o.idempotencyKey === excludeKey || String(o.status || "").toLowerCase() !== "awaiting_payment") continue;
+        if (String(o.customer?.email || "").trim().toLowerCase() !== em || itemsKey(o.items) !== want) continue;
+        // The link carries the buyer's name, phone and addresses: a corrected address / name is a NEW link, never the old data.
+        if (buyerKey(o.customer) !== who || normText(o.priceCheck?.shipMethod) !== ship || normText(o.priceCheck?.coupon) !== cpn) continue;
+        const a = [...(o.attempts || [])].reverse().find((x) => x.processor === "cleffo" && x.processorStatus === "LINK_CREATED" && x.paymentLink && !x.abandoned);
+        if (!a || now - (Date.parse(a.startedAt) || 0) > ttlMin * 60000) continue;
+        if (Number(a.amount ?? o.amount).toFixed(2) !== Number(amount).toFixed(2)) continue;
+        if (!best || String(a.startedAt) > String(best.attempt.startedAt)) best = { order: clone(o), attempt: clone(a) };
+      }
+      return best;
     },
     deleteOrder(id) {
       const i = data.orders.findIndex((o) => o.id === id);
@@ -216,13 +326,40 @@ export function createStore(opts = {}) {
       }
       return null;
     },
+    /** A Cleffo attempt by the merchant_order_id we sent (a link whose creation timed out has no reference number yet). */
+    findAttemptByMerchantId(processor, merchantOrderId) {
+      const want = String(merchantOrderId || "").replace(/[^A-Za-z0-9]/g, "");
+      if (!want) return null;
+      for (const order of data.orders) {
+        const attempt = (order.attempts || []).find((a) => a.processor === processor && a.merchantOrderId === want);
+        if (attempt) return { order: clone(order), attempt: clone(attempt) };
+      }
+      return null;
+    },
     pendingAttempts(processor) {
       const out = [];
       for (const order of data.orders) {
         for (const attempt of order.attempts || []) {
           const st = String(attempt.processorStatus || "").toUpperCase();
-          if (attempt.processor === processor && (st === "PENDING" || st.includes("3DS"))) {
+          if (attempt.processor !== processor) continue;
+          // infra 2026-09-29 honest-charge: besides PENDING / 3DS, any not-yet-decided attempt with a txn id on an order that is still
+          // waiting (e.g. "PROCESSING - PENDING VERIFICATION"), otherwise it would hang there forever.
+          const undecided = attempt.processorTxnId && order.status === "pending" && !DECIDED_STATUSES.has(st);
+          if (st === "PENDING" || st.includes("3DS") || undecided) {
             out.push({ orderId: order.id, attempt: clone(attempt) });
+          }
+        }
+      }
+      return out;
+    },
+    // infra 2026-09-29 honest-charge: attempts whose create call gave no answer (no txn id) on orders still waiting.
+    unknownAttempts(processor) { // entries also carry the txn ids already on the order
+      const out = [];
+      for (const order of data.orders) {
+        if (order.status !== "pending") continue;
+        for (const attempt of order.attempts || []) {
+          if (attempt.processor === processor && attempt.reason === "unknown_outcome" && !attempt.processorTxnId && String(attempt.processorStatus || "").toUpperCase() === "UNKNOWN") {
+            out.push({ orderId: order.id, idempotencyKey: order.idempotencyKey, attempt: clone(attempt), knownTxnIds: (order.attempts || []).map((a) => a.processorTxnId).filter(Boolean).map(String) });
           }
         }
       }

@@ -330,20 +330,27 @@ export function seedInventory(store, opts = {}) {
   if (units !== 400) throw new Error("cosmo_units_mismatch");
   if (goods !== COSMO_PO.goods_cents) throw new Error("cosmo_goods_mismatch");
 
+  // 2026-09-30 owner order: #071326 has NOT arrived at GNT. Status/ship_to stored on the record win over the seed
+  // default, and PO_INTAKE movements are posted only once the stored status is RECEIVED (Mark Received).
+  const cosmoExisting = store.listPurchaseOrders().find((row) => row.po_id === COSMO_PO.po_id);
+  const cosmoStatus = cosmoExisting?.status || COSMO_PO.status;
+  const cosmoNotes = cosmoStatus === "RECEIVED"
+    ? "Goods received. COA is a PO-level cost and is not in the weighted average unit cost."
+    : (cosmoExisting?.notes || "Incoming, not at GNT. Not counted in on-hand until Mark Received.");
   store.upsertPurchaseOrder({
     po_id: COSMO_PO.po_id,
     po_number: COSMO_PO.po_id,
     supplier: COSMO_PO.supplier,
     dated: COSMO_PO.dated,
-    status: COSMO_PO.status,
-    ship_to: null,
+    status: cosmoStatus,
+    ship_to: cosmoExisting ? (cosmoExisting.ship_to ?? null) : null,
     po_level_costs: [{
       label: "COA",
       amount_cents: COSMO_PO.coa_cents,
       note: "PO-level cost, not per-unit",
     }],
     alias_map: null,
-    notes: "Goods received. COA is a PO-level cost and is not in the weighted average unit cost.",
+    notes: cosmoNotes,
     created_by: SEED_ACTOR,
     created_at: COSMO_PO.created_at,
   });
@@ -361,6 +368,7 @@ export function seedInventory(store, opts = {}) {
       unit_cost_cents: unit,
       line_total_cents: row.qty * unit,
     });
+    if (cosmoStatus !== "RECEIVED") continue;
     const posted = store.insertMovement({
       id: `mv:${COSMO_PO.po_id}:${id}:${MOVEMENT_TYPE_PO_INTAKE}`,
       sku_id: id,

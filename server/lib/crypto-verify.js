@@ -9,7 +9,8 @@
 //   cancelled + later payment -> payment_review (late_payment; never auto-ships)
 // A customer-entered tx hash is only a lookup hint. Every release needs a transfer that the chain itself reports.
 import { depositWallets, readyFulfillment, blockedFulfillment, CRYPTO_PAID, AWAITING_CRYPTO, CRYPTO_REVIEW, CRYPTO_CANCELLED } from "./crypto-checkout.js";
-import { PAY, OPEN_STATUSES, cryptoVerifyConfig, isTokenAccepted, paymentDeadline, fixed, normalizeHint } from "./crypto-payment.js";
+import { PAY, OPEN_STATUSES, cryptoVerifyConfig, isTokenAccepted, paymentDeadline, fixed, normalizeHint, isCryptoVerified } from "./crypto-payment.js";
+import { PAYMENT_SUBMITTED, normalizeTxid, findTxOwner, checkTx, checkSummary } from "./crypto-launch.js";
 import { createChainAdapters, explorerTxUrl, explorerAddressUrl, amountToUnits } from "./crypto-chains.js";
 import { createSanctionsScreener } from "./crypto-sanctions.js";
 import { sendCancelEmail, sendInternalAlert, sendGa4Purchase } from "./crypto-notify.js";
@@ -106,6 +107,12 @@ export function staffCryptoView(order, env = process.env) {
     alerts: cp.alerts || [],
     ga4: cp.ga4 || null,
     lastCheckedAt: cp.lastCheckedAt || null,
+    // 2026-09-30 launch: customer TxID (explorer link), last 4-point check, admin mark-paid record
+    customerTx: cp.customerTx ? { ...cp.customerTx, explorerUrl: explorerTxUrl(cp.customerTx.network, cp.customerTx.hash) } : null,
+    customerTxHistory: cp.customerTxHistory || [],
+    txCheck: cp.txCheck || null,
+    adminMarkPaid: cp.adminMarkPaid || null,
+    adminMarkPaidRequired: cfg.adminMarkPaidRequired,
     actions: staffActionsAllowed(order),
   };
 }
@@ -113,7 +120,8 @@ export function staffCryptoView(order, env = process.env) {
 export function staffActionsAllowed(order) {
   const st = order.cryptoPayment?.status;
   const shipped = order.fulfillment?.status === "shipped";
-  const out = ["mark_reviewed", "record_refund", "add_tx"];
+  const out = ["mark_reviewed", "record_refund", "add_tx", "check_tx"];
+  if (!shipped && st !== PAY.PAID && st !== PAY.SANCTIONS) out.push("admin_mark_paid");
   if (!shipped && (st === PAY.REVIEW || st === PAY.HOLD)) out.push("release");
   if (!shipped && st !== PAY.CANCELLED) out.push("cancel");
   return out;
@@ -355,6 +363,24 @@ export function createCryptoVerifier({
       else if (sr.status === "clear") next = PAY.PAID;
       else if (!sanctions.config.failClosed) { sr.status = "skipped_fail_open"; next = PAY.PAID; }
       else next = PAY.HOLD;
+      // 2026-09-30 launch: a verified on-chain match (unique amount or TxID) is held for the admin "Mark crypto paid".
+      if (next === PAY.PAID && cfg.adminMarkPaidRequired && !staffRelease) {
+        order = update(orderId, (o) => {
+          const c = o.cryptoPayment;
+          c.receivedAmount = ev.received;
+          c.lastCheckedAt = nowIso(nowMs());
+          c.sanctions = sr;
+          c.autoMatched = { at: nowIso(nowMs()), received: ev.received, txHashes: ev.accepted.map((t) => t.txHash) };
+          c.reviewReasons = [...new Set([...(c.reviewReasons || []), "awaiting_admin_mark_paid"])];
+          c.status = PAY.REVIEW;
+          o.paymentStatus = PAY.REVIEW;
+          o.status = c.customerTx ? PAYMENT_SUBMITTED : CRYPTO_REVIEW;
+          o.paymentConfirmed = false;
+          o.fulfillment = blockedFulfillment("awaiting_admin_mark_paid");
+        });
+        if (!(cp.reviewReasons || []).includes("awaiting_admin_mark_paid")) alert(orderId, "verified_awaiting_admin", `on-chain payment ${ev.received} matched; waiting for an admin "Mark crypto paid"`);
+        return PAY.REVIEW;
+      }
       const before = cp.status;
       order = update(orderId, (o) => {
         o.cryptoPayment.receivedAmount = ev.received;
@@ -394,7 +420,7 @@ export function createCryptoVerifier({
       c.status = next;
       o.paymentStatus = next;
       o.paymentConfirmed = false;
-      o.status = next === PAY.REVIEW ? CRYPTO_REVIEW : AWAITING_CRYPTO;
+      o.status = next === PAY.REVIEW ? CRYPTO_REVIEW : (c.customerTx ? PAYMENT_SUBMITTED : AWAITING_CRYPTO);
       o.fulfillment = blockedFulfillment(next);
     });
     if (next === PAY.REVIEW && newReasons.length) {
@@ -408,7 +434,7 @@ export function createCryptoVerifier({
     const w = wallets();
     for (const o of store.listOrders()) {
       const cp = o.cryptoPayment;
-      if (o.paymentMethod !== "crypto" || !cp || cp.status !== PAY.AWAITING || (cp.transfers || []).length) continue;
+      if (o.paymentMethod !== "crypto" || !cp || cp.status !== PAY.AWAITING || (cp.transfers || []).length || cp.customerTx) continue;
       const deadline = paymentDeadline(cp, cfg);
       if (!deadline || t <= deadline) continue;
       // Only cancel after a successful chain scan that ran after the deadline (a chain API outage never cancels a payer).
@@ -535,7 +561,47 @@ export function createCryptoVerifier({
     return { ok: true, status: 200, order: store.getOrder(orderId), txHint: hint };
   }
 
-  async function staffAction(orderId, input = {}, actor = "operator") {
+  /** Customer pasted a TxID on the awaiting-payment screen. Never pays or releases anything. */
+  function submitCustomerTx(orderId, { network, txHash, asset } = {}) {
+    const order = store.getOrder(orderId);
+    if (!order?.cryptoPayment || order.paymentMethod !== "crypto") return { ok: false, status: 404, error: "not_found" };
+    const cp = order.cryptoPayment;
+    if (isCryptoVerified(order)) return { ok: false, status: 409, error: "already_paid" };
+    if (order.fulfillment?.status === "shipped") return { ok: false, status: 409, error: "already_shipped" };
+    if (network !== "erc20" && network !== "trc20") return { ok: false, status: 400, error: "invalid_network" };
+    const hash = normalizeTxid(network, txHash);
+    if (!hash) return { ok: false, status: 400, error: "invalid_tx_hash", expected: network === "erc20" ? "0x + 64 hex" : "64 hex" };
+    const tok = asset == null || asset === "" ? null : String(asset).toUpperCase();
+    if (tok && !isTokenAccepted(cfg, tok, network)) return { ok: false, status: 400, error: "token_not_accepted" };
+    const late = cp.status === PAY.CANCELLED && nowMs() - Date.parse(cp.cancelledAt || 0) >= cfg.lateWatchHours * 3600e3;
+    if (late) return { ok: false, status: 409, error: "order_expired" };
+    if (cp.customerTx && cp.customerTx.hash === hash && cp.customerTx.network === network) return { ok: true, status: 200, reused: true, order };
+    if ((cp.customerTxHistory || []).length >= cfg.maxHints) return { ok: false, status: 429, error: "too_many_tx_submissions" };
+    const owner = findTxOwner(store.listOrders(), hash, orderId);
+    if (owner) { alert(orderId, "tx_reuse_attempt", `customer TxID ${hash.slice(0, 12)}… already belongs to another order`); return { ok: false, status: 409, error: "tx_already_used" }; }
+    const t = nowIso(nowMs());
+    update(orderId, (o) => {
+      const c = o.cryptoPayment;
+      if (c.customerTx) c.customerTxHistory = [...(c.customerTxHistory || []), { ...c.customerTx, replacedAt: t }];
+      c.customerTx = { hash, network, token: tok, at: t };
+      if (!c.customerConfirmedAt) c.customerConfirmedAt = t;
+      if (!isCryptoVerified(o) && o.status !== CRYPTO_REVIEW) o.status = PAYMENT_SUBMITTED;
+      o.paymentConfirmed = false;
+    });
+    addHint(orderId, hash, "customer", null, network);
+    log(`[crypto] ${orderId}: customer submitted ${network} TxID ${hash.slice(0, 12)}…`);
+    alert(orderId, "customer_tx_submitted", `customer TxID ${hash.slice(0, 12)}… on ${network}; admin to verify and mark paid`);
+    if (cfg.enabled) {
+      (async () => {
+        const c = await checkTx(adapters, store.getOrder(orderId), network, hash, env);
+        update(orderId, (o) => { o.cryptoPayment.txCheck = checkSummary(c); });
+        await verifyOrderNow(orderId).catch(() => {});
+      })().catch(() => {});
+    }
+    return { ok: true, status: 200, order: store.getOrder(orderId) };
+  }
+
+  async function staffAction(orderId, input = {}, actor = "operator", opts = {}) {
     const order = store.getOrder(orderId);
     if (!order || order.paymentMethod !== "crypto" || !order.cryptoPayment) return { ok: false, status: 404, error: "not_found" };
     const action = String(input.action || "");
@@ -547,6 +613,66 @@ export function createCryptoVerifier({
     const cp = order.cryptoPayment;
     const shipped = order.fulfillment?.status === "shipped";
     log(`[crypto] staff ${action} on ${orderId} by ${actor}`);
+    if (action === "release" && cfg.adminMarkPaidRequired && !opts.admin) return { ok: false, status: 403, error: "admin_required" };
+    if (action === "check_tx") {
+      const net = input.network || cp.customerTx?.network || cp.network;
+      const hash = normalizeTxid(net, input.txHash || cp.customerTx?.hash);
+      if (!hash) return { ok: false, status: 400, error: "invalid_tx_hash" };
+      const c = await checkTx(adapters, order, net, hash, env);
+      update(orderId, (o) => { o.cryptoPayment.txCheck = checkSummary(c); });
+      logAction({ txHash: hash, network: net, green: c.green, error: c.error || null });
+      return { ok: true, order: store.getOrder(orderId), check: checkSummary(c) };
+    }
+    if (action === "admin_mark_paid") {
+      if (!opts.admin) return { ok: false, status: 403, error: "admin_required" };
+      if (shipped) return { ok: false, status: 409, error: "already_shipped" };
+      if (isCryptoVerified(order)) return { ok: true, reused: true, order };
+      if (cp.status === PAY.SANCTIONS) return { ok: false, status: 409, error: "sanctions_match" };
+      const net = input.network;
+      if (net !== "erc20" && net !== "trc20") return { ok: false, status: 400, error: "network_required" };
+      const hash = normalizeTxid(net, input.txHash);
+      if (!hash) return { ok: false, status: 400, error: "invalid_tx_hash" };
+      const override = input.override === true;
+      if (override && !note) return { ok: false, status: 400, error: "note_required_for_override" };
+      const owner = findTxOwner(store.listOrders(), hash, orderId);
+      if (owner) return { ok: false, status: 409, error: "tx_already_used" };
+      const c = await checkTx(adapters, order, net, hash, env);
+      update(orderId, (o) => { o.cryptoPayment.txCheck = checkSummary(c); });
+      if (!c.green && !override) {
+        logAction({ result: "refused_check_not_green", txHash: hash, network: net, error: c.error || null });
+        return { ok: false, status: 409, error: c.error === "chain_unavailable" ? "chain_unavailable" : "check_not_green", check: checkSummary(c), order: store.getOrder(orderId) };
+      }
+      for (const tr of c.transfers) {
+        const cl = claim(orderId, { ...tr, finalChecked: c.green || undefined }, override ? "admin_override" : "admin_mark_paid");
+        if (!cl.ok && cl.reason === "tx_already_used") return { ok: false, status: 409, error: "tx_already_used" };
+      }
+      if (c.green) update(orderId, (o) => { for (const x of o.cryptoPayment.transfers || []) if (lc(x.txHash).replace(/^0x/, "") === hash.replace(/^0x/, "")) x.finalChecked = true; });
+      const sr = await screenOrder(store.getOrder(orderId));
+      if (sr.status === "match") {
+        update(orderId, (o) => { o.cryptoPayment.status = PAY.SANCTIONS; o.paymentStatus = PAY.SANCTIONS; o.cryptoPayment.sanctions = sr; o.status = CRYPTO_REVIEW; o.fulfillment = blockedFulfillment(PAY.SANCTIONS); });
+        alert(orderId, "sanctions_match", "sender on sanctions list at admin mark-paid; no ship, no automatic refund");
+        logAction({ result: "sanctions_match", txHash: hash });
+        return { ok: false, status: 409, error: "sanctions_match" };
+      }
+      if (sr.status !== "clear") {
+        if (sanctions.config.failClosed && !override) { logAction({ result: "screening_unavailable", txHash: hash }); return { ok: false, status: 409, error: "screening_unavailable", errors: sr.errors }; }
+        sr.status = override ? "skipped_admin_override" : "skipped_fail_open";
+      }
+      update(orderId, (o) => {
+        markPaid(o, override ? `admin_override:${actor}` : `admin_mark_paid:${actor}`, sr, { received: c.received });
+        const x = o.cryptoPayment;
+        x.verifiedOnChain = c.green === true;
+        x.adminMarkPaid = { actor, at: t, txHash: hash, network: net, override, note: note || null, checkGreen: c.green, checks: Object.fromEntries(Object.entries(c.checks).map(([k, v]) => [k, v.ok])), error: c.error || null };
+        x.reviewReasons = (x.reviewReasons || []).filter((r) => r !== "awaiting_admin_mark_paid");
+        o.crypto = { ...(o.crypto || {}), network: net, txHash: hash, markedPaidAt: t, markedPaidBy: actor, markedPaidVia: override ? "admin_override" : "admin_checked" };
+      });
+      logAction({ result: override ? "marked_paid_override" : "marked_paid", txHash: hash, network: net, checkGreen: c.green });
+      if (override) alert(orderId, "admin_override_mark_paid", `${actor} marked paid WITHOUT a green check (${c.error || Object.entries(c.checks).filter(([, v]) => !v.ok).map(([k]) => k).join(",")}): ${note}`);
+      const paid = store.getOrder(orderId);
+      const g = await sendGa4Purchase(paid, { env, fetchImpl, skuMap: skuMap() });
+      update(orderId, (o) => { o.cryptoPayment.ga4 = g; });
+      return { ok: true, order: store.getOrder(orderId), check: checkSummary(c) };
+    }
     if (action === "mark_reviewed") {
       logAction({ statusAtAction: cp.status });
       update(orderId, (o) => { o.cryptoPayment.reviewedAt = t; o.cryptoPayment.reviewedBy = actor; });
@@ -624,6 +750,7 @@ export function createCryptoVerifier({
     tick,
     verifyOrderNow,
     customerConfirm,
+    submitCustomerTx,
     addHint,
     staffAction,
     evaluateAndApply,

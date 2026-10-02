@@ -4,7 +4,9 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 import { RapidError } from "./rapid.js";
+import { humanUseBlocks } from "./human-use.js"; // 2026-09-30 human-use flag -> COMPLIANCE_HOLD
 import { isCryptoVerified } from "./crypto-payment.js";
+import { checkShipRegion } from "./ship-region.js"; // infra 2026-10-01 ship48
 
 export const DEFAULT_SHIP_MAP = { express: "usps_rrd_priority", ground: "usps_evs_parcelgrnd", default: "usps_evs_parcelgrnd" };
 export const ALERT_STATUSES = new Set(["rejected", "returned", "addrcorrect"]);
@@ -65,6 +67,10 @@ export function rapidOrderNumber(order) {
 /** Eligibility for pushing a CRM order. Synthetic QA orders bypass the real-order gate but are still built the same way. */
 export function pushEligibility(order, cfg, { synthetic = false } = {}) {
   if (!order) return { ok: false, error: "not_found" };
+  // 2026-09-30: a customer with a human-use flag (or an order on COMPLIANCE_HOLD / cancel & refuse) never reaches Rapid.
+  if (humanUseBlocks(order)) return { ok: false, error: "compliance_hold" };
+  // 2026-09-30 (Yehuda): the research-solvent / BAC gift is stopped; an order still carrying such a line is refused outright.
+  if ((order.items || []).some((it) => isGiftLine(it, null))) return { ok: false, error: "gift_line_refused" };
   if (!synthetic) {
     if (!cfg.allowRealOrders) return { ok: false, error: "real_orders_disabled" };
     if (order.test === true || order.dryRun === true) return { ok: false, error: "test_order" };
@@ -161,6 +167,7 @@ export function mapOrderToRapid(order, { cfg, skuMap = {}, prefix, source } = {}
   const c = order.customer || {};
   const addr = address(c, `BLR${num ?? ""}`);
   for (const k of ["address", "town", "postcode", "country"]) if (!addr[k]) problems.push(`customer.${k === "town" ? "city" : k === "postcode" ? "zip" : k}`);
+  { const sr = checkShipRegion(c); if (!sr.ok) problems.push(`ship_region_unsupported:${sr.reason}`); }   // infra 2026-10-01 ship48: even a manual push refuses
   const priceLines = Array.isArray(order.priceCheck?.lines) ? order.priceCheck.lines : [];
   const products = [];
   const manualPack = [];
@@ -170,9 +177,8 @@ export function mapOrderToRapid(order, { cfg, skuMap = {}, prefix, source } = {}
     const m = skuMap[sku];
     const qty = Number(it.qty) || 0;
     if (isGiftLine(it, m)) {
-      // Default: leave the gift off the slip and flag it for manual packing. "neutral": a neutral insert line.
-      if (giftMode === "neutral") products.push({ product_id: "INS-01", name: "Accessory insert", qty: Math.max(1, qty) });
-      else manualPack.push({ sku, qty: Math.max(1, qty), reason: "free gift line: not on packing slip, pack manually" });
+      // 2026-09-30 (Yehuda): the research-solvent / BAC gift is stopped. Hard refuse: never a product, insert or manual-pack line.
+      problems.push(`gift_line_refused:${sku || "?"}`);
       continue;
     }
     if (!m) { problems.push(`sku:${sku || "?"}`); continue; }
@@ -204,7 +210,9 @@ export function mapOrderToRapid(order, { cfg, skuMap = {}, prefix, source } = {}
     products,
     subtotal: pc.subtotal != null ? String(pc.subtotal) : undefined,
     shipping_cost: pc.shipping != null ? String(pc.shipping) : undefined,
-    discount: vd && vd.discount ? String(vd.discount) : undefined,
+    // infra 2026-09-29 honest-charge: a coupon order is charged total_due; priceCheck.discount carries that discount
+    // for any source (coupon or volume ladder), volumeDiscount only for the ladder, so it stays the fallback.
+    discount: pc.discount && Number(pc.discount.amount) > 0 ? String(pc.discount.amount) : (vd && vd.discount ? String(vd.discount) : undefined),
     total_cost: order.amount != null ? String(order.amount) : undefined,
     paidtodate: order.amount != null ? String(order.amount) : undefined,
     currency: "USD",
@@ -225,6 +233,13 @@ export function assertNoCompoundNames(data, skuMap = {}) {
 export async function pushOrderToRapid(db, orderId, { client, cfg, skuMap, synthetic = false, now = () => new Date() } = {}) {
   const order = db.getOrder(orderId) || db.getOrderByRef(orderId);
   if (!order) return { ok: false, error: "not_found" };
+  // 2026-09-30 go-live: one log line per push attempt (order ref, Rapid order id or error, time). No address, name or email.
+  const logPush = (result) => process.stdout.write(`[rapid] push ref=${cut(order.orderRef || order.id, 40)} env=${cfg.env} ${result} at=${now().toISOString()}\n`);
+  // Test artifacts never reach the live warehouse: synthetic / test / dry-run / QA orders are refused on live.
+  if (cfg.env === "live" && (synthetic || order.test === true || order.dryRun === true || order.synthetic === true || /^QA-/i.test(String(order.id || "")))) {
+    logPush("refused=test_artifact_on_live");
+    return { ok: false, error: "test_artifact_on_live" };
+  }
   if (order.rapid && (order.rapid.status === "pushed" || order.rapid.status === "exists")) return { ok: true, reused: true, rapid: order.rapid };
   const elig = pushEligibility(order, cfg, { synthetic });
   if (!elig.ok) return { ok: false, error: elig.error };
@@ -235,6 +250,7 @@ export async function pushOrderToRapid(db, orderId, { client, cfg, skuMap, synth
   } catch (err) {
     order.rapid = { ...(order.rapid || {}), status: "error", error: err.message, errorAt: at, env: cfg.env };
     db.upsertOrder(order);
+    logPush(`error=${err.code === "compound_name_blocked" ? "compound_name_blocked" : "mapping_error"}`);
     return { ok: false, error: err.code === "compound_name_blocked" ? "compound_name_blocked" : "mapping_error", message: err.message };
   }
   try {
@@ -247,11 +263,13 @@ export async function pushOrderToRapid(db, orderId, { client, cfg, skuMap, synth
       manualPack: data.manualPack.length ? data.manualPack : null,
     };
     db.upsertOrder(fresh);
+    logPush(`ok rapid_order=${data.order_id_prefix}-${data.order_id}${r.alreadyExists ? " (already_exists)" : ""}`);
     return { ok: true, alreadyExists: r.alreadyExists, rapid: fresh.rapid };
   } catch (err) {
     const fresh = db.getOrder(order.id) || order;
     fresh.rapid = { ...(order.rapid || {}), status: "error", error: `${err.code ?? ""} ${err.message}`.trim(), errorAt: at, env: cfg.env, attempts: (order.rapid?.attempts || 0) + 1 };
     db.upsertOrder(fresh);
+    logPush(`error=${err.kind || "rapid_error"}${err.code !== undefined ? `/${err.code}` : ""}`);
     return { ok: false, error: err.kind || "rapid_error", code: err.code, message: err.message };
   }
 }
@@ -337,8 +355,9 @@ export function applyRapidRecord(db, order, rec, { now = () => new Date(), couri
   return changes;
 }
 
-function findByRapid(db, orderId, prefix) {
-  return db.listOrders().find((o) => o.rapid && Number(o.rapid.orderId) === Number(orderId) && Number(o.rapid.prefix ?? 0) === Number(prefix ?? 0)) || null;
+// env: records pushed to the test warehouse are never matched against live results (and the other way round).
+function findByRapid(db, orderId, prefix, env) {
+  return db.listOrders().find((o) => o.rapid && (!env || (o.rapid.env || "test") === env) && Number(o.rapid.orderId) === Number(orderId) && Number(o.rapid.prefix ?? 0) === Number(prefix ?? 0)) || null;
 }
 
 async function courierIndex(client) {
@@ -347,7 +366,8 @@ async function courierIndex(client) {
 
 /** Status sync for every pushed CRM order that is not final. */
 export async function syncPushedOrders(db, { client, now } = {}) {
-  const open = db.listOrders().filter((o) => o.rapid && (o.rapid.status === "pushed" || o.rapid.status === "exists") && !FINAL.has(o.rapid.rapidStatus));
+  const env = client?.config?.env;
+  const open = db.listOrders().filter((o) => o.rapid && (!env || (o.rapid.env || "test") === env) && (o.rapid.status === "pushed" || o.rapid.status === "exists") && !FINAL.has(o.rapid.rapidStatus));
   const out = { checked: 0, changed: 0, errors: 0 };
   if (!open.length) return out;
   const couriers = await courierIndex(client);
@@ -371,19 +391,19 @@ export async function pollShipped(db, { client, cfg, date, now } = {}) {
   const shipped = await client.ordersSearch({ ship_date: date, order_id_prefix: cfg.orderPrefix });
   const out = { date, shipped: shipped.length, matched: 0, changed: 0, rejected: 0, returned: 0, unmatched: 0 };
   for (const rec of shipped) {
-    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix);
+    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix, cfg.env);
     if (!o) { out.unmatched += 1; continue; }
     out.matched += 1;
     if (applyRapidRecord(db, o, rec, { now, couriers, source: "daily-shipped" }).length) out.changed += 1;
   }
   for (const rec of await client.ordersRejected(date)) {
-    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix);
+    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix, cfg.env);
     if (!o) continue;
     out.rejected += 1;
     applyRapidRecord(db, o, { status: "rejected", reason: rec.reason }, { now, couriers, source: "daily-rejected" });
   }
   for (const rec of await client.returnsList(date)) {
-    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix);
+    const o = findByRapid(db, rec.order_id, rec.order_id_prefix ?? cfg.orderPrefix, cfg.env);
     if (!o) continue;
     out.returned += 1;
     applyRapidRecord(db, o, { status: "returned", reason: rec.reason }, { now, couriers, source: "daily-returns" });
