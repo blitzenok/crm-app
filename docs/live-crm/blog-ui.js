@@ -533,7 +533,28 @@
     return (e && e.message) || 'Upload failed';
   }
 
+  // ---- the short "how this works" note (the "?" button of the list and of the editor) ---------------------------------
+  // One text for both pages, in plain words: the people who open it write articles, they do not know how the site is built.
+  var HELP = [
+    ['Article list', 'All articles and their status. Draft: not on the site. Scheduled: goes live at the set time. Published: on the site.'],
+    ['Writing', 'Type in the big field. Toolbar: headings, lists, links. Insert: image, video, table, FAQ, button.'],
+    ['Pictures', 'Pull the left or right edge to resize. Fill in Alt text: what is in the picture.'],
+    ['Saving', 'Automatic. The green label shows the time of the last save.'],
+    ['Panel on the right', 'Post: address, category, cover. SEO: title and description for Google. Checklist: red must be fixed, yellow is advice.'],
+    ['Preview', 'The page as a visitor will see it. Nothing goes to the site.'],
+    ['Publish', 'Puts the article on the site at once. Later edits stay hidden until you press Update.'],
+    ['The … menu', 'History, Duplicate, Unpublish, Delete (kept in the trash for 30 days).'],
+    ['Full screen', 'Hides the CRM menu. Esc brings it back.'],
+  ];
+  function help() {
+    var body = el('div', { className: 'bw-help' }, HELP.map(function (h) {
+      return el('div', { className: 'bw-help-row' }, [el('div', { className: 'bw-help-term', text: h[0] }), el('div', { className: 'bw-help-text', text: h[1] })]);
+    }));
+    return dialog({ title: 'How the Blog works', body: body, width: 640, className: 'bw-help-modal', buttons: [{ label: 'Got it', kind: 'primary', onClick: function (d) { d.close(); } }] });
+  }
+
   root.BlogUi = {
+    help: help,
     uploadError: uploadError,
     SITE_ORIGIN: SITE_ORIGIN, previewUrl: previewUrl, openLater: openLater,
     el: el, append: append, clear: clear, toast: toast, confirm: confirm, dialog: dialog, popover: popover, menu: menu, select: select,

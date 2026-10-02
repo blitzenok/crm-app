@@ -24,6 +24,8 @@
   var $banner = document.getElementById('bl-banner');
   var $search = document.getElementById('bl-search');
   var $new = document.getElementById('bl-new');
+  var $help = document.getElementById('bl-help');
+  if ($help) $help.addEventListener('click', function () { ui.help(); });   // the short note about this page, shared with the editor
 
   function showBanner(text, retry) {
     ui.clear($banner);

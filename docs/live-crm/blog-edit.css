@@ -410,3 +410,10 @@ body.bw-focus .app-wrapper { width: 100%; }
   .bw-bar { padding: 8px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .bw-side { transition: none; } .be-flash { animation: none; } .bw-sel, .bw-sel-chev, .bw-sel-list { transition: none; } }
+
+/* ---- the "?" note (BlogUi.help): the same rules live in blog.css and blog-edit.css, each page loads only one of them ---- */
+.bw-help-btn { min-width: 38px; font-weight: 700; }
+.bw-help { display: flex; flex-direction: column; gap: 10px; }
+.bw-help-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; font-size: 14px; line-height: 1.45; }
+.bw-help-term { font-weight: 700; }
+@media (max-width: 560px) { .bw-help-row { grid-template-columns: 1fr; gap: 2px; } }

@@ -731,5 +731,8 @@
   }
   wireFocus();
 
+  // The short note about this page, the same one the article list opens.
+  (function () { var b = $('bw-help'); if (b) b.addEventListener('click', function () { ui.help(); }); }());
+
   boot();
 }(typeof window !== 'undefined' ? window : null));
