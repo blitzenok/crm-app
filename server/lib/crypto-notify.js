@@ -4,10 +4,13 @@ import { createHash } from "node:crypto";
 
 import { registerEmailType } from "./order-emails.js";
 import { h } from "./email-templates.js";
+import { logSafe } from "./sanitize.js";
 
 export const SUPPORT_FROM = "support@biolabsresearch.co"; // the order emailer sends every customer email From support@
 export const CANCEL_SUBJECT = "Payment not received, order cancelled";
 export const CANCEL_EMAIL_TYPE = "payment_cancelled";
+
+const PAY_ALERT_TYPES = new Set(["verified_awaiting_admin", "customer_tx_submitted", "sanctions_match", "unmatched_deposit", "partial_payment"]);
 
 const netLabel = (n) => (n === "trc20" ? "Tron (TRC-20)" : n === "erc20" ? "Ethereum (ERC-20)" : "crypto");
 
@@ -54,6 +57,11 @@ export async function sendCancelEmail(order, deps = {}) {
 /** Internal alert: [crypto] ALERT log line (journal) + the CRM alert list (GET /api/crypto/alerts). */
 export async function sendInternalAlert(alert) {
   process.stdout.write(`[crypto] ALERT ${alert.type} ${alert.orderId || "-"} ${alert.message || ""}\n`);
+  // audit 2026-10-02 (pay-cleffo-crypto-2): ops-watch only reads [pay-alert] lines, so these never reached Telegram and a paid crypto
+  // order waited for a staff member to open Crypto Orders by chance. Only the cases that need an operator now.
+  if (PAY_ALERT_TYPES.has(alert.type)) {
+    process.stdout.write(`[pay-alert] CRYPTO_${String(alert.type).toUpperCase()} ${logSafe(alert.orderId || "-", 40)} ${logSafe(alert.message, 160)}\n`);
+  }
   return { status: "logged" };
 }
 

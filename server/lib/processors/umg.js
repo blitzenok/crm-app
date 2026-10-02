@@ -103,9 +103,21 @@ async function requestJson(url, { method = "GET", headers = {}, body, timeoutMs,
   }
 }
 
+// audit 2026-10-02 (pay-core-8): a lost / rejected UMG credential looks to the buyer like "card not accepted" and nobody noticed.
+// One [pay-alert] per kind per 10 minutes (ops-watch -> Telegram); the answer to the buyer is unchanged.
+const alertedAt = new Map();
+export function _resetUmgAlerts() { alertedAt.clear(); }
+function umgUnavailableAlert(kind) {
+  const now = Date.now();
+  if (now - (alertedAt.get(kind) || 0) < 10 * 60 * 1000) return;
+  alertedAt.set(kind, now);
+  process.stdout.write(`[pay-alert] UMG_UNAVAILABLE ${kind}\n`);
+}
+
 export async function createPayment(input, deps = {}) {
   const secret = deps.secret !== undefined ? deps.secret : loadUmgSecret();
   if (!secret) {
+    umgUnavailableAlert("secret_not_loaded");
     return {
       ok: false,
       processor: id,
@@ -134,6 +146,7 @@ export async function createPayment(input, deps = {}) {
     fetchImpl: deps.fetchImpl,
   });
 
+  if (result.httpStatus === 401 || result.httpStatus === 403) umgUnavailableAlert(`http_${result.httpStatus}`);
   let previous;
   if (result.errorMessage || result.body == null) {
     const classified = classifyHttpFailure(result.httpStatus, result.errorMessage);

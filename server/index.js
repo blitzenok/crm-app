@@ -87,9 +87,21 @@ let defaultInventoryStore = null;
 function sharedInventoryStore() {
   if (!defaultInventoryStore) {
     defaultInventoryStore = createInventoryStore({ filePath: INVENTORY_PATH });
-    seedInventory(defaultInventoryStore);
+    seedInventoryGuarded(defaultInventoryStore);
   }
   return defaultInventoryStore;
+}
+
+// audit 2026-10-02 (pay-rest-4): the intake seed ends in hard checks (invoice totals, PO totals). A failed check used to throw out of
+// sharedInventoryStore() at start-up and the whole payment service (card + crypto) stayed down. Inventory is not on the payment path:
+// log a [pay-alert] and keep starting. The checks themselves stay strict inside seedInventory (and the Re-run intake action).
+export function seedInventoryGuarded(store, seed = seedInventory) {
+  try {
+    return seed(store);
+  } catch (err) {
+    process.stdout.write(`[pay-alert] INVENTORY_SEED_FAILED ${String(err?.message || err).slice(0, 200)} (payments keep running, inventory not seeded)\n`);
+    return null;
+  }
 }
 
 function isUnknownOutcome(order) {

@@ -49,6 +49,11 @@ function asAbandonedMap(value) {
   return value;
 }
 
+// audit 2026-10-02 (sec-pay-7): session_id comes from the public beacon; a plain-object lookup by "__proto__" / "constructor"
+// returns Object.prototype / a function, and the following field writes pollute the whole process. Only own keys count.
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+const UNSAFE_SESSION_IDS = new Set(["__proto__", "constructor", "prototype"]);
+
 function trimAbandonedMap(map, max, keepId) {
   const keys = Object.keys(map);
   if (keys.length <= max) return;
@@ -190,7 +195,8 @@ export function createStore(opts = {}) {
           normalized.push(fallback);
         }
       }
-      let kill = incoming.killSwitchPsp ?? data.settings.killSwitchPsp;
+      // audit 2026-10-02 (pay-rest-13): `??` made null ("Off" in the UI) fall back to the old value, so a kill switch could never be cleared.
+      let kill = incoming.killSwitchPsp !== undefined ? incoming.killSwitchPsp : data.settings.killSwitchPsp;
       if (kill === "" || kill === "none") kill = null;
       if (kill && !PROCESSOR_IDS.includes(kill)) kill = null;
       data.settings = { killSwitchPsp: kill, processors: normalized };
@@ -269,7 +275,7 @@ export function createStore(opts = {}) {
     },
     deleteAbandonedCheckout(sessionId) {
       const key = String(sessionId || "");
-      if (!key || !data.abandoned_checkouts[key]) return null;
+      if (!key || !hasOwn(data.abandoned_checkouts, key)) return null;
       const gone = data.abandoned_checkouts[key];
       delete data.abandoned_checkouts[key];
       persist();
@@ -377,16 +383,16 @@ export function createStore(opts = {}) {
     getAbandonedCheckout(sessionId) {
       const sid = String(sessionId || "").trim();
       if (!sid) return null;
-      const row = asAbandonedMap(data.abandoned_checkouts)[sid];
-      return row ? clone(row) : null;
+      const map = asAbandonedMap(data.abandoned_checkouts);
+      return hasOwn(map, sid) ? clone(map[sid]) : null;
     },
     upsertAbandonedCheckout(record, opts = {}) {
       if (!data.abandoned_checkouts || typeof data.abandoned_checkouts !== "object" || Array.isArray(data.abandoned_checkouts)) {
         data.abandoned_checkouts = {};
       }
       const sid = String(record?.session_id || "").trim();
-      if (!sid) return null;
-      const prev = data.abandoned_checkouts[sid];
+      if (!sid || UNSAFE_SESSION_IDS.has(sid)) return null; // audit 2026-10-02: assigning "__proto__" would swap the map's prototype
+      const prev = hasOwn(data.abandoned_checkouts, sid) ? data.abandoned_checkouts[sid] : undefined;
       const now = record.last_seen || record.seen_at || new Date().toISOString();
       const next = {
         session_id: sid,
@@ -414,6 +420,7 @@ export function createStore(opts = {}) {
       const sid = String(sessionId || "").trim();
       if (!sid) return null;
       if (!data.abandoned_checkouts || typeof data.abandoned_checkouts !== "object") return null;
+      if (!hasOwn(data.abandoned_checkouts, sid)) return null;
       const row = data.abandoned_checkouts[sid];
       if (!row) return null;
       row.status = "converted";

@@ -139,6 +139,14 @@ async function quoteCart(fetchImpl, url, { coupon, lines, shippingCents }) {
   return q;
 }
 
+export const MAX_CART_LINES = 50;
+export const MAX_QTY = 999;
+/** Plain integer 1..MAX_QTY as a number or a digit-only string; anything else is null. */
+export function strictQty(raw) {
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && /^\d{1,4}$/.test(raw) ? Number(raw) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_QTY ? n : null;
+}
+
 /**
  * input: { amount, items:[{sku,name,qty,amount}], shipMethod?, coupon?, notes? }
  * opts.itemAmount: "line" (crypto payload: amount = line total) | "unit" (card payload: amount = unit price)
@@ -151,8 +159,14 @@ export async function priceCart(input, opts = {}) {
   const unitMode = opts.itemAmount === "unit";
   const items = stripGiftLines(Array.isArray(input?.items) ? input.items : []).items;
   if (!items.length) return { ok: false, error: "items_required", status: 400 };
-  const lines = items.map((it) => {
-    const qty = Math.max(1, parseInt(it.qty ?? it.quantity, 10) || 1);
+  // audit 2026-10-02 (pay-core-14, sec-pay-4): cap the fan-out of per-line catalog quotes, and read qty ONE way. parseInt("5abc")=5 /
+  // parseInt("1e3")=1 here, while the order, stock and Rapid read Number() (NaN / 1000): the page was charged for one thing and the warehouse
+  // got another. Only a plain integer 1..MAX_QTY (number or digit string) passes; the caller answers 400 before any products-api request.
+  if (items.length > MAX_CART_LINES) return { ok: false, error: "cart_too_large", status: 400 };
+  const qtys = items.map((it) => strictQty(it.qty ?? it.quantity));
+  if (qtys.some((q) => q === null)) return { ok: false, error: "invalid_item_qty", status: 400 };
+  const lines = items.map((it, i) => {
+    const qty = qtys[i];
     const { slug, mg } = splitCartSku(it.sku || it.slug);
     const raw = cents(it.amount ?? it.price ?? 0);
     const clientLineCents = Number.isFinite(raw) ? (unitMode ? raw * qty : raw) : NaN;
