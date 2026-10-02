@@ -247,6 +247,241 @@
     return pop;
   }
 
+  // ---- select ---------------------------------------------------------------------------------------------------------
+  // Replaces the browser's <select>: its open list cannot be styled, and a click on it moves focus out of the editor, which
+  // is what the block-type list in the toolbar must not do. The page keeps DOM focus on the button the whole time
+  // (aria-activedescendant points into the list), the list itself lives on <body> so no scrolling column can clip it, and
+  // while it is open one capture-phase keydown handler on the document drives it, wherever the focus is (with `keepFocus`
+  // a mouse click leaves the caret in the text, so the keys would otherwise go to the editor).
+  // select({options: [{value, label, hint?, className?, muted?}], value, placeholder, onChange(value), ariaLabel | labelledBy,
+  //         id, className, title, keepFocus}) -> {el, value(), setValue(v), setOptions(list), setDisabled(b), focus(), open(), close(), isOpen()}
+  // onChange fires only for a choice made by the person, never for setValue().
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var selSeq = 0;
+  var openSel = null;
+
+  function svgPath(d, size, cls) {
+    var s = document.createElementNS(SVG_NS, 'svg');
+    s.setAttribute('viewBox', '0 0 20 20');
+    s.setAttribute('width', String(size));
+    s.setAttribute('height', String(size));
+    s.setAttribute('aria-hidden', 'true');
+    if (cls) s.setAttribute('class', cls);
+    var p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', d);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '1.8');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    s.appendChild(p);
+    return s;
+  }
+  function reducedMotion() {
+    try { return !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+  }
+
+  function select(o) {
+    o = o || {};
+    var uid = 'bw-sel-' + (++selSeq);
+    var options = [];
+    var value = o.value === undefined || o.value === null ? '' : o.value;
+    var keepFocus = !!o.keepFocus;
+    var disabled = false;
+    var list = null;        // the open listbox node
+    var active = -1;        // highlighted option while open
+    var typed = '';
+    var typedTimer = null;
+    var labelNode = el('span', { className: 'bw-sel-label' });
+    var btn = el('button', {
+      type: 'button', id: o.id, className: 'bw-sel' + (o.className ? ' ' + o.className : ''), title: o.title,
+      role: 'combobox', 'aria-haspopup': 'listbox', 'aria-expanded': 'false', 'aria-controls': uid + '-list',
+      'aria-label': o.ariaLabel, 'aria-labelledby': o.labelledBy,
+    }, [labelNode, svgPath('M5 7.5l5 5 5-5', 14, 'bw-sel-chev')]);
+
+    function indexOf(v) {
+      for (var i = 0; i < options.length; i++) if (options[i].value === v) return i;
+      return -1;
+    }
+    function paintLabel() {
+      var i = indexOf(value);
+      labelNode.textContent = i >= 0 ? options[i].label : (o.placeholder || '');
+      labelNode.classList.toggle('bw-sel-muted', i < 0 || !!options[i].muted);
+    }
+    function paintSelected() {
+      if (!list) return;
+      Array.prototype.forEach.call(list.children, function (row, i) { row.setAttribute('aria-selected', options[i].value === value ? 'true' : 'false'); });
+    }
+
+    function place() {
+      var r = btn.getBoundingClientRect();
+      list.style.minWidth = Math.max(r.width, 160) + 'px';
+      list.style.maxHeight = '';
+      var h = list.offsetHeight;
+      var below = root.innerHeight - r.bottom - 14;
+      var above = r.top - 14;
+      var up = h > below && above > below;
+      var room = up ? above : below;
+      if (h > room) { list.style.maxHeight = Math.max(120, room) + 'px'; h = list.offsetHeight; }
+      var w = list.offsetWidth;
+      list.style.left = Math.max(8, Math.min(r.left, root.innerWidth - w - 8)) + 'px';
+      list.style.top = Math.max(8, up ? r.top - 6 - h : r.bottom + 6) + 'px';
+      list.classList.toggle('bw-sel-up', up);
+    }
+
+    function setActive(i, scroll) {
+      if (!list || i < 0 || i >= options.length) return;
+      if (active >= 0 && list.children[active]) list.children[active].classList.remove('bw-act');
+      active = i;
+      var row = list.children[i];
+      row.classList.add('bw-act');
+      btn.setAttribute('aria-activedescendant', row.id);
+      if (scroll) {
+        if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop - 6;
+        else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight + 6;
+      }
+    }
+
+    function typeahead(ch) {
+      typed += ch.toLowerCase();
+      clearTimeout(typedTimer);
+      typedTimer = setTimeout(function () { typed = ''; }, 700);
+      // one letter pressed again walks on to the next option with that letter; a longer prefix stays put while it still fits
+      var start = typed.length === 1 ? active + 1 : active;
+      for (var n = 0; n < options.length; n++) {
+        var i = (Math.max(start, 0) + n) % options.length;
+        if (options[i].label.toLowerCase().indexOf(typed) === 0) { setActive(i, true); return; }
+      }
+    }
+
+    function choose(i) {
+      var opt = options[i];
+      if (!opt) return;
+      var changed = opt.value !== value;
+      value = opt.value;
+      paintLabel();
+      close(true);
+      if (changed && typeof o.onChange === 'function') o.onChange(value);
+    }
+
+    // The one handler while open (document, capture): it runs before the editor's or the page's own key handlers.
+    function onKey(e) {
+      if (!list || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      var k = e.key;
+      var handled = true;
+      if (k !== ' ' && k.length > 1) { clearTimeout(typedTimer); typed = ''; }   // moving on starts a new typed prefix
+      if (k === 'ArrowDown') setActive(Math.min(options.length - 1, active + 1), true);
+      else if (k === 'ArrowUp') setActive(Math.max(0, active - 1), true);
+      else if (k === 'Home') setActive(0, true);
+      else if (k === 'End') setActive(options.length - 1, true);
+      else if (k === 'Enter' || (k === ' ' && !typed)) choose(active);
+      else if (k === 'Escape') close(true);
+      else if (k === 'Tab') { close(false); handled = false; }
+      else if (k === 'ArrowLeft' || k === 'ArrowRight') { /* the toolbar would move focus away under an open list */ }
+      else if (k.length === 1) typeahead(k);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    function onOutside(e) { if (list && !list.contains(e.target) && !btn.contains(e.target)) close(false); }
+    function onMove(e) { if (list && !list.contains(e.target)) close(false); }
+    function onResize() { close(false); }
+
+    function open() {
+      if (disabled || list || !options.length) return;
+      if (openSel) openSel.close();
+      closePopover();
+      var node = el('div', { id: uid + '-list', className: 'bw-sel-list', role: 'listbox', 'aria-label': o.ariaLabel, 'aria-labelledby': o.labelledBy });
+      options.forEach(function (opt, i) {
+        var row = el('div', {
+          id: uid + '-o' + i, role: 'option', className: 'bw-sel-opt' + (opt.className ? ' ' + opt.className : '') + (opt.muted ? ' bw-sel-muted' : ''),
+          'aria-selected': opt.value === value ? 'true' : 'false',
+        }, [el('span', { className: 'bw-sel-tick' }, [svgPath('M4.5 10.5l3.5 3.5 7.5-8', 14)]), el('span', { className: 'bw-sel-text', text: opt.label }), opt.hint ? el('small', { text: opt.hint }) : null]);
+        row.addEventListener('mousemove', function () { if (active !== i) setActive(i, false); });
+        row.addEventListener('click', function () { choose(i); });
+        node.appendChild(row);
+      });
+      // A click in the list must not take focus from where it is (the editor keeps its caret).
+      node.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      list = node;
+      active = -1;
+      document.body.appendChild(node);
+      place();
+      setActive(Math.max(0, indexOf(value)), true);
+      btn.setAttribute('aria-expanded', 'true');
+      document.addEventListener('keydown', onKey, true);
+      document.addEventListener('mousedown', onOutside, true);
+      root.addEventListener('resize', onResize);
+      openSel = api;
+      // The scroll listener waits one frame: focusing the button may scroll its column, and that event must not close the list.
+      root.requestAnimationFrame(function () {
+        if (list !== node) return;
+        node.classList.add('bw-sel-open');
+        root.addEventListener('scroll', onMove, true);
+      });
+    }
+
+    function close(restoreFocus) {
+      if (!list) return;
+      var node = list;
+      list = null;
+      active = -1;
+      if (openSel === api) openSel = null;
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('mousedown', onOutside, true);
+      root.removeEventListener('resize', onResize);
+      root.removeEventListener('scroll', onMove, true);
+      clearTimeout(typedTimer);
+      typed = '';
+      btn.setAttribute('aria-expanded', 'false');
+      btn.removeAttribute('aria-activedescendant');
+      node.classList.remove('bw-sel-open');
+      var drop = function () { if (node.parentNode) node.parentNode.removeChild(node); };
+      if (reducedMotion()) drop();
+      else {
+        // fades out for a moment; its ids are released at once so a list opened again straight away is the only one with them
+        node.setAttribute('aria-hidden', 'true');
+        node.style.pointerEvents = 'none';
+        Array.prototype.forEach.call(node.querySelectorAll('[id]'), function (n) { n.removeAttribute('id'); });
+        node.removeAttribute('id');
+        setTimeout(drop, 180);
+      }
+      if (restoreFocus && !keepFocus) btn.focus();
+    }
+
+    if (keepFocus) btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    btn.addEventListener('click', function () {
+      if (list) { close(true); return; }
+      if (!keepFocus) btn.focus();   // Safari does not focus a button on click
+      open();
+    });
+    btn.addEventListener('keydown', function (e) {
+      if (list || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); open(); }
+    });
+    // Space acts on key-up for a button (Firefox): the key-down already opened the list, so the click must not toggle it shut again.
+    btn.addEventListener('keyup', function (e) { if (e.key === ' ') e.preventDefault(); });
+
+    function setOptions(items) {
+      close(false);
+      options = (items || []).map(function (x) { return { value: x.value, label: String(x.label), hint: x.hint, className: x.className, muted: !!x.muted }; });
+      paintLabel();
+    }
+
+    var api = {
+      el: btn,
+      value: function () { return value; },
+      setValue: function (v) { value = v === undefined || v === null ? '' : v; paintLabel(); paintSelected(); },
+      setOptions: setOptions,
+      setDisabled: function (b) { disabled = !!b; btn.disabled = disabled; if (disabled) close(false); },
+      focus: function () { btn.focus(); },
+      open: open,
+      close: function () { close(false); },
+      isOpen: function () { return !!list; },
+    };
+    setOptions(o.options);
+    return api;
+  }
+
   function debounce(fn, ms) {
     var t = null;
     var d = function () {
@@ -301,7 +536,7 @@
   root.BlogUi = {
     uploadError: uploadError,
     SITE_ORIGIN: SITE_ORIGIN, previewUrl: previewUrl, openLater: openLater,
-    el: el, append: append, clear: clear, toast: toast, confirm: confirm, dialog: dialog, popover: popover, menu: menu,
+    el: el, append: append, clear: clear, toast: toast, confirm: confirm, dialog: dialog, popover: popover, menu: menu, select: select,
     closePopover: closePopover, debounce: debounce, relTime: relTime, fmtTime: fmtTime, fmtDateTime: fmtDateTime, who: who,
     timeZone: timeZone,
   };

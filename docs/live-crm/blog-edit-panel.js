@@ -31,7 +31,7 @@
     var f = {};   // the inputs
 
     function field(label, control, hint, id) {
-      var kids = [el('label', { className: 'bw-label', text: label, for: id }), control];
+      var kids = [el('label', { className: 'bw-label', id: id ? id + '-label' : undefined, text: label, for: id }), control];
       if (hint) kids.push(el('div', { className: 'bw-hint', text: hint }));
       return el('div', { className: 'bw-field' }, kids);
     }
@@ -52,7 +52,7 @@
       f.slug.focus();
     });
 
-    f.category = el('select', { id: 'bw-category', className: 'bw-input' });
+    f.category = ui.select({ id: 'bw-category', labelledBy: 'bw-category-label', onChange: onCategoryChange });
     f.newCategoryRow = el('div', { className: 'bw-row', hidden: true });
     f.newCategory = el('input', { type: 'text', className: 'bw-input', maxlength: '24', placeholder: 'New category name', 'aria-label': 'New category name', autocomplete: 'off' });
     f.newCategoryAdd = el('button', { type: 'button', className: 'btn btn-primary bw-small', text: 'Add' });
@@ -61,14 +61,14 @@
     f.newCategoryRow.append(f.newCategory, f.newCategoryAdd, f.newCategoryCancel);
     var NEW_CATEGORY = '\u0000new';
     var categoryBefore = '';
-    f.category.addEventListener('change', function () {
-      if (f.category.value === NEW_CATEGORY) {
+    function onCategoryChange(v) {
+      if (v === NEW_CATEGORY) {
         f.newCategoryRow.hidden = false;
         f.newCategory.focus();
-      } else { categoryBefore = f.category.value; hideNewCategory(); changed(); }
-    });
+      } else { categoryBefore = v; hideNewCategory(); changed(); }
+    }
     function hideNewCategory() { f.newCategoryRow.hidden = true; f.newCategory.value = ''; f.categoryMsg.textContent = ''; }
-    f.newCategoryCancel.addEventListener('click', function () { hideNewCategory(); f.category.value = categoryBefore; });
+    f.newCategoryCancel.addEventListener('click', function () { hideNewCategory(); f.category.setValue(categoryBefore); });
     function addCategory() {
       var name = f.newCategory.value.trim();
       f.categoryMsg.textContent = '';
@@ -86,14 +86,14 @@
     f.newCategory.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addCategory(); } });
 
     function setCategories(list, select) {
-      var cur = select !== undefined ? select : f.category.value;
-      ui.clear(f.category);
-      f.category.appendChild(el('option', { value: '', text: 'Choose a category…' }));
-      (list || []).forEach(function (c) { f.category.appendChild(el('option', { value: c, text: c })); });
+      var cur = select !== undefined ? select : f.category.value();
+      var opts = [{ value: '', label: 'Choose a category…', muted: true }];
+      (list || []).forEach(function (c) { opts.push({ value: c, label: c }); });
       // a draft may carry a category that is no longer in the list: keep it visible rather than silently dropping it
-      if (cur && (list || []).indexOf(cur) < 0) f.category.appendChild(el('option', { value: cur, text: cur }));
-      f.category.appendChild(el('option', { value: NEW_CATEGORY, text: 'New category…' }));
-      f.category.value = cur || '';
+      if (cur && (list || []).indexOf(cur) < 0) opts.push({ value: cur, label: cur });
+      opts.push({ value: NEW_CATEGORY, label: 'New category…', className: 'bw-sel-new' });
+      f.category.setOptions(opts);
+      f.category.setValue(cur || '');
     }
 
     f.coverUpload = el('input', { type: 'file', accept: 'image/*', hidden: true, 'aria-label': 'Cover image file' });
@@ -146,7 +146,7 @@
     f.noindex.addEventListener('change', changed);
 
     panes.post.appendChild(field('Address', el('div', {}, [el('div', { className: 'bw-row' }, [el('span', { className: 'bw-prefix', text: '/blog/' }), f.slug, f.slugFromTitle]), f.slugMsg, f.redirectNote]), '', 'bw-slug'));
-    panes.post.appendChild(field('Category', el('div', {}, [f.category, f.newCategoryRow, f.categoryMsg]), '', 'bw-category'));
+    panes.post.appendChild(field('Category', el('div', {}, [f.category.el, f.newCategoryRow, f.categoryMsg]), '', 'bw-category'));
     panes.post.appendChild(el('div', { className: 'bw-field' }, [
       el('div', { className: 'bw-label', text: 'Cover image' }),
       el('div', { className: 'bw-crops' }, [
@@ -395,7 +395,7 @@
         slug: f.slug.value.trim(),
         seoTitle: f.seoTitle.value.trim(),
         description: f.description.value.trim(),
-        category: f.category.value === NEW_CATEGORY ? categoryBefore : f.category.value,
+        category: f.category.value() === NEW_CATEGORY ? categoryBefore : f.category.value(),
         cover: { src: cover.src, alt: cover.alt, card: cover.card, share: cover.share },
         focusKeyword: f.focusKw.value.trim(),
         secondaryKeywords: secondary.slice(),
@@ -411,6 +411,7 @@
     }
     function setEditable(on) {
       editable = !!on;
+      f.category.setDisabled(!on);
       Object.keys(f).forEach(function (k) { var n = f[k]; if (n && (n.tagName === 'INPUT' || n.tagName === 'SELECT' || n.tagName === 'TEXTAREA' || n.tagName === 'BUTTON')) n.disabled = !on; });
       renderChips();
     }

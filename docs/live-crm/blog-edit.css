@@ -82,7 +82,7 @@
 .bw-tb-wide { padding: 0 8px; }
 .bw-tb-text { font-size: 12px !important; padding: 0 9px; }
 .bw-tb-text.bw-danger { color: var(--bw-bad) !important; }
-.bw-tb-select { height: 32px; min-height: 32px !important; border: 1px solid var(--bw-field-line); border-radius: 8px; padding: 0 8px; background: #fff; font: inherit; font-size: 13px; color: #1a1a2e; }
+.bw-sel.bw-tb-select { width: auto; min-width: 120px; height: 32px; min-height: 32px !important; padding: 0 8px 0 10px; color: #1a1a2e; }
 
 /* ---- writing column: the published article's typography (assets/blog.css and the static articles' inline styles) ---- */
 .bw-column { padding-top: 28px; padding-bottom: 120px; }
@@ -308,6 +308,32 @@
 .bw-version-title { color: #5A6685; font-size: 12px; margin-top: 2px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bw-bigtext { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 
+/* ---- select (BlogUi.select): the button looks like a field, the list like the page's other pop-ups ---- */
+.bw-sel { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; box-sizing: border-box; min-height: 0 !important; padding: 8px 10px; border: 1px solid var(--bw-field-line); border-radius: 8px; background: #fff; font: inherit; font-size: 13px; color: #0F172A; text-align: left; cursor: pointer; box-shadow: none; transition: border-color .12s ease, background-color .12s ease; }
+.bw-sel:hover:not([disabled]) { border-color: #94A3B8; }
+.bw-sel:focus-visible, .bw-sel[aria-expanded="true"] { outline: 2px solid var(--bw-navy); outline-offset: 0; border-color: var(--bw-navy); }
+.bw-sel[disabled] { background: #F1F5F9; color: #64748B; cursor: default; }
+.bw-sel-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bw-sel-muted { color: #8A94A6; }
+.bw-sel-chev { flex: 0 0 auto; color: #64748B; transition: transform .16s ease; }
+.bw-sel[aria-expanded="true"] .bw-sel-chev { transform: rotate(180deg); }
+.bw-sel-list { position: fixed; z-index: 1100; box-sizing: border-box; max-width: calc(100vw - 16px); max-height: 320px; overflow-y: auto; overscroll-behavior: contain; padding: 6px; background: #fff; border: 1px solid var(--bw-chrome-line); border-radius: 12px; box-shadow: 0 14px 36px rgba(15, 23, 42, .18); opacity: 0; transform: translateY(-4px) scale(.98); transform-origin: top center; transition: opacity .14s ease, transform .14s ease; }
+.bw-sel-list.bw-sel-up { transform: translateY(4px) scale(.98); transform-origin: bottom center; }
+.bw-sel-list.bw-sel-open { opacity: 1; transform: none; }
+.bw-sel-opt { position: relative; display: flex; align-items: center; gap: 6px; padding: 9px 10px 9px 6px; border-radius: 8px; font-size: 13px; line-height: 1.3; color: #1a1a2e; cursor: pointer; user-select: none; }
+.bw-sel-opt.bw-act { background: #F1F5F9; }
+.bw-sel-opt[aria-selected="true"] { background: #E6F4EA; color: #145C2C; font-weight: 600; }
+.bw-sel-tick { flex: 0 0 14px; display: inline-flex; opacity: 0; }
+.bw-sel-opt[aria-selected="true"] .bw-sel-tick { opacity: 1; }
+.bw-sel-text { flex: 1 1 auto; min-width: 0; }
+.bw-sel-opt small { color: #8A94A6; font-weight: 500; }
+.bw-sel-opt.bw-sel-muted { color: #8A94A6; }
+.bw-sel-opt.bw-sel-new { margin-top: 7px; }
+.bw-sel-opt.bw-sel-new::before { content: ''; position: absolute; left: 4px; right: 4px; top: -4px; height: 1px; background: var(--bw-chrome-line); }
+.bw-sel-h2 { font-size: 16px; font-weight: 700; }
+.bw-sel-h3 { font-size: 14.5px; font-weight: 700; }
+.bw-sel-h4 { font-size: 13.5px; font-weight: 600; }
+
 /* ---- menus, popovers, slash menu, selection bar ---- */
 .bw-pop { position: fixed; z-index: 950; background: #fff; border: 1px solid var(--bw-chrome-line); border-radius: 12px; box-shadow: 0 14px 36px rgba(15, 23, 42, .18); padding: 6px; }
 .bw-menu { min-width: 190px; display: flex; flex-direction: column; }
@@ -346,4 +372,4 @@
   .bw-titlebox, .bw-column { padding-left: 16px; padding-right: 16px; }
   .bw-bar { padding: 8px 12px; }
 }
-@media (prefers-reduced-motion: reduce) { .bw-side { transition: none; } .be-flash { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bw-side { transition: none; } .be-flash { animation: none; } .bw-sel, .bw-sel-chev, .bw-sel-list { transition: none; } }

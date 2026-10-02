@@ -6,7 +6,7 @@
      when the same content came back saved, never by time (a clean copy would keep the whole text in localStorage for
      nothing, and fill the quota). On open a dirty copy is offered whatever the clocks say: a laptop clock a day behind
      must not hide the author's text.
-   - Autosave waits 2 s after the last edit, but never more than 10 s after the first unsaved one (steady typing is saved).
+   - Autosave waits 1 s after the last edit, but never more than 10 s after the first unsaved one (steady typing is saved).
    - A save in flight does not block typing; the answer's rev is used for the next save, so the author never conflicts
      with himself.
    - 409 stops saving until the author chooses (resolveConflict). 401, network, 5xx, 408 and 429 are "offline": retries after
@@ -29,7 +29,7 @@
 
   function createKeeper(o) {
     o = o || {};
-    var delayMs = typeof o.delayMs === 'number' ? o.delayMs : 2000;
+    var delayMs = typeof o.delayMs === 'number' ? o.delayMs : 1000;   // the checklist follows the save: at 2 s a ticked item lingered noticeably
     var now = o.now || function () { return Date.now(); };
     var timers = o.timers || {
       setTimeout: function (f, ms) { return setTimeout(f, ms); },

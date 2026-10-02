@@ -92,19 +92,21 @@
     }
     function add(o) { return addTo(group, o); }
 
-    select = el('select', { className: 'bw-tb-select', 'aria-label': 'Text style', title: 'Text style' }, [
-      el('option', { value: 'paragraph', text: 'Paragraph' }),
-      el('option', { value: 'heading2', text: 'Heading 2' }),
-      el('option', { value: 'heading3', text: 'Heading 3' }),
-      el('option', { value: 'heading4', text: 'Heading 4' }),
-      el('option', { value: 'other', text: '—', disabled: true, hidden: true }),
-    ]);
-    select.addEventListener('change', function () {
-      var v = select.value;
-      if (v === 'paragraph') cmd().setParagraph(); else if (/^heading[234]$/.test(v)) cmd().setHeading(Number(v.slice(7)));
-      ctx.getEditor().focus();
+    // keepFocus: a click on the list leaves the caret in the text, and the choice is applied to the selection that is still there.
+    select = ui.select({
+      className: 'bw-tb-select', ariaLabel: 'Text style', title: 'Text style', placeholder: '\u2014', keepFocus: true,
+      options: [
+        { value: 'paragraph', label: 'Paragraph' },
+        { value: 'heading2', label: 'Heading 2', className: 'bw-sel-h2' },
+        { value: 'heading3', label: 'Heading 3', className: 'bw-sel-h3' },
+        { value: 'heading4', label: 'Heading 4', className: 'bw-sel-h4' },
+      ],
+      onChange: function (v) {
+        if (v === 'paragraph') cmd().setParagraph(); else if (/^heading[234]$/.test(v)) cmd().setHeading(Number(v.slice(7)));
+        ctx.getEditor().focus();
+      },
     });
-    group.appendChild(select);
+    group.appendChild(select.el);
     sep();
     add({ glyph: 'B', className: 'bw-b', title: 'Bold ({M}B)', toggle: true, run: function () { cmd().toggleBold(); }, active: function (s) { return s.marks.bold; } });
     add({ glyph: 'I', className: 'bw-i', title: 'Italic ({M}I)', toggle: true, run: function () { cmd().toggleItalic(); }, active: function (s) { return s.marks.italic; } });
@@ -162,10 +164,9 @@
     mount.appendChild(tableRow);
 
     // role=toolbar: one tab stop, arrows move between the buttons
-    function focusables() { return Array.prototype.slice.call(mount.querySelectorAll('button:not([disabled]), select')); }
+    function focusables() { return Array.prototype.slice.call(mount.querySelectorAll('button:not([disabled])')); }
     mount.addEventListener('keydown', function (e) {
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-      if (e.target.tagName === 'SELECT') return;
       var list = focusables();
       var i = list.indexOf(document.activeElement);
       if (i < 0) return;
@@ -181,8 +182,9 @@
         b.node.classList.toggle('bw-active', on);
         b.node.disabled = !ed || (b.enabled ? !b.enabled(s) : false);
       });
-      select.disabled = !ed || !(s.block === 'paragraph' || /^heading[234]$/.test(s.block));
-      select.value = (s.block === 'paragraph' || /^heading[234]$/.test(s.block)) ? s.block : 'other';
+      var textBlock = s.block === 'paragraph' || /^heading[234]$/.test(s.block);
+      select.setDisabled(!ed || !textBlock);
+      select.setValue(textBlock ? s.block : 'other');   // 'other' matches no option: the field shows the dash
       tableRow.hidden = !s.inTable;
       var count = document.getElementById('bw-count');
       if (count) count.textContent = s.words + (s.words === 1 ? ' word' : ' words');
