@@ -9,7 +9,7 @@ import * as cleffo from "./cleffo.js";
 import { classifyForRetry } from "./retry-class.js";
 import { sanitizeConsent } from "./consent.js";
 import { CARD_STATEMENT_DESCRIPTOR } from "./store-forward.js";
-import { itemsKey } from "./store.js";
+import { buyerKey, itemsKey } from "./store.js";
 import {
   bucketFor,
   cardKeyOf,
@@ -309,6 +309,33 @@ export async function routeCharge(db, body, deps = {}) {
   return { route, history, config, cardKey, reusable };
 }
 
+// audit 2026-10-02: retry under the SAME key. What this request says versus what the stored order (and its open link) holds.
+const normStr = (v) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const itemsChanged = (order, body) => itemsKey(order.items) !== itemsKey(body?.items);
+// total / shipping method / coupon as the server prices them now (only comparable when both sides have a server price)
+const priceChanged = (order, pricing) => Boolean(pricing && pricing.ok && order.priceCheck
+  && (formatAmount(order.amount) !== formatAmount(pricing.amount) || normStr(order.priceCheck.shipMethod) !== normStr(pricing.shipMethod) || normStr(order.priceCheck.coupon) !== normStr(pricing.coupon)));
+// a Cleffo link carries the buyer's e-mail, name, phone and address (cleffo.js buildPaymentLinkBody)
+const buyerChanged = (order, body) => normStr(order.customer?.email) !== normStr(body?.customer?.email) || buyerKey(order.customer) !== buyerKey(body?.customer);
+// A link of this order that may still be paid: open (watched by the sweep for CLEFFO_SWEEP_HOURS), unknown, or "failed" younger than the link TTL.
+function linkMayStillPay(order, ttlMin, now = Date.now()) {
+  return (order.attempts || []).some((a) => a.processor === "cleffo"
+    && (a.processorStatus === "LINK_CREATED" || a.processorStatus === "LINK_UNKNOWN"
+      || (a.processorStatus === "DECLINED" && now - (Date.parse(a.startedAt) || 0) <= ttlMin * 60000)));
+}
+function buyerFields(body) {
+  const c = body.customer || {};
+  return {
+    customer: stripSecrets({
+      first_name: c.first_name || c.firstName || "", last_name: c.last_name || c.lastName || "", email: c.email || "", phone: c.phone || "",
+      country: c.country || "", state: c.state || "", city: c.city || "", zip: c.zip || "", address: c.address || "",
+    }),
+    items: Array.isArray(body.items) ? stripSecrets(body.items) : [],
+    notes: body.notes || "",
+    session_id: String(body.session_id || body.sessionId || "").trim(),
+  };
+}
+
 /**
  * Create / reuse the order, gate on consent, create the payment link. Never charges anything itself.
  * -> { ok, status(http), body }
@@ -322,18 +349,32 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
   const st = String(existing?.status || "").toLowerCase();
   // Already paid: answer before anything else (a replay after a lost answer needs no consent). Approved / in review /
   // waiting on UMG: never a new link for this order.
-  if (existing && st === "approved") {
-    return { ok: true, status: 200, body: { ok: true, reused: true, processor: existing.winningProcessor || "umg", order: existing, orderId: existing.id, charged: false } };
-  }
-  if (existing && (st === "review" || st === "pending" || existing.inFlight)) {
-    return { ok: true, status: 200, body: { ok: true, reused: true, pending: true, processor: existing.winningProcessor || existing.lastProcessor || "cleffo", orderId: existing.id, charged: "unknown", message: "We are confirming your payment. Please do not pay again. If you do not receive an order confirmation within an hour, contact support." } };
+  // audit 2026-10-02: the two answers are a local function: the same bodies are returned after the link request when the order got settled meanwhile.
+  const approvedAnswer = (o) => ({ ok: true, status: 200, body: { ok: true, reused: true, processor: o.winningProcessor || "umg", order: o, orderId: o.id, charged: false } });
+  const pendingAnswer = (o) => ({ ok: true, status: 200, body: { ok: true, reused: true, pending: true, processor: o.winningProcessor || o.lastProcessor || "cleffo", orderId: o.id, charged: "unknown", message: "We are confirming your payment. Please do not pay again. If you do not receive an order confirmation within an hour, contact support." } });
+  if (existing && st === "approved") return approvedAnswer(existing);
+  if (existing && (st === "review" || st === "pending" || existing.inFlight)) return pendingAnswer(existing);
+
+  // audit 2026-10-02: a retry under the same key must pay for what THIS request describes. Another cart while a link of the order can still be
+  // paid: refuse (the paid-amount check cannot tell two carts with the same total apart, and the wrong goods would ship). Otherwise the
+  // open link is handed back only if nothing the link carries changed; else a new link is made below and the order is rewritten.
+  const ttlMin = numOr(config?.linkTtlMin, numOr(process.env.CLEFFO_LINK_TTL_MIN, 60));
+  let linkStillFits = true;
+  if (existing) {
+    if (itemsChanged(existing, body) && linkMayStillPay(existing, ttlMin)) {
+      log(`[routing] ${existing.id} cart_changed under the same key while a link may still be paid: refused, nothing changed`);
+      return { ok: false, status: 409, body: { ok: false, error: "cart_changed", processor: "cleffo", charged: false, message: "Your cart changed. Please refresh the page and try again." } };
+    }
+    linkStillFits = !itemsChanged(existing, body) && !priceChanged(existing, pricing) && !buyerChanged(existing, body);
   }
 
   // Same order, link still inside its lifetime: hand back the same open link.
-  if (reusable) {
+  if (reusable && linkStillFits) {
     const o = db.getOrder(reusable.orderId);
     const a = findCleffoAttempt(o, reusable.n);
     if (o && a && a.paymentLink && o.idempotencyKey === key) {
+      // audit 2026-10-02: the note does not go to Cleffo, so a changed note only updates the order (the note is screened on every write).
+      if (body?.notes != null && String(body.notes) !== String(o.notes || "")) { o.notes = body.notes || ""; db.upsertOrder(o); }
       return { ok: true, status: 200, body: { ok: true, reused: true, processor: "cleffo", redirectUrl: a.paymentLink, orderId: o.id, attempt: reusable.n, amount: a.amount ?? o.amount, currency: "USD", ...pick(desc), charged: false } };
     }
   }
@@ -356,11 +397,11 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
   if (!consentLog) return { ok: false, status: 503, body: { ok: false, error: "consent_log_unavailable", charged: false, message: "Payment is temporarily unavailable. You were not charged. Please try again shortly." } };
 
   // A new order is priced by the server only: no catalog price, no order (the browser amount is never trusted).
-  if (!existing && !(pricing && pricing.ok)) {
+  // audit 2026-10-02: a retry with another cart needs a server price too (the stored amount belongs to the old cart).
+  if (!(pricing && pricing.ok) && (!existing || itemsChanged(existing, body))) {
     log("[routing] cleffo refused before order: pricing_unavailable");
     return { ok: false, status: 503, body: { ok: false, error: "pricing_unavailable", processor: "cleffo", charged: false, message: "We could not confirm the price right now. Your card was not charged. Please try again in a minute." } };
   }
-  const c = body.customer || {};
   const order = existing || {
     id: db.nextOrderId(),
     idempotencyKey: key,
@@ -368,17 +409,17 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
     status: "new",
     amount: formatAmount(body.amount),
     currency: "USD",
-    customer: stripSecrets({
-      first_name: c.first_name || c.firstName || "", last_name: c.last_name || c.lastName || "", email: c.email || "", phone: c.phone || "",
-      country: c.country || "", state: c.state || "", city: c.city || "", zip: c.zip || "", address: c.address || "",
-    }),
-    items: Array.isArray(body.items) ? stripSecrets(body.items) : [],
-    notes: body.notes || "",
-    session_id: String(body.session_id || body.sessionId || "").trim(),
+    ...buyerFields(body),
     ...orderAttribution(body), // infra 2026-09-30 order-attribution: same as cascade.js
     winningProcessor: null, winningTxnId: null, descriptor: null, lastProcessor: null, lastStatus: null,
     attempts: [],
   };
+  if (existing) {
+    // audit 2026-10-02: same-key retry: customer, items and notes follow this request (id, createdAt, attempts, attribution stay).
+    const fresh = buyerFields(body);
+    if (!fresh.session_id) fresh.session_id = existing.session_id || "";
+    Object.assign(order, fresh);
+  }
   if (pricing && pricing.ok) {
     Object.assign(order, {
       amount: formatAmount(pricing.amount),
@@ -409,6 +450,18 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
   }
 
   const fresh = db.getOrder(order.id);
+  if (reusable && !linkStillFits) {
+    // audit 2026-10-02: the open link of this order no longer matches the request (buyer details / total). Cleffo has no cancel call, so it is
+    // marked abandoned exactly like a link past its TTL: the order has ONE live link (the new one), the sweep keeps watching the old one
+    // (a payment there is booked, CLEFFO_LATE_PAID; the paid-amount check sends a stale total to review).
+    const ai = (fresh.attempts || []).findIndex((x) => x.processor === "cleffo" && x.routingAttempt === reusable.n);
+    if (ai !== -1 && !fresh.attempts[ai].abandoned) {
+      fresh.attempts[ai] = { ...fresh.attempts[ai], abandoned: true, abandonedAt: nowIso() };
+      setLastOutcomeFor(fresh, reusable.n, { outcome: "abandoned", retryClass: "hard", retryBasis: "superseded_same_key_changed" });
+      db.upsertOrder(fresh);
+      log(`[routing] ${fresh.id} attempt=${reusable.n} processor=cleffo outcome=abandoned retryClass=hard basis=superseded_same_key_changed`);
+    }
+  }
   const cfg = deps.cleffoDeps?.config || cleffo.loadCleffoConfig();
   const token = cleffo.returnToken(fresh.id, n, cfg.signatureKey);
   const base = (publicUrl || "").replace(/\/$/, "");
@@ -440,6 +493,18 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
     errorMessage: link.ok ? "" : String(link.error || "").slice(0, 300),
     raw: {},
   };
+  // audit 2026-10-02: the link request takes seconds; meanwhile a payment on an older link of this order may have been booked (callback /
+  // sweep -> approved or review). Never overwrite that with awaiting_payment / declined and never offer the new link: record the new
+  // attempt as abandoned (it stays open at Cleffo, the sweep keeps watching it) and answer like the early approved / review branches.
+  const settledNow = String(o2.status || "").toLowerCase();
+  if (settledNow === "approved" || settledNow === "review") {
+    o2.attempts = [...(o2.attempts || []), { ...attempt, abandoned: true, abandonedAt: nowIso() }];
+    setLastOutcomeFor(o2, n, { outcome: "abandoned", retryClass: "hard", retryBasis: "order_settled_meanwhile" });
+    o2.updatedAt = nowIso();
+    db.upsertOrder(o2);
+    log(`[routing] ${o2.id} attempt=${n} processor=cleffo outcome=abandoned retryClass=hard basis=order_settled_meanwhile`);
+    return settledNow === "approved" ? approvedAnswer(o2) : pendingAnswer(o2);
+  }
   o2.attempts = [...(o2.attempts || []), attempt];
   o2.lastProcessor = "cleffo";
   o2.lastStatus = attempt.processorStatus;

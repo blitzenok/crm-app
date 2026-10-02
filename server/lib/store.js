@@ -80,7 +80,7 @@ export function itemsKey(items) {
 
 const normText = (v) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 /** What a Cleffo payment link carries about the buyer, normalised (case / spacing / phone punctuation do not matter). */
-function buyerKey(c = {}) {
+export function buyerKey(c = {}) { // audit 2026-10-02: exported for the same-key retry check in cleffo-checkout.js
   return JSON.stringify([
     normText(c?.first_name ?? c?.firstName), normText(c?.last_name ?? c?.lastName),
     String(c?.phone ?? "").replace(/\D/g, ""),

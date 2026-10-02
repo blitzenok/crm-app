@@ -546,3 +546,249 @@ test("an order already opened as USDC-TRC20 (before the rule) stays verifiable; 
   assert.deepEqual(ACCEPTABLE_TOKENS.trc20, ["USDT"]);
   assert.equal(TOKENS.trc20[USDC_TRC].token, "USDC"); // still recognised so a stray deposit reaches review
 });
+
+// audit 2026-10-02: a customer-entered TxID must not claim a transfer that does not fit the order's amount.
+const owner = (t, net, h) => t.store.cryptoTxOwner(`${net}:${h}`);
+
+test("audit: customer hint of a FOREIGN transfer (amount does not fit) does not claim it; the real payer's order still gets it", async () => {
+  const t = setup();
+  const a = t.create();                        // real payer
+  const b = t.create({ amount: "55.00" });     // attacker order, different unique amount
+  assert.notEqual(a.cryptoPayment.payUnits, b.cryptoPayment.payUnits);
+  t.trc.addTx({ hash: hash(21), to: TRC, units: a.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(b.id, hash(21), "customer");
+  await t.verifier.verifyOrderNow(b.id, { force: true });
+  const xb = t.store.getOrder(b.id);
+  assert.equal(owner(t, "trc20", hash(21)), null, "no ledger owner after the attacker's hint");
+  assert.equal(xb.cryptoPayment.txHints[0].result, "amount_mismatch");
+  assert.equal(xb.cryptoPayment.txHints[0].resolved, true);
+  const al = xb.cryptoPayment.alerts.find((x) => x.type === "tx_hint_amount_mismatch");
+  assert.ok(al, "alert on the attacker's order");
+  assert.ok(al.message.includes(hash(21).slice(0, 12)));
+  assert.notEqual(xb.cryptoPayment.status, "paid");
+  // the real payer: auto-match claims the transfer and releases the order as before
+  await t.verifier.tick();
+  assert.equal(owner(t, "trc20", hash(21)), a.id);
+  const xa = t.store.getOrder(a.id);
+  assert.equal(xa.cryptoPayment.status, "paid");
+  assert.equal(xa.cryptoPayment.transfers[0].matchedBy, "unique_amount");
+  // the attacker's provisional attachment is dropped once the transfer has a real owner; never paid
+  const xb2 = t.store.getOrder(b.id);
+  assert.equal((xb2.cryptoPayment.transfers || []).length, 0);
+  assert.notEqual(xb2.cryptoPayment.status, "paid");
+});
+
+test("audit: the real payer's own hint still claims the transfer after a foreign hint was entered first", async () => {
+  const t = setup();
+  const a = t.create();
+  const b = t.create({ amount: "55.00" });
+  t.trc.addTx({ hash: hash(22), to: TRC, units: a.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(b.id, hash(22), "customer");
+  await t.verifier.verifyOrderNow(b.id, { force: true });
+  t.verifier.addHint(a.id, hash(22), "customer");
+  await t.verifier.verifyOrderNow(a.id, { force: true });
+  assert.equal(owner(t, "trc20", hash(22)), a.id);
+  const xa = t.store.getOrder(a.id);
+  assert.equal(xa.cryptoPayment.txHints[0].result, "found");
+  assert.equal(xa.cryptoPayment.transfers[0].matchedBy, "customer_tx_hint");
+  assert.equal(xa.cryptoPayment.status, "paid");
+});
+
+test("audit: customer hint of the order's own transfer (amount fits) claims it as before", async () => {
+  const t = setup();
+  const o = t.create();
+  t.trc.addTx({ hash: hash(23), to: TRC, units: o.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(o.id, hash(23), "customer");
+  await t.verifier.verifyOrderNow(o.id, { force: true });
+  const x = t.store.getOrder(o.id);
+  assert.equal(owner(t, "trc20", hash(23)), o.id);
+  assert.equal(x.cryptoPayment.txHints[0].result, "found");
+  assert.equal(x.cryptoPayment.transfers[0].unclaimed, undefined);
+  assert.equal(x.cryptoPayment.status, "paid");
+});
+
+test("audit: staff hint with a non-fitting amount still claims (staff decides)", async () => {
+  const t = setup();
+  const o = t.create();
+  t.trc.addTx({ hash: hash(24), to: TRC, units: String(BigInt(o.cryptoPayment.payUnits) - 50_000_000n), blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(o.id, hash(24), "staff", "op@x");
+  await t.verifier.verifyOrderNow(o.id, { force: true });
+  const x = t.store.getOrder(o.id);
+  assert.equal(owner(t, "trc20", hash(24)), o.id);
+  assert.equal(x.cryptoPayment.txHints[0].result, "found");
+  assert.equal(x.cryptoPayment.transfers[0].matchedBy, "staff_tx_hint");
+  assert.equal(x.cryptoPayment.transfers[0].unclaimed, undefined);
+  assert.equal(x.cryptoPayment.status, "payment_review");
+});
+
+test("audit: wrong network keeps its semantics only when the amount fits", async () => {
+  const t = setup();
+  const fit = t.create();
+  const miss = t.create({ amount: "55.00" });
+  t.erc.addTx({ hash: `0x${hash(25)}`, to: ERC, units: fit.cryptoPayment.payUnits, blockNumber: 19000, timestamp: t.clock });
+  t.erc.addTx({ hash: `0x${hash(26)}`, to: ERC, units: String(BigInt(miss.cryptoPayment.payUnits) + 7_000_000n), blockNumber: 19000, timestamp: t.clock });
+  t.verifier.addHint(fit.id, hash(25), "customer");
+  t.verifier.addHint(miss.id, hash(26), "customer");
+  await t.verifier.verifyOrderNow(fit.id, { force: true });
+  await t.verifier.verifyOrderNow(miss.id, { force: true });
+  const xf = t.store.getOrder(fit.id);
+  assert.equal(xf.cryptoPayment.txHints[0].result, "found_wrong_network");
+  assert.equal(owner(t, "erc20", hash(25)), fit.id);
+  assert.equal(xf.cryptoPayment.transfers[0].wrongNetwork, true);
+  const xm = t.store.getOrder(miss.id);
+  assert.equal(xm.cryptoPayment.txHints[0].result, "amount_mismatch");
+  assert.equal(owner(t, "erc20", hash(26)), null);
+  assert.equal((xm.cryptoPayment.transfers || []).length, 0);
+});
+
+test("audit: under/over-payment by the customer's own hint still reaches review as a PROVISIONAL attachment (no ledger owner, never auto-paid, staff release claims it)", async () => {
+  const t = setup();
+  const u = t.create();
+  const part = BigInt(u.cryptoPayment.payUnits) - 50_000_000n;
+  t.trc.addTx({ hash: hash(27), to: TRC, units: String(part), blockNumber: 10000 - 21, timestamp: t.clock });
+  t.trc.addTx({ hash: hash(28), to: TRC, units: String(BigInt(u.cryptoPayment.payUnits) - part), blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(u.id, hash(27), "customer");
+  await t.verifier.verifyOrderNow(u.id, { force: true });
+  let x = t.store.getOrder(u.id);
+  assert.equal(x.cryptoPayment.txHints[0].result, "amount_mismatch");
+  assert.equal(x.cryptoPayment.transfers[0].unclaimed, true);
+  assert.equal(owner(t, "trc20", hash(27)), null);
+  assert.equal(x.cryptoPayment.status, "payment_review");
+  assert.ok(x.cryptoPayment.reviewReasons.includes("partial_payment"));
+  // second part brings the sum to exact; an unowned part can never auto-release the order
+  t.verifier.addHint(u.id, hash(28), "customer");
+  await t.verifier.verifyOrderNow(u.id, { force: true });
+  x = t.store.getOrder(u.id);
+  assert.notEqual(x.cryptoPayment.status, "paid");
+  assert.ok(x.cryptoPayment.reviewReasons.includes("tx_not_claimed"));
+  // staff release turns the provisional attachment into a real ledger claim
+  const rel = await t.verifier.staffAction(u.id, { action: "release", note: "both parts checked" }, "staff@x");
+  assert.equal(rel.ok, true);
+  assert.equal(owner(t, "trc20", hash(27)), u.id);
+  assert.equal(t.store.getOrder(u.id).cryptoPayment.status, "paid");
+});
+
+test("audit: staff release ignores a provisional transfer that another order already owns", async () => {
+  const t = setup();
+  const b = t.create({ amount: "55.00" });
+  t.trc.addTx({ hash: hash(29), to: TRC, units: String(BigInt(b.cryptoPayment.payUnits) + 5_000_000n), blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(b.id, hash(29), "customer");
+  await t.verifier.verifyOrderNow(b.id, { force: true });
+  assert.equal(t.store.getOrder(b.id).cryptoPayment.transfers[0].unclaimed, true);
+  // somebody else (another order) gets the real claim first
+  assert.equal(t.store.claimCryptoTx(`trc20:${hash(29)}`, "ORD-OTHER", { matchedBy: "unique_amount" }).ok, true);
+  const rel = await t.verifier.staffAction(b.id, { action: "release", note: "try" }, "staff@x");
+  assert.equal(rel.ok, false);
+  assert.equal(rel.error, "no_confirmed_onchain_transfer");
+  assert.equal(owner(t, "trc20", hash(29)), "ORD-OTHER");
+});
+
+// audit 2026-10-02 (module fixups): a provisionally attached (unclaimed) transfer is not up for grabs by the guessing rules.
+test("audit: unclaimed transfer of order A is not handed to the single other open order B by single_open_order", async () => {
+  const t = setup();
+  const a = t.create({ amount: "100.00" });
+  const b = t.create({ amount: "55.00" });
+  const part = BigInt(a.cryptoPayment.payUnits) - 5_000_000n; // short by 5 USDT: fits neither A nor B exactly
+  assert.notEqual(String(part), b.cryptoPayment.payUnits);
+  t.trc.addTx({ hash: hash(31), to: TRC, units: String(part), blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(a.id, hash(31), "customer");
+  await t.verifier.verifyOrderNow(a.id, { force: true });
+  assert.equal(t.store.getOrder(a.id).cryptoPayment.transfers[0].unclaimed, true);
+  assert.equal(t.store.getOrder(a.id).cryptoPayment.status, "payment_review");
+  const unmatchedBefore = t.store.getCryptoState().unmatched.length;
+  await t.verifier.tick();
+  const xa = t.store.getOrder(a.id);
+  assert.equal(xa.cryptoPayment.transfers.length, 1, "transfer stays with A");
+  assert.equal(xa.cryptoPayment.transfers[0].unclaimed, true);
+  assert.equal(owner(t, "trc20", hash(31)), null, "no ledger owner");
+  const xb = t.store.getOrder(b.id);
+  assert.equal((xb.cryptoPayment.transfers || []).length, 0, "B untouched");
+  assert.equal(xb.cryptoPayment.status, "awaiting_payment");
+  assert.equal(t.store.getCryptoState().unmatched.length, unmatchedBefore, "silent skip, no unmatched alert");
+});
+
+test("audit: the same transfer whose amount exactly equals order B still goes to B (unique_amount)", async () => {
+  const t = setup();
+  const a = t.create({ amount: "100.00" });
+  const b = t.create({ amount: "55.00" });
+  t.trc.addTx({ hash: hash(32), to: TRC, units: b.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(a.id, hash(32), "customer");
+  await t.verifier.verifyOrderNow(a.id, { force: true });
+  assert.equal(t.store.getOrder(a.id).cryptoPayment.transfers[0].unclaimed, true);
+  await t.verifier.tick();
+  assert.equal(owner(t, "trc20", hash(32)), b.id);
+  assert.equal(t.store.getOrder(b.id).cryptoPayment.transfers[0].matchedBy, "unique_amount");
+  assert.equal((t.store.getOrder(a.id).cryptoPayment.transfers || []).length, 0, "A's provisional copy dropped");
+});
+
+test("audit: tx_not_claimed is listed together with partial_payment / overpaid when an unclaimed transfer is counted", () => {
+  const cfg = cryptoVerifyConfig(ENV);
+  const mk = (units) => ({ cryptoPayment: { status: "awaiting_payment", payUnits: "100000000", network: "trc20", transfers: [
+    { network: "trc20", token: "USDT", units, confirmations: 99, success: true, finalChecked: true, unclaimed: true, txHash: "x" }] } });
+  const part = evaluatePayment(mk("95000000"), cfg);
+  assert.equal(part.next, "payment_review");
+  assert.deepEqual(part.reasons, ["partial_payment", "tx_not_claimed"]);
+  const over = evaluatePayment(mk("120000000"), cfg);
+  assert.equal(over.next, "payment_review");
+  assert.deepEqual(over.reasons, ["overpaid", "tx_not_claimed"]);
+  const claimed = mk("95000000"); delete claimed.cryptoPayment.transfers[0].unclaimed;
+  assert.deepEqual(evaluatePayment(claimed, cfg).reasons, ["partial_payment"]);
+});
+
+// audit 2026-10-02 (findTxOwner): what another buyer merely typed (hint / TxID / provisional transfer) is not ownership.
+const OTHER = { first_name: "Eve", last_name: "X", email: "eve+other@example.test", address: "2 Way", city: "SF", state: "CA", zip: "94107", country: "US" };
+
+test("audit: another buyer's TxID submission does not block the real payer's own submitCustomerTx; the amount decides who owns the transfer", async () => {
+  const t = setup();
+  const a = t.create();
+  const b = t.create({ amount: "55.00", customer: OTHER });
+  t.trc.addTx({ hash: hash(31), to: TRC, units: a.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  assert.equal(t.verifier.submitCustomerTx(b.id, { network: "trc20", txHash: hash(31) }).ok, true);
+  await t.verifier.verifyOrderNow(b.id, { force: true });
+  assert.equal(owner(t, "trc20", hash(31)), null);
+  const r = t.verifier.submitCustomerTx(a.id, { network: "trc20", txHash: hash(31) });
+  assert.equal(r.ok, true, r.error);
+  await t.verifier.verifyOrderNow(a.id, { force: true });
+  assert.equal(owner(t, "trc20", hash(31)), a.id);
+  assert.equal(t.store.getOrder(a.id).cryptoPayment.status, "paid");
+});
+
+test("audit: another buyer's hint does not block the admin mark-paid of the real payer", async () => {
+  const t = setup();
+  const a = t.create();
+  const b = t.create({ amount: "55.00", customer: OTHER });
+  t.trc.addTx({ hash: hash(32), to: TRC, units: a.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  t.verifier.addHint(b.id, hash(32), "customer");
+  await t.verifier.verifyOrderNow(b.id, { force: true });
+  const r = await t.verifier.staffAction(a.id, { action: "admin_mark_paid", network: "trc20", txHash: hash(32) }, "admin@x", { admin: true });
+  assert.equal(r.ok, true, r.error);
+  assert.equal(owner(t, "trc20", hash(32)), a.id);
+  assert.equal(t.store.getOrder(a.id).cryptoPayment.status, "paid");
+});
+
+test("audit: a transfer really claimed / paid for A still refuses B (submitCustomerTx and admin mark-paid)", async () => {
+  const t = setup();
+  const a = t.create();
+  const b = t.create({ amount: "55.00", customer: OTHER });
+  t.trc.addTx({ hash: hash(33), to: TRC, units: a.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  await t.verifier.tick();
+  assert.equal(owner(t, "trc20", hash(33)), a.id);
+  assert.equal(t.verifier.submitCustomerTx(b.id, { network: "trc20", txHash: hash(33) }).error, "tx_already_used");
+  const r = await t.verifier.staffAction(b.id, { action: "admin_mark_paid", network: "trc20", txHash: hash(33) }, "admin@x", { admin: true });
+  assert.equal(r.error, "tx_already_used");
+});
+
+test("audit: one buyer cannot pay two of his orders with one transfer (same-email TxID / ledger still hold)", async () => {
+  const t = setup();
+  const x = t.create();
+  const y = t.create({ amount: "55.00" }); // same customer email as x
+  t.trc.addTx({ hash: hash(34), to: TRC, units: x.cryptoPayment.payUnits, blockNumber: 10000 - 21, timestamp: t.clock });
+  assert.equal(t.verifier.submitCustomerTx(x.id, { network: "trc20", txHash: hash(34) }).ok, true);
+  assert.equal(t.verifier.submitCustomerTx(y.id, { network: "trc20", txHash: hash(34) }).error, "tx_already_used");
+  await t.verifier.verifyOrderNow(x.id, { force: true });
+  assert.equal(owner(t, "trc20", hash(34)), x.id);
+  t.verifier.addHint(y.id, hash(34), "customer");
+  await t.verifier.verifyOrderNow(y.id, { force: true });
+  assert.equal(t.store.getOrder(y.id).cryptoPayment.txHints[0].result, "tx_already_used");
+  assert.equal(t.store.getOrder(y.id).cryptoPayment.status, "awaiting_payment");
+});

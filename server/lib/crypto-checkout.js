@@ -3,6 +3,7 @@ import { humanUseBlocks } from "./human-use.js"; // 2026-09-30 COMPLIANCE_HOLD
 import { formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import { stripSecrets } from "./sanitize.js";
+import { itemsKey } from "./store.js";
 import { findForbiddenCardField } from "./abandon.js";
 import {
   PAY, allocatePayAmount, confirmSecret, cryptoVerifyConfig, isCryptoVerified, isTokenAccepted, normalizeHint, paymentDeadline, signConfirmToken,
@@ -291,12 +292,24 @@ export function createCryptoCheckout(input, deps) {
     if (existing.paymentMethod !== "crypto") {
       return { ok: false, error: "idempotency_conflict", status: 409 };
     }
+    // audit 2026-10-02: a replay under the same key with a corrected address / name / phone / note updates ONLY those fields, and only
+    // while the order still waits for the payment, with the same cart and the same e-mail. Amount, unique cents, wallet, ref, token and
+    // network never change. Another cart or e-mail under the same key is left as it was (the page uses a new key for those).
+    let current = existing;
+    if (existing.status === AWAITING_CRYPTO && existing.paymentConfirmed !== true
+      && itemsKey(existing.items) === itemsKey(parsed.value.items)
+      && String(existing.customer?.email || "").trim().toLowerCase() === parsed.value.customer.email.toLowerCase()
+      && (JSON.stringify(existing.customer) !== JSON.stringify(parsed.value.customer) || (existing.notes || "") !== parsed.value.notes)) {
+      current = { ...existing, customer: parsed.value.customer, notes: parsed.value.notes, updatedAt: new Date().toISOString() };
+      store.upsertOrder(current);
+      current = store.getOrder(existing.id);
+    }
     return {
       ok: true,
       reused: true,
       status: 200,
-      order: existing,
-      public: toPublicCryptoView(existing, env, { confirmToken: signConfirmToken(existing, deps.confirmSecret || confirmSecret(env)) }),
+      order: current,
+      public: toPublicCryptoView(current, env, { confirmToken: signConfirmToken(current, deps.confirmSecret || confirmSecret(env)) }),
     };
   }
 

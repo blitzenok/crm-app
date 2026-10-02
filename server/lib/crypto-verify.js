@@ -49,8 +49,12 @@ export function evaluatePayment(order, cfg) {
   if (cp.status === PAY.CANCELLED) return { ...out, next: PAY.REVIEW, reasons: [...reasons, "late_payment"] };
   if (wrong.length) return { ...out, next: PAY.REVIEW };
   if (pending) return { ...out, next: PAY.CONFIRMING };
-  if (sum + cfg.toleranceUnits < pay) return { ...out, next: PAY.REVIEW, reasons: [...reasons, "partial_payment"] };
-  if (sum > pay + cfg.overpayToleranceUnits) return { ...out, next: PAY.REVIEW, reasons: [...reasons, "overpaid"] };
+  // audit 2026-10-02: a provisional (unclaimed) customer-hint transfer has no ledger owner; staff release must claim it first.
+  // The reason is listed alongside partial_payment / overpaid too (it used to be hidden by their early return); `next` unchanged.
+  const notClaimed = accepted.some((t) => t.unclaimed) ? ["tx_not_claimed"] : [];
+  if (sum + cfg.toleranceUnits < pay) return { ...out, next: PAY.REVIEW, reasons: [...reasons, "partial_payment", ...notClaimed] };
+  if (sum > pay + cfg.overpayToleranceUnits) return { ...out, next: PAY.REVIEW, reasons: [...reasons, "overpaid", ...notClaimed] };
+  if (notClaimed.length) return { ...out, next: PAY.REVIEW, reasons: [...reasons, ...notClaimed] };
   return { ...out, next: "screen" };
 }
 
@@ -90,7 +94,7 @@ export function staffCryptoView(order, env = process.env) {
     transfers: (cp.transfers || []).map((t) => ({
       txHash: t.txHash, explorerUrl: explorerTxUrl(t.network, t.txHash), network: t.network, token: t.token, amount: t.amount,
       from: t.from, fromUrl: explorerAddressUrl(t.network, t.from), confirmations: t.confirmations, required: cfg.confirmations[t.network] ?? null,
-      success: t.success, finalChecked: Boolean(t.finalChecked), matchedBy: t.matchedBy, wrongNetwork: Boolean(t.wrongNetwork), seenAt: t.seenAt,
+      success: t.success, finalChecked: Boolean(t.finalChecked), matchedBy: t.matchedBy, wrongNetwork: Boolean(t.wrongNetwork), unclaimed: Boolean(t.unclaimed), seenAt: t.seenAt,
       blockNumber: t.blockNumber, timestamp: t.timestamp ? nowIso(t.timestamp) : null,
     })),
     reviewReasons: cp.reviewReasons || [],
@@ -173,24 +177,55 @@ export function createCryptoVerifier({
     });
   }
 
-  /** Attach one on-chain transfer to an order (ledger-guarded: a tx can never pay two orders). */
-  function claim(orderId, t, matchedBy, extra = {}) {
+  const txKey = (t) => `${t.network}:${lc(t.txHash).replace(/^0x/, "")}`;
+  // Same amount rule as the automatic match (matchIncoming): within the rounding tolerance of the order's exact pay amount.
+  function amountFits(units, payUnits) {
+    const p = BigInt(payUnits || "0");
+    return units + cfg.toleranceUnits >= p && units <= p + cfg.toleranceUnits;
+  }
+
+  /**
+   * Attach one on-chain transfer to an order (ledger-guarded: a tx can never pay two orders).
+   * audit 2026-10-02: soft=true attaches WITHOUT taking the ledger (transfer flagged `unclaimed`), so a customer-entered
+   * hash of a transfer that does not fit the order can never lock the real payer out; a free ledger entry stays free.
+   */
+  function claim(orderId, t, matchedBy, extra = {}, soft = false) {
     const order = store.getOrder(orderId);
     if (!order) return { ok: false, reason: "not_found" };
     const created = Date.parse(order.cryptoPayment.createdAt || order.createdAt);
     if (t.timestamp && t.timestamp < created - cfg.clockSkewMs) return { ok: false, reason: "tx_before_order" };
-    const key = `${t.network}:${lc(t.txHash).replace(/^0x/, "")}`;
-    const res = store.claimCryptoTx(key, orderId, { amount: t.amount, token: t.token, matchedBy });
-    if (!res.ok) return { ok: false, reason: "tx_already_used", owner: res.orderId };
+    const key = txKey(t);
+    let unclaimed = false;
+    if (soft) {
+      const owner = store.cryptoTxOwner(key);
+      if (owner && owner !== orderId) return { ok: false, reason: "tx_already_used", owner };
+      unclaimed = !owner;
+    } else {
+      const res = store.claimCryptoTx(key, orderId, { amount: t.amount, token: t.token, matchedBy });
+      if (!res.ok) return { ok: false, reason: "tx_already_used", owner: res.orderId };
+    }
     update(orderId, (o) => {
       const list = o.cryptoPayment.transfers || [];
       const same = list.find((x) => x.network === t.network && lc(x.txHash) === lc(t.txHash) && (x.logIndex == null || t.logIndex == null || x.logIndex === t.logIndex));
-      if (same) { Object.assign(same, { ...t, logIndex: t.logIndex ?? same.logIndex, matchedBy: same.matchedBy, seenAt: same.seenAt, finalChecked: same.finalChecked }); return; }
-      list.push({ ...t, matchedBy, seenAt: nowIso(nowMs()), finalChecked: false, ...extra });
+      if (same) {
+        Object.assign(same, { ...t, logIndex: t.logIndex ?? same.logIndex, matchedBy: same.matchedBy, seenAt: same.seenAt, finalChecked: same.finalChecked });
+        if (!unclaimed) delete same.unclaimed;
+        return;
+      }
+      list.push({ ...t, matchedBy, seenAt: nowIso(nowMs()), finalChecked: false, ...extra, ...(unclaimed ? { unclaimed: true } : {}) });
       o.cryptoPayment.transfers = list;
     });
-    log(`[crypto] ${orderId}: ${t.network} tx ${String(t.txHash).slice(0, 12)}… ${t.amount} ${t.token} attached (${matchedBy})`);
+    log(`[crypto] ${orderId}: ${t.network} tx ${String(t.txHash).slice(0, 12)}… ${t.amount} ${t.token} attached (${matchedBy}${unclaimed ? ", unclaimed" : ""})`);
     return { ok: true };
+  }
+
+  /** audit 2026-10-02: drop a provisional transfer once another order owns it in the ledger (never lets it count twice). */
+  function dropLostUnclaimed(orderId) {
+    const o = store.getOrder(orderId);
+    const lost = (o?.cryptoPayment?.transfers || []).filter((x) => x.unclaimed && store.cryptoTxOwner(txKey(x)) && store.cryptoTxOwner(txKey(x)) !== orderId).map(txKey);
+    if (!lost.length) return;
+    update(orderId, (x) => { x.cryptoPayment.transfers = x.cryptoPayment.transfers.filter((y) => !lost.includes(txKey(y))); });
+    log(`[crypto] ${orderId}: dropped ${lost.length} unclaimed transfer(s) now owned by another order`);
   }
 
   async function lookupHint(orderId, hint, latestByNet) {
@@ -217,13 +252,26 @@ export function createCryptoVerifier({
       if (!toUs.length) { result = r.transfers.length ? "not_to_our_wallet" : "no_token_transfer"; if (net === primary) break; continue; }
       const wrongNet = Boolean(cp.network && net !== cp.network);
       let attached = 0;
+      let mismatched = 0;
+      let failed = false;
       for (const t of toUs) {
-        const c = claim(orderId, { ...t, finalChecked: undefined }, hint.via === "staff" ? "staff_tx_hint" : "customer_tx_hint", wrongNet ? { wrongNetwork: true } : {});
-        if (c.ok) attached += 1;
-        else result = c.reason;
+        // audit 2026-10-02: a customer hint takes the ledger only when the transfer fits this order (same amount rule as the
+        // automatic match). Otherwise anybody could pin a public transfer of another payer to their own order and lock that
+        // payer out (tx_already_used). Staff hints are unchanged. A non-fitting transfer on the order's own network is attached
+        // provisionally (review / partial / overpaid stay visible, no ledger owner); on the wrong network it is not attached.
+        const fits = hint.via === "staff" || amountFits(BigInt(t.units || "0"), cp.payUnits);
+        const mismatch = () => {
+          mismatched += 1;
+          alert(orderId, "tx_hint_amount_mismatch", `customer tx ${String(t.txHash).slice(0, 12)}… sent ${t.amount} ${t.token}, order expects ${cp.payAmount}; not claimed`);
+        };
+        if (!fits && wrongNet) { mismatch(); continue; }
+        const c = claim(orderId, { ...t, finalChecked: undefined }, hint.via === "staff" ? "staff_tx_hint" : "customer_tx_hint", wrongNet ? { wrongNetwork: true } : {}, !fits);
+        if (c.ok) { if (fits) attached += 1; else mismatch(); }
+        else { result = c.reason; failed = true; }
         if (!c.ok && c.reason === "tx_already_used") alert(orderId, "tx_reuse_attempt", `tx ${String(t.txHash).slice(0, 12)}… already belongs to ${c.owner}`);
       }
       if (attached) result = wrongNet ? "found_wrong_network" : "found";
+      else if (mismatched && !failed) result = "amount_mismatch";
       break;
     }
     update(orderId, (o) => {
@@ -265,17 +313,13 @@ export function createCryptoVerifier({
 
   function matchIncoming(t, netOrders) {
     const units = BigInt(t.units || "0");
-    const tol = cfg.toleranceUnits;
     const inWindow = (o, lateOk) => {
       const cp = o.cryptoPayment;
       const start = Date.parse(cp.createdAt || o.createdAt) - cfg.clockSkewMs;
       const end = paymentDeadline(cp, cfg) + (lateOk ? cfg.lateWatchHours * 3600e3 : 0);
       return !t.timestamp || (t.timestamp >= start && t.timestamp <= end);
     };
-    const exact = netOrders.filter((o) => {
-      const p = BigInt(o.cryptoPayment.payUnits);
-      return units + tol >= p && units <= p + tol && inWindow(o, true) && o.cryptoPayment.status !== PAY.HOLD;
-    });
+    const exact = netOrders.filter((o) => amountFits(units, o.cryptoPayment.payUnits) && inWindow(o, true) && o.cryptoPayment.status !== PAY.HOLD);
     if (exact.length === 1) return { orderId: exact[0].id, by: "unique_amount" };
     if (exact.length > 1) return { ambiguous: exact.map((o) => o.id) };
     if (units < DUST_UNITS) return { dust: true };
@@ -313,7 +357,12 @@ export function createCryptoVerifier({
     for (const t of incoming) {
       const owner = store.cryptoTxOwner(`${network}:${lc(t.txHash).replace(/^0x/, "")}`);
       if (owner) continue;
-      const m = matchIncoming(t, netOrders.map((o) => store.getOrder(o.id)).filter(Boolean));
+      const fresh = netOrders.map((o) => store.getOrder(o.id)).filter(Boolean);
+      const m = matchIncoming(t, fresh);
+      // audit 2026-10-02: a transfer already softly attached (unclaimed) to some order is only re-assigned on an exact amount
+      // match; the guessing rules (single_open_order) must not pull it away from the order its payer pointed at. Silent skip.
+      const k = txKey(t);
+      if (m.by !== "unique_amount" && fresh.some((o) => (o.cryptoPayment.transfers || []).some((x) => x.unclaimed && txKey(x) === k))) continue;
       if (m.orderId) {
         const c = claim(m.orderId, t, m.by);
         if (!c.ok && c.reason !== "tx_already_used") noteUnmatched(t, c.reason);
@@ -348,6 +397,7 @@ export function createCryptoVerifier({
 
   /** Evaluate one order and apply the resulting transition. */
   async function evaluateAndApply(orderId, { staffRelease = null } = {}) {
+    dropLostUnclaimed(orderId);
     let order = store.getOrder(orderId);
     if (!order?.cryptoPayment) return null;
     const cp = order.cryptoPayment;
@@ -524,6 +574,13 @@ export function createCryptoVerifier({
     return { ok: true, order: store.getOrder(orderId) };
   }
 
+  // audit 2026-10-02: owner = ledger entry or a real (non-provisional) record; a hash another buyer merely typed does not block.
+  function txOwner(hash, network, orderId, weakEmail = null) {
+    const led = store.cryptoTxOwner(`${network}:${String(hash).toLowerCase().replace(/^0x/, "")}`);
+    if (led && led !== orderId) return led;
+    return findTxOwner(store.listOrders(), hash, orderId, { weakEmail });
+  }
+
   function addHint(orderId, rawHash, via, actor = null, network = null) {
     const order = store.getOrder(orderId);
     if (!order?.cryptoPayment) return { ok: false, error: "not_found" };
@@ -577,7 +634,7 @@ export function createCryptoVerifier({
     if (late) return { ok: false, status: 409, error: "order_expired" };
     if (cp.customerTx && cp.customerTx.hash === hash && cp.customerTx.network === network) return { ok: true, status: 200, reused: true, order };
     if ((cp.customerTxHistory || []).length >= cfg.maxHints) return { ok: false, status: 429, error: "too_many_tx_submissions" };
-    const owner = findTxOwner(store.listOrders(), hash, orderId);
+    const owner = txOwner(hash, network, orderId, order.customer?.email);
     if (owner) { alert(orderId, "tx_reuse_attempt", `customer TxID ${hash.slice(0, 12)}… already belongs to another order`); return { ok: false, status: 409, error: "tx_already_used" }; }
     const t = nowIso(nowMs());
     update(orderId, (o) => {
@@ -634,7 +691,7 @@ export function createCryptoVerifier({
       if (!hash) return { ok: false, status: 400, error: "invalid_tx_hash" };
       const override = input.override === true;
       if (override && !note) return { ok: false, status: 400, error: "note_required_for_override" };
-      const owner = findTxOwner(store.listOrders(), hash, orderId);
+      const owner = txOwner(hash, net, orderId);
       if (owner) return { ok: false, status: 409, error: "tx_already_used" };
       const c = await checkTx(adapters, order, net, hash, env);
       update(orderId, (o) => { o.cryptoPayment.txCheck = checkSummary(c); });
@@ -713,8 +770,11 @@ export function createCryptoVerifier({
       } catch (err) {
         return { ok: false, status: 503, error: "chain_unavailable" };
       }
+      // audit 2026-10-02: the deliberate staff release is what turns a provisional customer-hint transfer into a ledger claim;
+      // one that another order already owns stays unclaimed and does not count.
+      for (const x of (store.getOrder(orderId).cryptoPayment.transfers || []).filter((y) => y.unclaimed)) claim(orderId, { ...x }, x.matchedBy);
       const fresh = store.getOrder(orderId);
-      const ok = (fresh.cryptoPayment.transfers || []).filter((x) => x.success === true && x.finalChecked && isTokenAccepted(cfg, x.token, x.network, fresh.cryptoPayment));
+      const ok = (fresh.cryptoPayment.transfers || []).filter((x) => !x.unclaimed && x.success === true && x.finalChecked && isTokenAccepted(cfg, x.token, x.network, fresh.cryptoPayment));
       if (!ok.length) return { ok: false, status: 409, error: "no_confirmed_onchain_transfer" };
       const sr = await screenOrder(fresh);
       if (sr.status === "match") {

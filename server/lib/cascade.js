@@ -84,6 +84,27 @@ export function resolveQueue(settings) {
   return enabledQueue(settings);
 }
 
+// audit 2026-10-02: what the buyer sent in THIS request; used for a new order and, on a retry under the same key, to
+// overwrite the stored copy so the order that gets paid is the one the paying request described.
+function buyerFields(input) {
+  return {
+    customer: stripSecrets({
+      first_name: input.customer?.first_name || input.customer?.firstName || "",
+      last_name: input.customer?.last_name || input.customer?.lastName || "",
+      email: input.customer?.email || "",
+      phone: input.customer?.phone || "",
+      country: input.customer?.country || "",
+      state: input.customer?.state || "",
+      city: input.customer?.city || "",
+      zip: input.customer?.zip || "",
+      address: input.customer?.address || "",
+    }),
+    items: Array.isArray(input.items) ? input.items : [],
+    notes: input.notes || "",
+    session_id: String(input.session_id || input.sessionId || "").trim(),
+  };
+}
+
 export async function chargeCart(input, deps) {
   const store = deps.store;
   const adapters = deps.adapters || ADAPTERS;
@@ -138,20 +159,7 @@ export async function chargeCart(input, deps) {
     inFlight: true,
     amount: formatAmount(input.amount),
     currency: "USD", // infra 2026-09-29 cleffo: USD only (the charge route refuses any other currency before this point)
-    customer: stripSecrets({
-      first_name: input.customer?.first_name || input.customer?.firstName || "",
-      last_name: input.customer?.last_name || input.customer?.lastName || "",
-      email: input.customer?.email || "",
-      phone: input.customer?.phone || "",
-      country: input.customer?.country || "",
-      state: input.customer?.state || "",
-      city: input.customer?.city || "",
-      zip: input.customer?.zip || "",
-      address: input.customer?.address || "",
-    }),
-    items: Array.isArray(input.items) ? input.items : [],
-    notes: input.notes || "",
-    session_id: String(input.session_id || input.sessionId || "").trim(),
+    ...buyerFields(input),
     ...orderAttribution(input), // infra 2026-09-30 order-attribution: the trail the page sent with the charge
     winningProcessor: null,
     winningTxnId: null,
@@ -160,6 +168,15 @@ export async function chargeCart(input, deps) {
     lastStatus: null,
     attempts: [],
   };
+  if (existing) {
+    // audit 2026-10-02: retry under the same key after a decline / failed attempt (approved / pending / in flight returned above).
+    // Customer, items and notes follow the new request (a fixed address must not ship to the old one, a changed cart must not be
+    // charged as one cart and stored as another); the first request's attribution, id, createdAt and attempts are kept.
+    const fresh = buyerFields(input);
+    if (!fresh.session_id) fresh.session_id = existing.session_id || "";
+    Object.assign(order, fresh);
+    if (!pricing) order.amount = formatAmount(input.amount); // old mode without a server price: same source as at creation
+  }
   if (pricing) Object.assign(order, priceFields);
 
   order.inFlight = true;

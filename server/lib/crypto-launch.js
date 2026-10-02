@@ -82,16 +82,25 @@ export function tokenOk(order, token, secret) {
   try { return verifyConfirmToken(order, token, secret); } catch { return false; }
 }
 
-/** The order (other than `exceptId`) that already carries this tx hash as customer TxID, hint, attached transfer or admin record. */
-export function findTxOwner(orders, hash, exceptId = null) {
+/**
+ * The order (other than `exceptId`) that really owns this tx hash: an attached transfer that is not provisional (`unclaimed`),
+ * or a recorded admin mark-paid / paid tx. audit 2026-10-02: what another buyer merely typed (hint, customer TxID, provisional
+ * transfer) is NOT ownership, otherwise anybody can lock the real payer out by entering a public hash first. The ledger owner
+ * (store.cryptoTxOwner) is checked by the caller. `weakEmail`: the same buyer's own typed records (same e-mail) still count, so one
+ * buyer cannot submit one TxID for two of his orders.
+ */
+export function findTxOwner(orders, hash, exceptId = null, { weakEmail = null } = {}) {
   const h = bare(hash);
   if (!h) return null;
+  const email = String(weakEmail || "").trim().toLowerCase();
   for (const o of orders) {
     if (!o || o.id === exceptId || o.paymentMethod !== "crypto") continue;
     const cp = o.cryptoPayment || {};
-    const hashes = [cp.customerTx?.hash, cp.adminMarkPaid?.txHash, o.crypto?.txHash,
-      ...(cp.customerTxHistory || []).map((x) => x.hash), ...(cp.txHints || []).map((x) => x.hash), ...(cp.transfers || []).map((x) => x.txHash)];
-    if (hashes.some((x) => x && bare(x) === h)) return o.id;
+    const strong = [cp.adminMarkPaid?.txHash, o.crypto?.txHash, ...(cp.transfers || []).filter((x) => !x.unclaimed).map((x) => x.txHash)];
+    if (strong.some((x) => x && bare(x) === h)) return o.id;
+    if (!email || String(o.customer?.email || "").trim().toLowerCase() !== email) continue;
+    const weak = [cp.customerTx?.hash, ...(cp.customerTxHistory || []).map((x) => x.hash), ...(cp.txHints || []).map((x) => x.hash), ...(cp.transfers || []).filter((x) => x.unclaimed).map((x) => x.txHash)];
+    if (weak.some((x) => x && bare(x) === h)) return o.id;
   }
   return null;
 }
