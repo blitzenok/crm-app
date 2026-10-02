@@ -4,6 +4,7 @@ import { createStore } from "../lib/store.js";
 import {
   ABANDON_MAX,
   ABANDON_RATE_MAX,
+  clientIp,
   createRateLimiter,
   findForbiddenCardField,
   formatAbandonedDigest,
@@ -245,9 +246,9 @@ test("rate limit ~30/min returns 204 and does not persist the overflow", async (
   const store = createStore({ memoryOnly: true });
   const limiter = createRateLimiter({ max: 2, windowMs: 60_000 });
   await withServer({ store, abandonLimiter: limiter }, async (port) => {
-    const a = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-a" }, { "X-Forwarded-For": "203.0.113.9" });
-    const b = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-b", customer: { ...LEAD.customer, email: "qa+rateb@biolabsresearch.co" } }, { "X-Forwarded-For": "203.0.113.9" });
-    const c = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-c", customer: { ...LEAD.customer, email: "qa+ratec@biolabsresearch.co" } }, { "X-Forwarded-For": "203.0.113.9" });
+    const a = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-a" }, { "X-Real-IP": "203.0.113.9" });
+    const b = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-b", customer: { ...LEAD.customer, email: "qa+rateb@biolabsresearch.co" } }, { "X-Real-IP": "203.0.113.9" });
+    const c = await post(port, "/api/checkout/abandon", { ...LEAD, session_id: "rate-c", customer: { ...LEAD.customer, email: "qa+ratec@biolabsresearch.co" } }, { "X-Real-IP": "203.0.113.9" });
     assert.equal(a.status, 204);
     assert.equal(b.status, 204);
     assert.equal(c.status, 204);
@@ -283,4 +284,81 @@ test("normalize + digest stay first-party / no last4", () => {
   assert.equal(digest.text.toLowerCase().includes("last4"), false);
   assert.equal(isAbandonDigestEnabled({}), false);
   assert.equal(isAbandonDigestEnabled({ ABANDON_DIGEST_ENABLED: "true" }), true);
+});
+
+// audit 2026-10-02: counters key on X-Real-IP (nginx overwrites it), never on the client-controlled X-Forwarded-For.
+test("clientIp ignores X-Forwarded-For and takes X-Real-IP", () => {
+  const req = { headers: { "x-forwarded-for": "6.6.6.6, 203.0.113.1", "x-real-ip": " 203.0.113.9 " }, socket: { remoteAddress: "127.0.0.1" } };
+  assert.equal(clientIp(req), "203.0.113.9");
+  assert.equal(clientIp({ headers: { "x-real-ip": ["198.51.100.4", "x"] } }), "198.51.100.4");
+  assert.equal(clientIp({ headers: { "x-real-ip": "9".repeat(100) } }).length, 64);
+});
+
+test("clientIp without X-Real-IP falls back to the socket address, never to X-Forwarded-For", () => {
+  const req = { headers: { "x-forwarded-for": "6.6.6.6" }, socket: { remoteAddress: "127.0.0.1" } };
+  assert.equal(clientIp(req), "127.0.0.1");
+  assert.equal(clientIp({ headers: {} }), "unknown");
+});
+
+test("abandon: 31st request from one X-Real-IP is cut even when every request forges a new X-Forwarded-For", async () => {
+  const store = createStore({ memoryOnly: true });
+  await withServer({ store }, async (port) => {
+    for (let i = 1; i <= 31; i += 1) {
+      const res = await post(port, "/api/checkout/abandon", {
+        ...LEAD,
+        session_id: `forge-${i}`,
+        customer: { ...LEAD.customer, email: `qa+forge${i}@biolabsresearch.co` },
+      }, { "X-Real-IP": "203.0.113.50", "X-Forwarded-For": `10.0.${i}.1` });
+      assert.equal(res.status, 204);
+    }
+    assert.ok(store.getAbandonedCheckout("forge-30"));
+    assert.equal(store.getAbandonedCheckout("forge-31"), null);
+  });
+});
+
+test("rate limiter sweeps keys with no hits left in the window once the map is large", async () => {
+  const lim = createRateLimiter({ max: 5, windowMs: 20, maxKeys: 5 });
+  for (let i = 0; i < 10; i += 1) lim.allow(`10.0.0.${i}`);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(lim.allow("10.0.1.1"), true);
+  assert.equal(lim.size(), 1);
+  // key length is capped, so a huge forged value cannot be used to bloat memory
+  const lim2 = createRateLimiter({ max: 1, windowMs: 60_000 });
+  assert.equal(lim2.allow("a".repeat(64) + "x"), true);
+  assert.equal(lim2.allow("a".repeat(64) + "y"), false);
+});
+
+test("abandon keeps at most 50 items and caps string lengths", () => {
+  const items = Array.from({ length: 80 }, (_, i) => ({ sku: `S${i}`, name: "n".repeat(500), qty: 1, amount: "1.00" }));
+  const long = "x".repeat(1000);
+  const out = normalizeAbandonPayload({
+    ...LEAD,
+    items,
+    customer: { ...LEAD.customer, first_name: long, last_name: long, city: long, address: long, phone: long },
+  });
+  assert.equal(out.ok, true);
+  assert.equal(out.record.items.length, 50);
+  assert.equal(out.record.items[0].name.length, 200);
+  assert.equal(out.record.customer.first_name.length, 200);
+  assert.equal(out.record.customer.city.length, 200);
+  assert.equal(out.record.customer.address.length, 300);
+  assert.equal(out.record.customer.phone.length, 40);
+  const tooLongEmail = normalizeAbandonPayload({ ...LEAD, customer: { ...LEAD.customer, email: `${"a".repeat(250)}@x.example` } });
+  assert.equal(tooLongEmail.ok, false);
+  assert.equal(tooLongEmail.silent, true);
+});
+
+test("body over 64 KB: no 200, nothing stored, connection answered (not reset)", async () => {
+  const store = createStore({ memoryOnly: true });
+  await withServer({ store }, async (port) => {
+    const big = { ...LEAD, session_id: "big-1", notes: "x".repeat(70_000) };
+    const res = await post(port, "/api/checkout/abandon", big, { "X-Real-IP": "203.0.113.60" });
+    assert.equal(res.status, 204); // silent beacon contract, same as bad JSON
+    assert.equal(store.getAbandonedCheckout("big-1"), null);
+
+    const q = await post(port, "/api/checkout/quote", { ...QUOTE, notes: "x".repeat(70_000) }, { "X-Real-IP": "203.0.113.61" });
+    assert.equal(q.status, 413);
+    assert.equal((await q.json()).error, "payload_too_large");
+    assert.equal(store.listQuotes().length, 0);
+  });
 });

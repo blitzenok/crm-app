@@ -104,11 +104,17 @@ function liveAdapters() {
   return ADAPTERS;
 }
 
+// audit 2026-10-02: JSON bodies are capped at 64 KB. Over the cap the rest is read and thrown away (the socket stays
+// open so nginx gets a normal answer, not a reset) and the request is treated like an invalid body.
+const MAX_BODY_BYTES = 64 * 1024;
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size <= MAX_BODY_BYTES) chunks.push(c); });
     req.on("end", () => {
+      if (size > MAX_BODY_BYTES) return reject(new Error("payload_too_large"));
       const raw = Buffer.concat(chunks).toString("utf8");
       if (!raw) return resolve({});
       try { resolve(JSON.parse(raw)); }
@@ -144,8 +150,10 @@ function callbackUrl() {
 function readBodySilent(req) {
   return new Promise((resolve) => {
     const chunks = [];
-    req.on("data", (c) => chunks.push(c));
+    let size = 0;
+    req.on("data", (c) => { size += c.length; if (size <= MAX_BODY_BYTES) chunks.push(c); }); // audit 2026-10-02: 64 KB cap
     req.on("end", () => {
+      if (size > MAX_BODY_BYTES) return resolve({ ok: false, tooLarge: true });
       const raw = Buffer.concat(chunks).toString("utf8");
       if (!raw) return resolve({ ok: true, body: {} });
       try {
@@ -178,6 +186,7 @@ export function createHandler(deps = {}) {
   const resolveAdapters = () => deps.adapters || liveAdapters();
   const abandonLimiter = deps.abandonLimiter || createRateLimiter();
   const cryptoLimiter = deps.cryptoLimiter || createRateLimiter();
+  const quoteLimiter = deps.quoteLimiter || createRateLimiter({ max: 10, windowMs: 10 * 60 * 1000 }); // audit 2026-10-02: open endpoint had no counter
   const sendAbandonDigest = deps.sendAbandonDigest || sendAbandonedDigest;
   // Card orders -> legacy shop orders (CRM Store Orders + Customer.io order emails). Off unless enabled on the host
   // or injected by a test, so `npm test` on the server can never post into the live order service.
@@ -1111,6 +1120,7 @@ export function createHandler(deps = {}) {
     }
 
     if (path === "/api/checkout/quote" && req.method === "POST") {
+      if (!quoteLimiter.allow(clientIp(req))) return json(429, { ok: false, error: "rate_limited" });
       const body = await readBody(req);
       { const bad = unavailableLines(body); if (bad) return json(409, itemUnavailableBody(bad)); }
       { const shipBad = shipRegionRefusal(body); if (shipBad) return json(400, shipBad); }   // infra 2026-10-01 ship48
@@ -1274,15 +1284,15 @@ export function createHandler(deps = {}) {
 
     if (path === "/api/webhooks/umg" && req.method === "POST") {
       const body = await readBody(req);
-      return json(200, handleProcessorWebhook(db, "umg", body));
+      return json(200, await handleProcessorWebhook(db, "umg", body, { adapters: resolveAdapters() }));
     }
     if (path === "/api/webhooks/tagada" && req.method === "POST") {
       const body = await readBody(req);
-      return json(200, handleProcessorWebhook(db, "tagada", body));
+      return json(200, await handleProcessorWebhook(db, "tagada", body, { adapters: resolveAdapters() }));
     }
     if (path === "/api/webhooks/centrobill" && req.method === "POST") {
       const body = await readBody(req);
-      return json(200, handleProcessorWebhook(db, "centrobill", body));
+      return json(200, await handleProcessorWebhook(db, "centrobill", body, { adapters: resolveAdapters() }));
     }
 
     if (path === "/api/inventory" || path.startsWith("/api/inventory/")) {
@@ -1303,6 +1313,7 @@ export function createHandler(deps = {}) {
 
     return json(404, { error: "not_found" });
   } catch (err) {
+    if (err?.message === "payload_too_large") return json(413, { ok: false, error: "payload_too_large" }); // audit 2026-10-02
     const message = err?.message === "invalid_json" ? "invalid_json" : "server_error";
     return json(message === "invalid_json" ? 400 : 500, { error: message });
   }

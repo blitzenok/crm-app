@@ -34,6 +34,11 @@ export function stripSecrets(value, depth = 0) {
   return out;
 }
 
+// audit 2026-10-02: length ceiling for fields of the open quote / abandon endpoints (non-strings pass through untouched).
+export function capStr(value, max) {
+  return typeof value === "string" ? value.slice(0, max) : value;
+}
+
 export function cardFingerprint(card = {}) {
   return {
     name: card.name || "",

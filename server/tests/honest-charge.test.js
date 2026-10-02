@@ -536,7 +536,9 @@ test("HIGH-2: poller and webhook keep an in-between status pending and settle PA
   await poll("PROCESSING - PENDING VERIFICATION");
   assert.equal(store.getOrder(id).status, "pending");
   assert.deepEqual(seen, ["7010"]);
-  assert.equal(handleProcessorWebhook(store, "umg", { ID: "7010", Status: "PROCESSING - PENDING VERIFICATION" }).ok, true);
+  // audit 2026-10-02: the webhook only triggers a lookup at the processor (which still says in-between); the body's DECLINED is ignored
+  const inBetween = { ...umg, getTransaction: async (t) => umg.mapUmgResponse({ id: t, status: "PROCESSING - PENDING VERIFICATION", ext_order_id: "H2-POLL" }, 200) };
+  assert.equal((await handleProcessorWebhook(store, "umg", { ID: "7010", Status: "DECLINED" }, { adapters: { umg: inBetween } })).ok, true);
   assert.equal(store.getOrder(id).status, "pending", "webhook with an in-between status does not decline");
   await poll("PAID");
   assert.equal(store.getOrder(id).status, "approved");

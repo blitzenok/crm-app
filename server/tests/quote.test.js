@@ -225,3 +225,56 @@ test("PAYMENTS_ENABLED=true lets charge reach UMG", async () => {
     });
   });
 });
+
+// audit 2026-10-02: ceilings on the open quote endpoint.
+test("quote with 51 items is refused with too_many_items; 50 is fine", () => {
+  const mk = (n) => ({ ...SAMPLE, items: Array.from({ length: n }, (_, i) => ({ sku: `S${i}`, name: "Item", qty: 1, amount: "1.00" })) });
+  const bad = validateQuoteRequest(mk(51));
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error, "too_many_items");
+  assert.equal(bad.status, 400);
+  assert.equal(validateQuoteRequest(mk(50)).ok, true);
+});
+
+test("quote caps customer / item string lengths and rejects an e-mail over 254", () => {
+  const long = "x".repeat(1000);
+  const ok = validateQuoteRequest({
+    ...SAMPLE,
+    customer: { ...SAMPLE.customer, first_name: long, city: long, address: long, phone: long },
+    items: [{ sku: long, name: long, qty: 1, amount: "1.00" }],
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.value.customer.first_name.length, 200);
+  assert.equal(ok.value.customer.city.length, 200);
+  assert.equal(ok.value.customer.address.length, 300);
+  assert.equal(ok.value.customer.phone.length, 40);
+  assert.equal(ok.value.items[0].sku.length, 200);
+  assert.equal(ok.value.items[0].name.length, 200);
+  const e = validateQuoteRequest({ ...SAMPLE, customer: { ...SAMPLE.customer, email: `${"a".repeat(250)}@x.example` } });
+  assert.equal(e.error, "invalid_email");
+});
+
+test("POST /api/checkout/quote: 11th request from one X-Real-IP gets 429 even with a new X-Forwarded-For each time", async () => {
+  const store = createStore({ memoryOnly: true });
+  await withServer({ store, sendQuoteEmail: async () => {} }, async (port) => {
+    const statuses = [];
+    for (let i = 1; i <= 11; i += 1) {
+      const res = await fetch(`http://127.0.0.1:${port}/api/checkout/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Real-IP": "203.0.113.70", "X-Forwarded-For": `10.1.${i}.1` },
+        body: JSON.stringify({ ...SAMPLE, idempotencyKey: `BL-QUOTE-RL-${i}` }),
+      });
+      statuses.push(res.status);
+      if (i === 11) assert.deepEqual(await res.json(), { ok: false, error: "rate_limited" });
+    }
+    assert.deepEqual(statuses, [200, 200, 200, 200, 200, 200, 200, 200, 200, 200, 429]);
+    assert.equal(store.listQuotes().length, 10);
+    // another real address is not affected
+    const other = await fetch(`http://127.0.0.1:${port}/api/checkout/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Real-IP": "203.0.113.71" },
+      body: JSON.stringify({ ...SAMPLE, idempotencyKey: "BL-QUOTE-RL-other" }),
+    });
+    assert.equal(other.status, 200);
+  });
+});

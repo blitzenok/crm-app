@@ -1,10 +1,11 @@
 import { formatAmount } from "./card.js";
-import { stripSecrets } from "./sanitize.js";
+import { capStr, stripSecrets } from "./sanitize.js";
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const ABANDON_MAX = 500;
 export const ABANDON_RATE_MAX = 30;
 export const ABANDON_RATE_WINDOW_MS = 60_000;
+export const ABANDON_MAX_ITEMS = 50; // audit 2026-10-02: best-effort beacon, extra lines are dropped
 export const ABANDON_DIGEST_TO = "admin@biolabsresearch.co";
 
 const CARD_KEYS = new Set([
@@ -78,6 +79,7 @@ export function findForbiddenCardField(value, depth = 0) {
 export function createRateLimiter(opts = {}) {
   const max = Number(opts.max) > 0 ? Number(opts.max) : ABANDON_RATE_MAX;
   const windowMs = Number(opts.windowMs) > 0 ? Number(opts.windowMs) : ABANDON_RATE_WINDOW_MS;
+  const maxKeys = Number(opts.maxKeys) > 0 ? Number(opts.maxKeys) : 5000;
   const hits = new Map();
 
   return {
@@ -85,7 +87,13 @@ export function createRateLimiter(opts = {}) {
     windowMs,
     allow(ip) {
       const now = Date.now();
-      const key = String(ip || "unknown");
+      // audit 2026-10-02: key length is capped and idle keys are swept, so a stream of forged addresses cannot grow the map forever.
+      const key = String(ip || "unknown").slice(0, 64);
+      if (hits.size > maxKeys) {
+        for (const [k, ts] of hits) {
+          if (!ts.length || now - ts[ts.length - 1] >= windowMs) hits.delete(k);
+        }
+      }
       const recent = (hits.get(key) || []).filter((t) => now - t < windowMs);
       if (recent.length >= max) {
         hits.set(key, recent);
@@ -98,13 +106,18 @@ export function createRateLimiter(opts = {}) {
     reset() {
       hits.clear();
     },
+    size() {
+      return hits.size;
+    },
   };
 }
 
 export function clientIp(req) {
-  const xff = req?.headers?.["x-forwarded-for"];
-  if (typeof xff === "string" && xff.trim()) return xff.split(",")[0].trim();
-  if (Array.isArray(xff) && xff[0]) return String(xff[0]).split(",")[0].trim();
+  // audit 2026-10-02: X-Forwarded-For is client-controlled (nginx appends to what the client sent), so it is never read.
+  // The module listens on 127.0.0.1 behind nginx, which overwrites X-Real-IP with $remote_addr, so that header is trustworthy.
+  const h = req?.headers?.["x-real-ip"];
+  const real = String((Array.isArray(h) ? h[0] : h) || "").trim().slice(0, 64);
+  if (real) return real;
   return req?.socket?.remoteAddress || req?.connection?.remoteAddress || "unknown";
 }
 
@@ -121,15 +134,15 @@ function readCustomer(raw, fallbackEmail) {
   const c = raw && typeof raw === "object" ? raw : {};
   const email = String(c.email || fallbackEmail || "").trim();
   return stripSecrets({
-    first_name: c.first_name || c.firstName || "",
-    last_name: c.last_name || c.lastName || "",
+    first_name: capStr(c.first_name || c.firstName || "", 200),
+    last_name: capStr(c.last_name || c.lastName || "", 200),
     email,
-    phone: c.phone || c.phone_number || c.phoneNumber || "",
-    address: readAddress(c.address) || c.street || "",
-    city: c.city || c.address?.city || "",
-    state: c.state || c.address?.state || "",
-    zip: c.zip || c.postal_code || c.postalCode || c.address?.zip || "",
-    country: c.country || c.address?.country || "",
+    phone: capStr(c.phone || c.phone_number || c.phoneNumber || "", 40),
+    address: capStr(readAddress(c.address) || c.street || "", 300),
+    city: capStr(c.city || c.address?.city || "", 200),
+    state: capStr(c.state || c.address?.state || "", 200),
+    zip: capStr(c.zip || c.postal_code || c.postalCode || c.address?.zip || "", 200),
+    country: capStr(c.country || c.address?.country || "", 200),
   });
 }
 
@@ -146,12 +159,12 @@ function itemAmount(row) {
 
 export function readItems(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw.map((it) => {
+  return raw.slice(0, ABANDON_MAX_ITEMS).map((it) => {
     const row = it && typeof it === "object" ? it : {};
     const qty = Number(row.qty ?? row.quantity);
     return {
-      sku: String(row.sku || row.id || row.product_id || "").trim(),
-      name: String(row.name || row.title || row.product_name || "").trim(),
+      sku: String(row.sku || row.id || row.product_id || "").trim().slice(0, 200),
+      name: String(row.name || row.title || row.product_name || "").trim().slice(0, 200),
       qty: Number.isFinite(qty) && qty > 0 ? qty : 1,
       amount: itemAmount(row),
     };
@@ -204,7 +217,7 @@ export function normalizeAbandonPayload(input) {
   }
 
   const email = String(input.customer?.email || input.email || "").trim();
-  if (!email || !EMAIL_RE.test(email)) {
+  if (!email || email.length > 254 || !EMAIL_RE.test(email)) {
     return { ok: false, silent: true, reason: "invalid_email" };
   }
 
