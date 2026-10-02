@@ -45,6 +45,23 @@
 .bw-split .bw-no-split { border-radius: 10px !important; }
 .bw-more { min-width: 38px; font-weight: 800; letter-spacing: 1px; }
 .bw-settings-toggle { display: none; }
+.bw-focus-toggle { min-width: 38px; display: inline-flex; align-items: center; justify-content: center; }
+.bw-focus-toggle .bw-ico { display: block; }
+.bw-focus-toggle .bw-ico-collapse, .bw-focus-toggle[aria-pressed="true"] .bw-ico-expand { display: none; }
+.bw-focus-toggle[aria-pressed="true"] .bw-ico-collapse { display: block; }
+
+/* ---- full-screen working mode: body.bw-focus (set by blog-edit.js, kept in localStorage 'bw_focus_mode') ----
+   The CRM menu and the page header are drawn by crm.js / crm.css, which are not ours and are replaced by the CRM team's own
+   releases, so the selectors of that shell are listed here and only here: .sidebar (the left menu, which crm.css turns into a bottom
+   bar on a phone), .topbar (the page header, "Blog / Article editor"), .mobile-fab and #pwa-install-banner (floating things the shell
+   puts over the page). The shell uses !important on a phone, so these do too (more specific, loaded later). If the CRM team renames
+   one of them, test/crm-pages.test.cjs fails against the server snapshot of crm.css and names it. */
+body.bw-focus .sidebar,
+body.bw-focus .topbar,
+body.bw-focus .mobile-fab,
+body.bw-focus #pwa-install-banner { display: none !important; }
+body.bw-focus .main { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+body.bw-focus .app-wrapper { width: 100%; }
 
 .bw-body { flex: 1 1 auto; display: flex; min-height: 0; }
 .bw-main { flex: 1 1 auto; min-width: 0; overflow-y: auto; background: #fff; position: relative; }
@@ -163,11 +180,16 @@
 .be-w-25 .be-figure-img img, .be-w-33 .be-figure-img img, .be-w-50 .be-figure-img img, .be-w-66 .be-figure-img img, .be-w-75 .be-figure-img img, .be-w-100 .be-figure-img img { width: 100%; }
 /* Resize handles: on the edges of the picture of the selected figure; a centred figure has both, a left one only the right, a right one only the left. */
 .be-figure-img { position: relative; }
-.be-resize { display: none; position: absolute; top: 50%; width: 12px; height: 48px; margin-top: -24px; border: 2px solid #fff; border-radius: 7px; background: var(--bw-navy); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; z-index: 2; }
-.be-resize-l { left: 6px; }
-.be-resize-r { right: 6px; }
-.be-figure.ProseMirror-selectednode .be-resize, .be-figure.be-resizing .be-resize { display: block; }
-.be-figure.be-a-left .be-resize-l, .be-figure.be-a-right .be-resize-r { display: none; }
+/* The whole edge strip is the grab zone (a 12x48 pill alone was easy to miss); the pill in its middle is drawn by ::after.
+   Shown on hover as well as on the selected figure: authors reach for the edge without clicking the picture first. */
+.be-resize { display: none; position: absolute; top: 0; bottom: 0; width: 24px; cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; z-index: 2; }
+.be-resize::after { content: ''; position: absolute; top: 50%; width: 12px; height: 48px; max-height: 80%; transform: translateY(-50%); box-sizing: border-box; border: 2px solid #fff; border-radius: 7px; background: var(--bw-navy); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); }
+.be-resize-l { left: 0; }
+.be-resize-l::after { left: 6px; }
+.be-resize-r { right: 0; }
+.be-resize-r::after { right: 6px; }
+.be-figure.ProseMirror-selectednode .be-resize, .be-figure.be-resizing .be-resize, .be-figure:hover > .be-figure-img > .be-resize { display: block; }
+.be-figure.be-a-left > .be-figure-img > .be-resize-l, .be-figure.be-a-right > .be-figure-img > .be-resize-r { display: none; }   /* as specific as the hover rule above, and later */
 .ProseMirror[contenteditable="false"] .be-resize { display: none !important; }
 .be-resize-label { display: none; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; background: rgba(27, 42, 74, .92); color: #fff; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; pointer-events: none; z-index: 3; }
 .be-figure.be-resizing .be-resize-label { display: block; }

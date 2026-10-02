@@ -695,5 +695,41 @@
     });
   }
 
+  // ---- full-screen working mode -------------------------------------------------------------------------------------------------
+  // A class on <body> (CSS in blog-edit.css hides the CRM menu and header): a mode inside the window, not the browser's Fullscreen API.
+  // Remembered per browser in localStorage; the class lives on this page only, so every other CRM page keeps its menu.
+
+  var FOCUS_KEY = 'bw_focus_mode';
+  function readFocus() { try { return root.localStorage.getItem(FOCUS_KEY) === '1'; } catch (e) { return false; } }
+  function saveFocus(on) { try { if (on) root.localStorage.setItem(FOCUS_KEY, '1'); else root.localStorage.removeItem(FOCUS_KEY); } catch (e) { /* storage blocked: the mode just is not remembered */ } }
+
+  // Something that has its own meaning for Escape is open: a dialog (ours or the CRM's), a menu or popover, a list, the selection bar.
+  // They close themselves on Escape (and stop it); this check also covers what closes on key-up (the selection bar).
+  function escapeBelongsToSomethingElse() {
+    return !!document.querySelector('.modal-overlay, .bw-pop, .bw-sel-list, .bw-bubble:not([hidden])');
+  }
+
+  function wireFocus() {
+    var btn = $('bw-focus');
+    if (!btn) return;
+    function set(on, remember) {
+      document.body.classList.toggle('bw-focus', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      var label = on ? 'Exit full screen' : 'Full screen';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+      if (remember) saveFocus(on);
+    }
+    set(readFocus(), false);
+    btn.addEventListener('click', function () { set(!document.body.classList.contains('bw-focus'), true); });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape' || e.isComposing) return;   // not defaultPrevented: the editor's own keymap prevents the default of Escape too
+      if (!document.body.classList.contains('bw-focus') || escapeBelongsToSomethingElse()) return;
+      e.preventDefault();
+      set(false, true);
+    });
+  }
+  wireFocus();
+
   boot();
 }(typeof window !== 'undefined' ? window : null));
