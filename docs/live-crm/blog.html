@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Blog — BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<link rel="stylesheet" href="blog.css">
+</head>
+<body>
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">Blog <span>Articles on biolabsresearch.co/blog</span></div>
+  </header>
+  <div class="content">
+
+<div id="bl-banner" class="bl-banner" role="status" aria-live="polite" hidden></div>
+
+<div class="card bl-card">
+  <div class="bl-head">
+    <h3>Articles</h3>
+    <input id="bl-search" class="bl-search" type="search" placeholder="Search by title or address" aria-label="Search articles" autocomplete="off">
+    <button type="button" class="btn btn-primary" id="bl-new">New article</button>
+  </div>
+  <div id="bl-tabs" class="bl-tabs" role="tablist" aria-label="Article status"></div>
+  <div id="bl-list" class="bl-list" aria-live="polite"></div>
+</div>
+
+  </div>
+</div>
+</div>
+<script src="blog-ui.js"></script>
+<script src="blog-api.js"></script>
+<script src="blog.js"></script>
+</body>
+</html>

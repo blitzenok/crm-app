@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="/crm/manifest.json">
+<meta name="theme-color" content="#1B2A4A">
+<link rel="apple-touch-icon" href="/crm/assets/biolabs-logo.png">
+<link rel="icon" href="/crm/assets/biolabs-logo.png">
+<title>Edit article — BioLabs Research</title>
+<link rel="stylesheet" href="crm.css?v=05fa5a1bda">
+<link rel="stylesheet" href="blog-edit.css">
+</head>
+<body class="bw-page">
+<script src="crm-utils.js"></script>
+<script src="crm.js?v=d91d6eb09f"></script>
+<script src="auth.js"></script>
+<div class="app-wrapper">
+<aside class="sidebar">
+  <div id="crm-nav" class="crm-nav"></div>
+</aside>
+<div class="main">
+  <header class="topbar">
+    <div class="topbar-title">Blog <span>Article editor</span></div>
+  </header>
+  <div class="content bw-content">
+
+    <div id="bw-banners" class="bw-banners" role="status" aria-live="polite"></div>
+
+    <div class="bw-bar" id="bw-bar">
+      <a class="bw-back" href="blog.html" title="Back to the article list">&larr; Blog</a>
+      <div class="bw-chips" aria-live="polite">
+        <span class="bw-chip bw-chip-draft" id="bw-chip-draft"></span>
+        <span class="bw-chip bw-chip-site" id="bw-chip-site"></span>
+        <span class="bw-chip bw-chip-diff" id="bw-chip-diff" hidden></span>
+      </div>
+      <div class="bw-bar-actions">
+        <button type="button" class="bw-settings-toggle btn btn-secondary" id="bw-settings-toggle" aria-expanded="false" aria-controls="bw-side">Settings</button>
+        <button type="button" class="btn btn-secondary" id="bw-preview">Preview</button>
+        <span class="bw-split">
+          <button type="button" class="btn btn-primary" id="bw-publish">Publish</button>
+          <button type="button" class="btn btn-primary bw-caret" id="bw-publish-more" aria-haspopup="menu" aria-expanded="false" aria-label="More publishing options">&#9662;</button>
+        </span>
+        <button type="button" class="btn btn-secondary bw-more" id="bw-more" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="More actions">&hellip;</button>
+      </div>
+    </div>
+
+    <div class="bw-body">
+      <div class="bw-main" id="bw-main">
+        <div class="bw-loading" id="bw-loading">Loading the article&hellip;</div>
+        <div class="bw-editor-wrap" id="bw-editor-wrap" hidden>
+          <div class="bw-titlebox">
+            <textarea id="bw-title" class="bw-title" rows="1" maxlength="140" placeholder="Article title" aria-label="Article title" spellcheck="true"></textarea>
+          </div>
+          <div class="bw-toolbar" id="bw-toolbar" role="toolbar" aria-label="Formatting"></div>
+          <div class="bw-column" id="bw-column">
+            <div id="bw-editor" class="bw-editor"></div>
+          </div>
+          <div class="bw-foot"><span id="bw-count"></span><span id="bw-foot" class="bw-foot-uploads"></span></div>
+        </div>
+      </div>
+      <aside class="bw-side" id="bw-side" aria-label="Article settings">
+        <button type="button" class="bw-side-close" id="bw-side-close" aria-label="Close settings">&times;</button>
+        <div class="bw-tabs" role="tablist" aria-label="Settings">
+          <button type="button" role="tab" class="bw-tab" id="bw-tab-post" data-tab="post" aria-selected="true" aria-controls="bw-pane-post">Post</button>
+          <button type="button" role="tab" class="bw-tab" id="bw-tab-seo" data-tab="seo" aria-selected="false" aria-controls="bw-pane-seo">SEO</button>
+          <button type="button" role="tab" class="bw-tab" id="bw-tab-check" data-tab="check" aria-selected="false" aria-controls="bw-pane-check">Checklist <span class="bw-badge" id="bw-check-badge" hidden></span></button>
+        </div>
+        <div class="bw-pane" id="bw-pane-post" role="tabpanel" aria-labelledby="bw-tab-post"></div>
+        <div class="bw-pane" id="bw-pane-seo" role="tabpanel" aria-labelledby="bw-tab-seo" hidden></div>
+        <div class="bw-pane" id="bw-pane-check" role="tabpanel" aria-labelledby="bw-tab-check" hidden></div>
+      </aside>
+    </div>
+
+  </div>
+</div>
+</div>
+<script src="blog-ui.js"></script>
+<script src="blog-api.js"></script>
+<script src="blog-draft-keeper.js"></script>
+<script src="blog-editor.bundle.js"></script>
+<script src="blog-edit-dialogs.js"></script>
+<script src="blog-edit-toolbar.js"></script>
+<script src="blog-edit-panel.js"></script>
+<script src="blog-edit.js"></script>
+</body>
+</html>

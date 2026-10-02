@@ -1,0 +1,47 @@
+/* Blog list page. Classes start with bl-; none with ad- (ad blockers hide those). Colours are the CRM's own. */
+.bl-card { padding: 0; overflow: hidden; background: #fff; border: 1px solid #E8ECF4; border-radius: 14px; }
+.bl-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px 12px; flex-wrap: wrap; }
+.bl-head h3 { flex: 1 1 auto; margin: 0; font-size: 16px; }
+.bl-search { width: 280px; max-width: 100%; border: 1px solid #CBD5E1; border-radius: 8px; padding: 8px 12px; font: inherit; background: #fff; }
+.bl-search:focus { outline: 2px solid #1B2A4A; outline-offset: 0; border-color: #1B2A4A; }
+
+.bl-tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid #E8ECF4; overflow-x: auto; }
+.bl-tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 12px 9px; font: inherit; font-weight: 600; color: #5A6685; cursor: pointer; white-space: nowrap; min-height: 0 !important; border-radius: 0 !important; }
+.bl-tab:hover { color: #1B2A4A; }
+.bl-tab[aria-selected="true"] { color: #1B2A4A; border-bottom-color: #1F7A3D; }
+.bl-tab small { margin-left: 6px; font-weight: 600; font-size: 11px; color: #5A6685; background: #E8ECF4; border-radius: 20px; padding: 1px 8px; }
+
+.bl-list { min-height: 120px; }
+.bl-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 190px 180px 340px; gap: 14px; align-items: center; padding: 12px 20px; border-bottom: 1px solid #F0F3FA; }
+.bl-row:last-child { border-bottom: 0; }
+.bl-row:hover { background: #FAFBFD; }
+.bl-title { display: block; font-size: 14px; font-weight: 700; color: #1a1a2e; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-title:hover { color: #1F7A3D; text-decoration: underline; }
+.bl-title.bl-untitled { color: #8A94A6; font-weight: 600; font-style: italic; }
+.bl-slug { display: block; margin-top: 2px; font-size: 11px; color: #8A94A6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-cat { font-size: 12px; color: #5A6685; }
+.bl-status { display: flex; flex-wrap: wrap; gap: 4px; }
+.bl-badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.bl-badge-draft { background: #E2E8F0; color: #475569; }
+.bl-badge-scheduled { background: #DBEAFE; color: #1D4ED8; }
+.bl-badge-published { background: #EDFBF4; color: #0E9F6E; }
+.bl-badge-warn { background: #FEF3C7; color: #B45309; }
+.bl-badge-bad { background: #FEF2F2; color: #C62828; }
+.bl-when { font-size: 12px; color: #5A6685; }
+.bl-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.bl-act { background: #fff; border: 1px solid #E8ECF4; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; font-weight: 600; color: #1B2A4A; cursor: pointer; min-height: 0 !important; text-decoration: none; }
+.bl-act:hover { border-color: #1B2A4A; }
+.bl-act[disabled] { opacity: .45; cursor: not-allowed; }
+.bl-act-danger { color: #C62828; }
+.bl-act-danger:hover { border-color: #C62828; }
+
+.bl-empty { padding: 48px 24px; text-align: center; color: #5A6685; }
+.bl-empty p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
+.bl-banner { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+.bl-banner button { margin-left: 10px; }
+
+@media (max-width: 1100px) {
+  .bl-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 8px; }
+  .bl-cat, .bl-when { grid-column: 1; }
+  .bl-actions { grid-column: 1 / -1; justify-content: flex-start; }
+}
