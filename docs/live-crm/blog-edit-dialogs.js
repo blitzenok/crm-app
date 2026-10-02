@@ -411,7 +411,7 @@
           if (e && e.status === 409) { dlg.close(); ctx.reloadPost(CHANGED); return; }
           if (e && e.status === 422 && e.code === 'slug') {
             var se = e.body && e.body.slugError;
-            showError(se && se.code === 'static_page' ? 'A site page already uses this address — change the address to update this article.' : ((se && se.message) || e.message));
+            showError((se && se.message) || e.message);   // the server's words: an imported article on an old page needs a different answer than "change the address"
             ctx.panel().setSlugError((se && se.message) || e.message);
             return;
           }

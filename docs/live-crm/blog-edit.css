@@ -150,14 +150,29 @@
 
 .be-figure { display: block; margin: 32px auto; max-width: 100%; position: relative; }
 .be-figure.be-w-auto { width: fit-content; }
+.be-figure.be-w-25 { width: 25%; }
+.be-figure.be-w-33 { width: 33.333%; }
 .be-figure.be-w-50 { width: 50%; }
+.be-figure.be-w-66 { width: 66.667%; }
 .be-figure.be-w-75 { width: 75%; }
 .be-figure.be-w-100 { width: 100%; }
 .be-figure.be-a-left { margin-left: 0; margin-right: auto; }
 .be-figure.be-a-center { margin-left: auto; margin-right: auto; }
 .be-figure.be-a-right { margin-left: auto; margin-right: 0; }
 .be-figure-img img { display: block; max-width: 100%; height: auto; border-radius: 12px; }
-.be-w-50 .be-figure-img img, .be-w-75 .be-figure-img img, .be-w-100 .be-figure-img img { width: 100%; }
+.be-w-25 .be-figure-img img, .be-w-33 .be-figure-img img, .be-w-50 .be-figure-img img, .be-w-66 .be-figure-img img, .be-w-75 .be-figure-img img, .be-w-100 .be-figure-img img { width: 100%; }
+/* Resize handles: on the edges of the picture of the selected figure; a centred figure has both, a left one only the right, a right one only the left. */
+.be-figure-img { position: relative; }
+.be-resize { display: none; position: absolute; top: 50%; width: 12px; height: 48px; margin-top: -24px; border: 2px solid #fff; border-radius: 7px; background: var(--bw-navy); box-shadow: 0 1px 4px rgba(0, 0, 0, .45); cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; z-index: 2; }
+.be-resize-l { left: 6px; }
+.be-resize-r { right: 6px; }
+.be-figure.ProseMirror-selectednode .be-resize, .be-figure.be-resizing .be-resize { display: block; }
+.be-figure.be-a-left .be-resize-l, .be-figure.be-a-right .be-resize-r { display: none; }
+.ProseMirror[contenteditable="false"] .be-resize { display: none !important; }
+.be-resize-label { display: none; position: absolute; top: 8px; left: 50%; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; background: rgba(27, 42, 74, .92); color: #fff; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700; pointer-events: none; z-index: 3; }
+.be-figure.be-resizing .be-resize-label { display: block; }
+.be-figure.be-resizing { user-select: none; -webkit-user-select: none; }
+.be-figure.be-resizing .be-figure-img img { width: 100%; }
 .be-figure.be-img-error .be-figure-img { min-height: 120px; background: #FEF2F2; border: 1px dashed #E02424; border-radius: 12px; }
 .be-figure.be-img-error .be-figure-img img { opacity: .15; }
 
