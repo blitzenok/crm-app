@@ -1,5 +1,5 @@
-import { cardFingerprint, stripSecrets } from "./sanitize.js";
-import { formatAmount } from "./card.js";
+import { cardFingerprint, cleanText, maskCardNumbers, maskCardNumbersDeep, stripSecrets } from "./sanitize.js";
+import { cardFormatProblem, formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
 import * as umg from "./processors/umg.js";
 import * as tagada from "./processors/tagada.js";
@@ -87,20 +87,23 @@ export function resolveQueue(settings) {
 // audit 2026-10-02: what the buyer sent in THIS request; used for a new order and, on a retry under the same key, to
 // overwrite the stored copy so the order that gets paid is the one the paying request described.
 function buyerFields(input) {
+  const c = input.customer || {};
   return {
+    // audit 2026-10-02 (#758): text only, control characters out, capped (same limits as crypto-checkout.js readCustomer)
     customer: stripSecrets({
-      first_name: input.customer?.first_name || input.customer?.firstName || "",
-      last_name: input.customer?.last_name || input.customer?.lastName || "",
-      email: input.customer?.email || "",
-      phone: input.customer?.phone || "",
-      country: input.customer?.country || "",
-      state: input.customer?.state || "",
-      city: input.customer?.city || "",
-      zip: input.customer?.zip || "",
-      address: input.customer?.address || "",
+      first_name: cleanText(c.first_name || c.firstName, 80),
+      last_name: cleanText(c.last_name || c.lastName, 80),
+      email: cleanText(c.email, 255),
+      phone: cleanText(c.phone, 40),
+      country: cleanText(c.country, 60),
+      state: cleanText(c.state, 40),
+      city: cleanText(c.city, 80),
+      zip: cleanText(c.zip, 20),
+      address: cleanText(c.address, 200),
     }),
-    items: Array.isArray(input.items) ? input.items : [],
-    notes: input.notes || "",
+    // audit 2026-10-02 (#388): a card number pasted into the note / an item name is not kept on the order
+    items: Array.isArray(input.items) ? maskCardNumbersDeep(input.items) : [],
+    notes: maskCardNumbers(typeof input.notes === "string" ? input.notes : ""),
     session_id: String(input.session_id || input.sessionId || "").trim(),
   };
 }
@@ -123,6 +126,18 @@ export async function chargeCart(input, deps) {
   }
   if (existing && existing.inFlight) {
     return { ok: true, reused: true, order: existing };
+  }
+
+  // audit 2026-10-02 (#79): a card that cannot be real (Luhn, expiry in the past, CVV length) is refused here, before an order or an
+  // attempt exists and before UMG is asked: a typo no longer burns one of the buyer's 3 attempts and bots with random numbers do not
+  // reach the bank. FORMAT only. Only for the real processors: the CRM dry-run route and the tests pass mock adapters whose scenario
+  // cards (...0002 / ...0003 / ...0005 / ...0006) are not Luhn-valid by design. The text is the existing "enter your card details" one.
+  if (adapters === ADAPTERS) {
+    const problem = cardFormatProblem(input.card);
+    if (problem) {
+      process.stdout.write(`[charge] card_invalid (${problem}): refused before any order or request to the processor\n`);
+      return { ok: false, error: "card_invalid", reason: problem, charged: false, message: "Please enter your card details to pay. You were not charged." };
+    }
   }
 
   const queue = enabledQueue(settings);

@@ -111,7 +111,9 @@ test("launch: customer TxID format, duplicate across orders, PAYMENT_SUBMITTED, 
   assert.equal(v.submitCustomerTx(b.id, { network: "erc20", txHash: `0x${h64(7)}` }).error, "tx_already_used");
   assert.equal(v.submitCustomerTx(a.id, { network: "trc20", txHash: h64(8), asset: "USDC" }).error, "token_not_accepted");
   t.advance(25 * 3600e3);
-  await v.tick();
+  // audit 2026-10-02 (LF1 #361/#625): 25 hours of blocks are read in chunks of 3000 per tick and the timeout cancel waits until a scan has
+  // reached the head (was: one tick, which read only the last 3000 blocks and cancelled). Three ticks cover the 7500+ blocks here.
+  for (let i = 0; i < 4; i += 1) await v.tick();
   assert.notEqual(t.store.getOrder(a.id).cryptoPayment.status, "cancelled", "a submitted TxID waits for the admin");
   assert.equal(t.store.getOrder(b.id).cryptoPayment.status, "cancelled", "no TxID + 24h -> expired");
   assert.equal(launchStatus(t.store.getOrder(b.id), t.env).status, "expired");
@@ -195,8 +197,11 @@ test("launch HTTP: contract, token-gated status, TxID route + rate limit, CORS s
     const st = await fetch(`${base}/api/checkout/crypto/${c.order_id}/status?token=${encodeURIComponent(c.status_token)}`).then((r) => r.json());
     assert.deepEqual(Object.keys(st).sort(), ["expires_at", "ok", "order_id", "status", "tx_submitted"]);
     assert.equal(st.status, "awaiting");
-    const other = await fetch(`${base}/api/checkout/crypto`, { method: "POST", headers: { ...J, Origin: "https://blrcommerce.io" }, body: JSON.stringify({ ...body, idempotencyKey: "QA-HTTP-LAUNCH-2" }) });
-    assert.equal(other.headers.get("access-control-allow-origin"), null, "crypto CORS: biolabsresearch.co only");
+    // the blrcommerce.io mirror gets no crypto CORS answer (contract of 2026-09-30; #53/#81/#143 wait for the owner), nor does any other origin
+    const mirror = await fetch(`${base}/api/checkout/crypto`, { method: "POST", headers: { ...J, Origin: "https://blrcommerce.io" }, body: JSON.stringify({ ...body, idempotencyKey: "QA-HTTP-LAUNCH-2" }) });
+    assert.equal(mirror.headers.get("access-control-allow-origin"), null, "crypto CORS: the mirror is not allowed (held back 2026-10-02: enabling crypto on the mirror is the owner's decision)");
+    const other = await fetch(`${base}/api/checkout/crypto`, { method: "POST", headers: { ...J, Origin: "https://evil.example" }, body: JSON.stringify({ ...body, idempotencyKey: "QA-HTTP-LAUNCH-3" }) });
+    assert.equal(other.headers.get("access-control-allow-origin"), null, "crypto CORS: storefront origins only");
     const tx = `0x${h64(41)}`;
     const t1 = await fetch(`${base}/api/checkout/crypto/${c.order_id}/txid`, { method: "POST", headers: J, body: JSON.stringify({ token: "nope", network: "erc20", tx_hash: tx }) });
     assert.equal(t1.status, 403);

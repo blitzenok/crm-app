@@ -1,0 +1,29 @@
+supplier_name,qty,unit_cost,line_total,suggested_internal_code_note
+Sample Compound 01 5mg,10,21.80,218.00,
+Sample Compound 02 5mg,10,12.70,127.00,
+Sample Compound 03 5mg,10,25.20,252.00,
+Sample Compound 04 5mg,10,7.45,74.50,
+Sample Compound 05 5mg,10,8.70,87.00,
+Sample Compound 06 5mg,10,32.40,324.00,
+Sample Compound 07 5mg,10,9.80,98.00,
+Sample Compound 08 5mg,10,23.70,237.00,
+Sample Compound 09 5mg,10,34.80,348.00,
+Sample Compound 10 5mg,10,7.95,79.50,
+Sample Compound 11 5mg,10,30.95,309.50,
+R3TA 10mg,30,13.00,390.00,alias R3TA->G3-R; suggested G3-R-10
+Sample Compound 13 5mg,10,15.95,159.50,
+Sample Compound 14 5mg,10,6.90,69.00,
+Sample Compound 15 5mg,10,9.40,94.00,
+Sample Compound 16 5mg,10,27.20,272.00,
+Sample Compound 17 5mg,10,26.40,264.00,
+R3TA 20mg,20,22.00,440.00,alias R3TA->G3-R; suggested G3-R-20
+Sample Compound 19 5mg,10,8.55,85.50,
+Sample Compound 20 5mg,10,17.30,173.00,
+Sample Compound 21 5mg,10,9.60,96.00,
+Sample Compound 22 5mg,10,33.20,332.00,
+Sample Compound 23 5mg,10,26.70,267.00,
+Sample Compound 24 5mg,10,8.00,80.00,
+Semaglutide 10mg,10,15.00,150.00,alias Semaglutide->G1-S; suggested G1-S-10
+GLOW 70 70mg,10,82.00,820.00,suggested GLOW
+BAC Water 10mg,100,1.50,150.00,supplier extra - not an internal SKU
+Sample Compound 28 5mg,70,9.20,644.00,

@@ -14,10 +14,14 @@ import { createOrderEmailer, emailConfig, createEmailLog } from "../lib/order-em
 import { startCrmServer } from "../index.js";
 
 const TERMS = new URL("../../etc/human-use-terms.json", import.meta.url).pathname;
+// audit 2026-10-02 (tests-run-3): the Legal-approved list is server data (not in git). Order: HUMAN_USE_TERMS_PATH, repo etc/, the server path,
+// then a sample file with just enough terms for these tests (tests/fixtures/human-use-terms.sample.json, NOT the approved list).
+const SAMPLE_TERMS = new URL("./fixtures/human-use-terms.sample.json", import.meta.url).pathname;
+const termsSource = () => process.env.HUMAN_USE_TERMS_PATH || [TERMS, "/etc/crm-umg/human-use-terms.json"].find((p) => existsSync(p)) || SAMPLE_TERMS;
 function termsFile() {
   const d = mkdtempSync(join(tmpdir(), "hu-"));
   const p = join(d, "terms.json");
-  copyFileSync(existsSync(TERMS) ? TERMS : "/etc/crm-umg/human-use-terms.json", p);
+  copyFileSync(termsSource(), p);
   return { dir: d, path: p };
 }
 const cust = (email) => ({ first_name: "QA", last_name: "Test", email, address: "1 QA Way", city: "Austin", state: "TX", zip: "78701", country: "US" });
@@ -39,7 +43,7 @@ function setup(extraSources = []) {
 }
 
 test("terms: each approved term matches; ordinary research text does not", () => {
-  const c = compileTerms(JSON.parse(readFileSync(existsSync(TERMS) ? TERMS : "/etc/crm-umg/human-use-terms.json", "utf8")));
+  const c = compileTerms(JSON.parse(readFileSync(termsSource(), "utf8")));
   const hit = (s) => scanText(s, c).map((h) => h.termId);
   assert.ok(hit("How do I INJECT this?").includes("inject"));
   assert.ok(hit("going subq daily").includes("subq"));
@@ -221,7 +225,7 @@ test("HTTP: gift stripped at quote/crypto create; compliance endpoints staff-rea
 
 // ---- 2026-10-01 two tiers + email lookback ------------------------------------------------------------------------------
 test("tiers: new slang / Hebrew terms match with the right tier; IM is case-sensitive and standalone", () => {
-  const c = compileTerms(JSON.parse(readFileSync(existsSync(TERMS) ? TERMS : "/etc/crm-umg/human-use-terms.json", "utf8")));
+  const c = compileTerms(JSON.parse(readFileSync(termsSource(), "utf8")));
   const hit = (s) => scanText(s, c).map((h) => `${h.termId}:${h.tier}`);
   for (const [txt, want] of [
     ["going sub-q", "subq:strong"], ["sub q please", "subq:strong"], ["my dose is 2mg", "my_dose:strong"], ["how much should I take?", "how_much_take:strong"],

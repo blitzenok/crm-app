@@ -1,6 +1,6 @@
 import { formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
-import { capStr, stripSecrets } from "./sanitize.js";
+import { capStr, maskCardNumbers, stripSecrets } from "./sanitize.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_QUOTE_ITEMS = 50; // audit 2026-10-02: ceiling on the open quote endpoint
@@ -41,7 +41,7 @@ function readItems(raw) {
     const qty = Number(row.qty ?? row.quantity);
     return {
       sku: String(row.sku || "").trim().slice(0, 200),
-      name: String(row.name || "").trim().slice(0, 200),
+      name: maskCardNumbers(String(row.name || "").trim().slice(0, 200)), // audit 2026-10-02 (LF1 #388): a pasted card number is not stored
       qty: Number.isFinite(qty) && qty > 0 ? qty : 0,
       amount: formatAmount(row.amount),
     };
@@ -101,7 +101,7 @@ export function validateQuoteRequest(input) {
       currency: String(input.currency || "USD").trim().toUpperCase() || "USD",
       customer,
       items,
-      notes: String(input.notes || "").slice(0, 2000),
+      notes: maskCardNumbers(String(input.notes || "").slice(0, 2000)), // audit 2026-10-02 (LF1 #388)
     },
   };
 }

@@ -57,3 +57,37 @@ export function phoneDigits(phone) {
   if (d.length > 15) return d.slice(0, 15);
   return d.padStart(5, "0");
 }
+
+/** Luhn check over the digits of a card number (spaces / dashes ignored). */
+export function luhnValid(number) {
+  const d = digitsOnly(number);
+  if (!d) return false;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 1) {
+    let n = d.charCodeAt(d.length - 1 - i) - 48;
+    if (i % 2 === 1) { n *= 2; if (n > 9) n -= 9; }
+    sum += n;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * audit 2026-10-02 (#79): FORMAT check of the card before anything is sent to a bank: 12-19 digits that pass Luhn, an expiry month
+ * that is not in the past, a CVV of 3-4 digits. Returns null when fine, else "number" | "expiry" | "cvv". It never says whether the
+ * bank would accept the card.
+ */
+export function cardFormatProblem(card, now = new Date()) {
+  const c = card && typeof card === "object" ? card : {};
+  const n = digitsOnly(c.number);
+  if (n.length < 12 || n.length > 19 || !luhnValid(n)) return "number"; // 12-19 digits like the storefront page and hasCard()
+  const month = parseInt(digitsOnly(c.month), 10);
+  const y = digitsOnly(c.year);
+  const year = y.length === 2 ? 2000 + Number(y) : y.length === 4 ? Number(y) : NaN;
+  if (!(month >= 1 && month <= 12) || !Number.isFinite(year)) return "expiry";
+  // a card is good through the last day of its month in the buyer's timezone: compare with "a day ago" so a US buyer is never refused in the first hours of UTC next month
+  const ref = new Date(now.getTime() - 24 * 3600e3);
+  if (year * 12 + month < ref.getUTCFullYear() * 12 + (ref.getUTCMonth() + 1)) return "expiry";
+  const cvv = String(c.cvv || c.cvc || "");
+  if (!/^\d{3,4}$/.test(cvv)) return "cvv";
+  return null;
+}

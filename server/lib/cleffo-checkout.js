@@ -4,7 +4,7 @@
  */
 import { formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
-import { logSafe, stripSecrets } from "./sanitize.js";
+import { cleanText, logSafe, maskCardNumbers, maskCardNumbersDeep, stripSecrets } from "./sanitize.js";
 import * as cleffo from "./cleffo.js";
 import { classifyForRetry } from "./retry-class.js";
 import { sanitizeConsent } from "./consent.js";
@@ -57,8 +57,10 @@ function alert(kind, ...parts) {
 // CLEFFO_LINK_ERROR is the only alert that can repeat at the pace of visitors: at most one line per 10 minutes.
 const LINK_ERROR_ALERT_EVERY_MS = 10 * 60 * 1000;
 let lastLinkErrorAlertAt = 0;
+let lastLinkHostAlertAt = 0; // audit 2026-10-02 (#595)
 export function resetCleffoAlertState() {
   lastLinkErrorAlertAt = 0;
+  lastLinkHostAlertAt = 0;
   lastStuckSummaryAt = 0;
   lastSweepPoll.clear();
 }
@@ -316,7 +318,9 @@ const itemsChanged = (order, body) => itemsKey(order.items) !== itemsKey(body?.i
 const priceChanged = (order, pricing) => Boolean(pricing && pricing.ok && order.priceCheck
   && (formatAmount(order.amount) !== formatAmount(pricing.amount) || normStr(order.priceCheck.shipMethod) !== normStr(pricing.shipMethod) || normStr(order.priceCheck.coupon) !== normStr(pricing.coupon)));
 // a Cleffo link carries the buyer's e-mail, name, phone and address (cleffo.js buildPaymentLinkBody)
-const buyerChanged = (order, body) => normStr(order.customer?.email) !== normStr(body?.customer?.email) || buyerKey(order.customer) !== buyerKey(body?.customer);
+// review 2026-10-02: the order stores the CLEANED buyer (buyerFields: control characters out, lengths capped), so the request is cleaned the same way before
+// the two are compared; comparing with the raw body made a 250-character address look like a changed buyer on every click (new link, one attempt spent).
+const buyerChanged = (order, body) => { const c = buyerFields(body || {}).customer; return normStr(order.customer?.email) !== normStr(c.email) || buyerKey(order.customer) !== buyerKey(c); };
 // A link of this order that may still be paid: open (watched by the sweep for CLEFFO_SWEEP_HOURS), unknown, or "failed" younger than the link TTL.
 function linkMayStillPay(order, ttlMin, now = Date.now()) {
   return (order.attempts || []).some((a) => a.processor === "cleffo"
@@ -326,12 +330,14 @@ function linkMayStillPay(order, ttlMin, now = Date.now()) {
 function buyerFields(body) {
   const c = body.customer || {};
   return {
+    // audit 2026-10-02 (#758 / #388): buyer text is typed, cleaned and capped (limits as in cascade.js / crypto-checkout.js); a card number
+    // pasted into the note or an item name is masked
     customer: stripSecrets({
-      first_name: c.first_name || c.firstName || "", last_name: c.last_name || c.lastName || "", email: c.email || "", phone: c.phone || "",
-      country: c.country || "", state: c.state || "", city: c.city || "", zip: c.zip || "", address: c.address || "",
+      first_name: cleanText(c.first_name || c.firstName, 80), last_name: cleanText(c.last_name || c.lastName, 80), email: cleanText(c.email, 255), phone: cleanText(c.phone, 40),
+      country: cleanText(c.country, 60), state: cleanText(c.state, 40), city: cleanText(c.city, 80), zip: cleanText(c.zip, 20), address: cleanText(c.address, 200),
     }),
-    items: Array.isArray(body.items) ? stripSecrets(body.items) : [],
-    notes: body.notes || "",
+    items: Array.isArray(body.items) ? maskCardNumbersDeep(stripSecrets(body.items)) : [],
+    notes: maskCardNumbers(typeof body.notes === "string" ? body.notes : ""),
     session_id: String(body.session_id || body.sessionId || "").trim(),
   };
 }
@@ -374,7 +380,7 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
     const a = findCleffoAttempt(o, reusable.n);
     if (o && a && a.paymentLink && o.idempotencyKey === key) {
       // audit 2026-10-02: the note does not go to Cleffo, so a changed note only updates the order (the note is screened on every write).
-      if (body?.notes != null && String(body.notes) !== String(o.notes || "")) { o.notes = body.notes || ""; db.upsertOrder(o); }
+      if (body?.notes != null && maskCardNumbers(String(body.notes)) !== String(o.notes || "")) { o.notes = maskCardNumbers(typeof body.notes === "string" ? body.notes : ""); db.upsertOrder(o); }
       return { ok: true, status: 200, body: { ok: true, reused: true, processor: "cleffo", redirectUrl: a.paymentLink, orderId: o.id, attempt: reusable.n, amount: a.amount ?? o.amount, currency: "USD", ...pick(desc), charged: false } };
     }
   }
@@ -382,7 +388,7 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
   // Same buyer, same cart, a NEW key (page reload), and a link of theirs is still alive: that link again, never a second one
   // (and never the UMG spare while a Cleffo link of theirs may still be paid).
   if (!existing && pricing && pricing.ok) {
-    const live = db.findLiveCleffoLink({ email: body?.customer?.email, customer: body?.customer, amount: pricing.amount, items: body?.items, shipMethod: pricing.shipMethod, coupon: pricing.coupon, excludeKey: key, ttlMin: numOr(config?.linkTtlMin, numOr(process.env.CLEFFO_LINK_TTL_MIN, 60)) });
+    const live = db.findLiveCleffoLink({ email: body?.customer?.email, customer: buyerFields(body || {}).customer, amount: pricing.amount, items: body?.items, shipMethod: pricing.shipMethod, coupon: pricing.coupon, excludeKey: key, ttlMin: numOr(config?.linkTtlMin, numOr(process.env.CLEFFO_LINK_TTL_MIN, 60)) });
     if (live) {
       log(`[routing] ${live.order.id} attempt=${live.attempt.routingAttempt} processor=cleffo outcome=live_link_reused_for_new_key`);
       return { ok: true, status: 200, body: { ok: true, reused: true, processor: "cleffo", redirectUrl: live.attempt.paymentLink, orderId: live.order.id, attempt: live.attempt.routingAttempt, amount: live.attempt.amount ?? live.order.amount, currency: "USD", ...pick(desc), charged: false } };
@@ -523,6 +529,14 @@ export async function startCleffoAttempt(db, { req, body, pricing, route, config
       alert("CLEFFO_LINK_ERROR", o2.id, n, `http=${link.httpStatus ?? "none"}`, ...(unknown ? ["unknown_outcome"] : []), logText(attempt.errorMessage).slice(0, 60) || "error");
     }
     return { ok: false, linkError: true, linkUnknown: unknown, orderId: o2.id, status: 503, body: { ok: false, error: "processor_unavailable", processor: "cleffo", orderId: o2.id, charged: false, message: "Payment is temporarily unavailable. You were not charged. Please try again in a minute." } };
+  }
+  // audit 2026-10-02 (#595): the storefront refuses any link that is not https on cleffo.com ("payment unavailable") while this attempt stays
+  // open and uses the daily cap. The answer is unchanged; the owner gets a [pay-alert] (host only, never the query), at most one per 10 minutes.
+  if (!cleffo.isTrustedPaymentLink(link.paymentLink) && Date.now() - lastLinkHostAlertAt >= LINK_ERROR_ALERT_EVERY_MS) {
+    lastLinkHostAlertAt = Date.now();
+    let host = "unparsable";
+    try { host = new URL(String(link.paymentLink)).hostname; } catch { /* keep the marker */ }
+    alert("CLEFFO_LINK_HOST", o2.id, n, `host=${host}`);
   }
   o2.status = AWAITING;
   o2.cleffo = { ref: link.ref, merchantOrderId, attempt: n, linkCreatedAt: startedAt, env: config.cleffoEnv };

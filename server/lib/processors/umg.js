@@ -1,6 +1,6 @@
 import { classifyDecline, classifyHttpFailure } from "../decline.js";
 import { countryCode, detectCardType, expiryMonth, expiryYear2, formatAmount, phoneDigits } from "../card.js";
-import { cardFingerprint, last4, stripSecrets } from "../sanitize.js";
+import { cardFingerprint, cleanText, last4, stripSecrets } from "../sanitize.js";
 import { loadUmgSecret, umgAuthorizationValue, umgBasicHeader } from "../secrets.js";
 
 export const id = "umg";
@@ -14,15 +14,16 @@ export function buildCreatePayload({ customer = {}, card = {}, amount, currency,
   return {
     Authorization: secret ? umgAuthorizationValue(secret) : "[dry-run]",
     vendor: vendor || "BioLabs Research",
+    // audit 2026-10-02 (#758): buyer text is cleaned (text only, control characters out, capped) before it goes to the processor
     userData: {
-      first_name: customer.first_name || customer.firstName || "",
-      last_name: customer.last_name || customer.lastName || "",
-      email: customer.email || "",
-      address: customer.address || customer.address1 || "",
+      first_name: cleanText(customer.first_name || customer.firstName, 80),
+      last_name: cleanText(customer.last_name || customer.lastName, 80),
+      email: cleanText(customer.email, 255),
+      address: cleanText(customer.address || customer.address1, 200),
       country: countryCode(customer.country),
-      state: customer.state || "",
-      city: customer.city || "",
-      zip: customer.zip || customer.postal || "",
+      state: cleanText(customer.state, 40),
+      city: cleanText(customer.city, 80),
+      zip: cleanText(customer.zip || customer.postal, 20),
       phone: phoneDigits(customer.phone),
       ip: customer.ip || "127.0.0.1",
       birthday: customer.birthday || customer.birtdday || "1983-01-01",

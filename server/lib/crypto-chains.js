@@ -156,9 +156,15 @@ export function createTronAdapter({ env = process.env, fetchImpl = globalThis.fe
     return { txHash: id, success, blockNumber: Number(info.blockNumber), timestamp: Number(info.blockTimeStamp) || null, transfers: out };
   }
 
-  /** Incoming TRC-20 transfers to `address` since `sinceMs` (known tokens only; blockNumber filled in later). */
+  /**
+   * Incoming TRC-20 transfers to `address` since `sinceMs` (known tokens only; blockNumber filled in later).
+   * audit 2026-10-02 (#392): the page limit (maxPages x 200 rows, ALL tokens, spam included) can end the read before the newest rows;
+   * the array then carries `truncated: true` and `lastTimestamp` (newest row actually read, any token) so the caller can resume there
+   * instead of treating the scan as complete.
+   */
   async function listIncoming(address, { sinceMs, maxPages = 5 } = {}) {
     const out = [];
+    let lastTs = 0;
     let fp = "";
     for (let page = 0; page < maxPages; page += 1) {
       const q = new URLSearchParams({ only_to: "true", limit: "200", order_by: "block_timestamp,asc" });
@@ -167,6 +173,7 @@ export function createTronAdapter({ env = process.env, fetchImpl = globalThis.fe
       const r = await get(`/v1/accounts/${encodeURIComponent(address)}/transactions/trc20?${q}`);
       if (r && r.success === false) throw new Error("tron_list_failed");
       for (const t of r?.data || []) {
+        lastTs = Math.max(lastTs, Number(t?.block_timestamp) || 0);
         const contract = t?.token_info?.address;
         const meta = TOKENS.trc20[contract];
         if (!meta || t.type !== "Transfer" || t.to !== address) continue;
@@ -179,6 +186,7 @@ export function createTronAdapter({ env = process.env, fetchImpl = globalThis.fe
       fp = r?.meta?.fingerprint || "";
       if (!fp) break;
     }
+    if (fp) { out.truncated = true; out.lastTimestamp = lastTs || null; } // the loop ended on maxPages with more rows waiting
     return out;
   }
 

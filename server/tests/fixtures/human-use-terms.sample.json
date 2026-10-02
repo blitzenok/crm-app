@@ -1,0 +1,27 @@
+{
+  "version": "sample-test-1",
+  "snippetChars": 60,
+  "_comment": "TEST SAMPLE ONLY. Not the Legal-approved term list (that one lives at /etc/crm-umg/human-use-terms.json on the server and is not in git). Just enough terms for tests/human-use.test.js to run without server files.",
+  "terms": [
+    { "id": "inject", "label": "inject", "tier": "strong", "pattern": "\\binject" },
+    { "id": "subq", "label": "subq", "tier": "strong", "pattern": "\\bsub[- ]?q\\b|subcutaneous" },
+    { "id": "intramuscular", "label": "intramuscular", "tier": "strong", "pattern": "intramuscular" },
+    { "id": "insulin_syringe", "label": "syringe", "tier": "strong", "pattern": "\\bsyringes?\\b" },
+    { "id": "self_dose", "label": "dose / dosing", "tier": "strong", "pattern": "\\bdos(?:e|es|age|ing)\\b" },
+    { "id": "my_dose", "label": "my dose", "tier": "strong", "pattern": "\\bmy dose\\b" },
+    { "id": "mg_per_week", "label": "mg per week", "tier": "strong", "pattern": "\\d+(?:\\.\\d+)?\\s*mg\\s*(?:per|/|a)\\s*week" },
+    { "id": "self_ref", "label": "for my body", "tier": "strong", "pattern": "\\bmy body\\b" },
+    { "id": "self_administer", "label": "self-administer", "tier": "strong", "pattern": "self[- ]?administer" },
+    { "id": "reconstitute_inject", "label": "reconstitute then inject", "tier": "strong", "pattern": "reconstitut\\w*.{0,40}inject" },
+    { "id": "weight_loss_self", "label": "weight loss for me", "tier": "strong", "pattern": "weight[- ]loss.{0,20}\\b(?:for me|myself)\\b" },
+    { "id": "how_much_take", "label": "how much should I take", "tier": "strong", "pattern": "how much (?:should|do|can) i (?:take|use)" },
+    { "id": "he_inject", "label": "Hebrew inject", "tier": "strong", "pattern": "להזריק|ההזרקה|הזרקה|מזרק" },
+    { "id": "he_dose", "label": "Hebrew dose", "tier": "strong", "pattern": "מינון" },
+    { "id": "pin", "label": "pinning", "tier": "weak", "pattern": "\\bpin(?:s|ned|ning)?\\b" },
+    { "id": "units_iu", "label": "units / IU", "tier": "weak", "pattern": "\\bunits?\\b|\\biu\\b" },
+    { "id": "im", "label": "IM", "tier": "weak", "caseSensitive": true, "pattern": "\\bIM\\b" },
+    { "id": "cycle_self", "label": "cycling", "tier": "weak", "pattern": "\\bcycling\\b" },
+    { "id": "for_me", "label": "for me", "tier": "weak", "pattern": "\\bfor me\\b" },
+    { "id": "he_i_take", "label": "Hebrew I take", "tier": "weak", "pattern": "אני לוק[חת]" }
+  ]
+}

@@ -1,4 +1,6 @@
-# Cleffo payment links (UMG + Cleffo split). Shipped DISABLED
+# Cleffo payment links (UMG + Cleffo split). Shipped DISABLED; ENABLED on prod since 2026-09-29
+
+> Doc sync 2026-10-02: the code default is `CLEFFO_ENABLED` off, prod runs it on (`CLEFFO_ENABLED=true`, `CLEFFO_SPLIT_PCT=100`, daily cap: [CLEFFO_DAILY_CAP.md](CLEFFO_DAILY_CAP.md)). Link TTL is `CLEFFO_LINK_TTL_MIN` (60), the sweep window `CLEFFO_SWEEP_HOURS` (72), see [CLEFFO_GUARD.md](CLEFFO_GUARD.md).
 
 - Adapter: `server/lib/cleffo.js` (create link, status, HMAC-SHA256 x-signature over the exact body, redirect token,
   timeouts, env-driven base URL and keys).
@@ -10,7 +12,7 @@
   - Consent gate: record, then read back and verify the hash, before the link is created.
   - Server-side confirmation. The idempotent settle checks amount, currency and merchant_order_id. A mismatch goes
     to `review`.
-  - A sweep polls open links for 24 h.
+  - A sweep polls open links for `CLEFFO_SWEEP_HOURS` (72 h; first written as 24 h).
 - Routes:
   - `POST /api/checkout/charge` (routing). Cleffo bucket returns `{processor:"cleffo", redirectUrl}`.
   - `POST /api/checkout/route`.

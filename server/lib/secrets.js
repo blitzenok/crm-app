@@ -43,10 +43,11 @@ export function umgBasicHeader(secret) {
   return `Basic ${umgAuthorizationValue(secret)}`;
 }
 
+// audit 2026-10-02 (pay-rest-16): /api/psp/health is public, so this answer no longer carries the path of the secret file
+// (umgEnvPath); the path is in docs/UMG_SIDECAR_DEPLOY.md and the unit file.
 export function secretHealth() {
   return {
     umgSecretConfigured: hasUmgSecret(),
-    umgEnvPath: umgEnvPath(),
     source: process.env.UMG_API_SECRET ? "env" : hasUmgSecret() ? "file" : "none",
   };
 }

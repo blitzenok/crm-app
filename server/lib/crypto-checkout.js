@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { humanUseBlocks } from "./human-use.js"; // 2026-09-30 COMPLIANCE_HOLD
 import { formatAmount } from "./card.js";
 import { orderAttribution } from "./order-attribution.js"; // infra 2026-09-30 order-attribution
-import { stripSecrets } from "./sanitize.js";
+import { cleanText, maskCardNumbers, stripSecrets } from "./sanitize.js";
 import { itemsKey } from "./store.js";
 import { findForbiddenCardField } from "./abandon.js";
 import {
@@ -36,18 +36,21 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+// audit 2026-10-02 (#758): every field is read as text (an object / array becomes "", which the existing 400s then refuse when it is the
+// name or the e-mail), control characters out, length capped. The e-mail keeps one character of slack so validateCryptoCheckout can refuse
+// an over-long address instead of storing a cut one.
 function readCustomer(raw) {
   const c = raw && typeof raw === "object" ? raw : {};
   return stripSecrets({
-    first_name: c.first_name || c.firstName || "",
-    last_name: c.last_name || c.lastName || "",
-    email: String(c.email || "").trim(),
-    phone: c.phone || "",
-    address: c.address || "",
-    city: c.city || "",
-    state: c.state || "",
-    zip: c.zip || c.postal_code || c.postalCode || "",
-    country: c.country || "",
+    first_name: cleanText(c.first_name || c.firstName, 80),
+    last_name: cleanText(c.last_name || c.lastName, 80),
+    email: cleanText(c.email, 255),
+    phone: cleanText(c.phone, 40),
+    address: cleanText(c.address, 200),
+    city: cleanText(c.city, 80),
+    state: cleanText(c.state, 40),
+    zip: cleanText(c.zip || c.postal_code || c.postalCode, 20),
+    country: cleanText(c.country, 60),
   });
 }
 
@@ -151,7 +154,7 @@ export function validateCryptoCheckout(input) {
 
   const customer = readCustomer(input.customer);
   if (!customer.email) return { ok: false, error: "email_required", status: 400 };
-  if (!EMAIL_RE.test(customer.email)) return { ok: false, error: "invalid_email", status: 400 };
+  if (customer.email.length > 254 || !EMAIL_RE.test(customer.email)) return { ok: false, error: "invalid_email", status: 400 };
   if (!customer.first_name && !customer.last_name) {
     return { ok: false, error: "name_required", status: 400 };
   }
@@ -173,7 +176,7 @@ export function validateCryptoCheckout(input) {
       token,
       customer,
       items,
-      notes: String(input.notes || "").slice(0, 2000),
+      notes: maskCardNumbers(String(input.notes || "").slice(0, 2000)), // audit 2026-10-02 (#388): a pasted card number is not stored
       session_id: String(input.session_id || input.sessionId || "").trim(),
       test: input.test === true,
       gaClientId: /^\d{1,12}\.\d{1,12}$/.test(String(input.gaClientId || input.client_id || "")) ? String(input.gaClientId || input.client_id) : null,

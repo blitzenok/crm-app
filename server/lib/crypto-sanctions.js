@@ -37,7 +37,7 @@ export function parseOfacList(text) {
   return set;
 }
 
-export function createSanctionsScreener({ env = process.env, fetchImpl = globalThis.fetch, now = () => Date.now(), log = (m) => process.stdout.write(`${m}\n`) } = {}) {
+export function createSanctionsScreener({ env = process.env, fetchImpl = globalThis.fetch, now = () => Date.now(), log = (m) => process.stdout.write(`${m}\n`), fetchTimeoutMs = 15000 } = {}) {
   const cfg = sanctionsConfig(env);
   let cache = { mtimeMs: 0, set: null };
   let lastRefreshTry = 0;
@@ -54,9 +54,17 @@ export function createSanctionsScreener({ env = process.env, fetchImpl = globalT
     lastRefreshTry = now();
     const parts = [];
     for (const url of OFAC_LIST_URLS) {
-      const res = await fetchImpl(url, { headers: { Accept: "text/plain" } });
-      if (!res.ok) throw new Error(`ofac_list_http_${res.status}`);
-      parts.push(await res.text());
+      // audit 2026-10-02 (#352): screen() awaits this refresh (maybeRefresh), so a hung download used to hang the whole crypto tick;
+      // every request (headers and body) now has a deadline, and the existing catch in maybeRefresh logs it.
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), fetchTimeoutMs);
+      try {
+        const res = await fetchImpl(url, { headers: { Accept: "text/plain" }, signal: ctl.signal });
+        if (!res.ok) throw new Error(`ofac_list_http_${res.status}`);
+        parts.push(await res.text());
+      } finally {
+        clearTimeout(timer);
+      }
     }
     const set = parseOfacList(parts.join("\n"));
     if (set.size < 50) throw new Error("ofac_list_too_small");

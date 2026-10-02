@@ -145,21 +145,27 @@ export function createStore(opts = {}) {
   }
 
   // Temp file next to the target (dot-prefixed: the vhosts hide dotfiles) + fsync + rename; the file being replaced is kept as .prev.
+  // audit 2026-10-02 (pay-cleffo-crypto-10 / pay-core-6): the file is written compact (the 2-space indent was a third of its size and of the
+  // stringify time) and a write whose content equals the last one written by this process is skipped (crypto-verify and the pollers call
+  // update paths that change nothing). Both readers use JSON.parse, so an old indented file still loads.
+  let lastWritten = null;
   function persist() {
     if (memoryOnly || !filePath) return;
+    const json = JSON.stringify(data);
+    if (json === lastWritten) return;
     const dir = dirname(filePath);
     mkdirSync(dir, { recursive: true });
     const tmp = join(dir, `.${basename(filePath)}.tmp-${process.pid}`);
     const fd = openSync(tmp, "w");
     try {
       // Same permissions as the file being replaced (the host runs the service as one user and reads the file as another);
-      // a first write gets 0644, as the file has had so far.
-      let mode = 0o644;
+      // a first write gets 0600 (audit 2026-10-02 sec-pay-22: buyer addresses, phones and e-mails; every reader on the host runs as root).
+      let mode = 0o600;
       try { mode = statSync(filePath).mode & 0o777; } catch {
         try { mode = statSync(prevPath).mode & 0o777; } catch { /* first write */ } // main file moved aside after a start from .prev
       }
       fchmodSync(fd, mode);
-      writeSync(fd, JSON.stringify(data, null, 2));
+      writeSync(fd, json);
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -169,6 +175,7 @@ export function createStore(opts = {}) {
       try { linkSync(filePath, prevPath); } catch { try { copyFileSync(filePath, prevPath); } catch { /* keep going: main file is intact */ } }
     }
     renameSync(tmp, filePath);
+    lastWritten = json;
   }
 
   return {

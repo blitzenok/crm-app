@@ -1,7 +1,7 @@
 # Cleffo + UMG card checkout — storefront contract (for Indian)
 
-CRM sidecar `crm-umg` (crm-app patch 0008). **Status: shipped DISABLED** (`CLEFFO_ENABLED=false`). While the flag
-is off, `/api/checkout/charge` behaves exactly as today (UMG only). The only change you'll see is some extra
+CRM sidecar `crm-umg` (crm-app patch 0008). **Status: shipped DISABLED (code default `CLEFFO_ENABLED` off); ENABLED on prod since 2026-09-29**
+(`CLEFFO_ENABLED=true`, `CLEFFO_SPLIT_PCT=100`, see CLEFFO_DAILY_CAP.md). While the flag is off, `/api/checkout/charge` behaves exactly as today (UMG only). The only change you'll see is some extra
 fields in the JSON (`processor`, `attempt`, `statementDescriptor`, `statementDescriptorConfirmed`), which you can
 ignore. Build against this contract now and ship it behind your own switch. Customers see no change until Yehuda
 gives the final OK and the flag is turned on.
@@ -69,7 +69,8 @@ Then:
 1. Keep `orderId` and `attempt` in `sessionStorage`.
 2. Do a **top-level** redirect: `window.location.assign(redirectUrl)`. Not an iframe or popup.
 
-A double-click inside 2 minutes returns the same link with `"reused": true`.
+A repeated call for the same key (double click, reload) returns the same link with `"reused": true` for as long as the link lives: `CLEFFO_LINK_TTL_MIN`, 60 minutes
+(a new key from the same buyer with the same cart and address gets the live link too). After that a new link is made.
 
 **B. UMG approved** (HTTP 200): as today, plus `"processor": "umg"`, `"attempt": n`,
 `"statementDescriptor": "PEPTIDESS SHOP"`, `"statementDescriptorConfirmed": true`.
@@ -143,9 +144,9 @@ A bad token returns 403 `invalid_token`. Treat the JSON as the truth, not the `s
 
 ## 6. Flags (server) and current state
 
-| Flag | Now | Meaning |
+| Flag | Code default (prod value: CLEFFO_DAILY_CAP.md) | Meaning |
 |---|---|---|
-| `CLEFFO_ENABLED` | **false** | Master switch. Off = UMG only. |
+| `CLEFFO_ENABLED` | false (**true on prod since 2026-09-29**) | Master switch. Off = UMG only. |
 | `CLEFFO_ENV` | sandbox | sandbox or live key set |
 | `CLEFFO_SPLIT_PCT` | 50 | % of customers whose first processor is Cleffo |
 | `CLEFFO_MAX_ATTEMPTS` | 3 | per checkout |

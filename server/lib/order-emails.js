@@ -237,7 +237,8 @@ export function createOrderEmailer(opts = {}) {
       if (isPaidOrder(o)) due.push("confirmation");
       if (isPaidOrder(o) && hasTracking(o)) due.push("shipping");
       if (isPaidOrder(o) && hasTracking(o)) {
-        const shippedAt = Date.parse(o.fulfillment.shippedAt || 0);
+        // audit 2026-10-02 (pay-rest-23): Date.parse(0) is the year 2000, so a shipped order without shippedAt got its follow-up at once.
+        const shippedAt = Date.parse(o.fulfillment.shippedAt || "");
         if (forceFollowup || (Number.isFinite(shippedAt) && t - shippedAt >= cfg.followupDays * 86400000)) due.push("followup");
       }
       for (const type of due) { // in order: confirmation before shipping before follow-up

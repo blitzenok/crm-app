@@ -352,7 +352,15 @@ export function createHandler(deps = {}) {
   function onCryptoPaid(orderId) { maybeAutoPush(orderId); kickEmails(orderId); }
 
   const handlerFn = async function handler(req, res) {
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  // audit 2026-10-02 (pay-core-25, r2-crash-restart-recovery-9): new URL() throws on a broken request target or Host header; outside the try
+  // below that became an unhandled rejection and Node ended the whole payment service. Answer 400 instead (nginx never sends such a request).
+  let url;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+    return res.end(JSON.stringify({ error: "bad_request" }));
+  }
   const path = url.pathname.replace(/\/+$/, "") || "/";
 
   function json(status, body) {
@@ -412,6 +420,9 @@ export function createHandler(deps = {}) {
 
     if (path === "/api/psp/health" && req.method === "GET") {
       const enabled = isPaymentsEnabled();
+      // audit 2026-10-02 (pay-core-20, sec-secrets-privacy-10, sec-pay-18): this answer is public (nginx /api/psp/ is open). The path of the secret
+      // file is no longer reported at all (secrets.js) and where the secret came from is for staff only: GET /api/psp/settings (operator) carries `source` in `health`.
+      const { umgEnvPath: _path, source: _source, ...secretFlags } = secretHealth();
       return json(200, {
         ok: true,
         service: "crm-umg",
@@ -421,7 +432,7 @@ export function createHandler(deps = {}) {
         mode: paymentsMode(),
         cryptoWallets: walletFlags(),
         cryptoVerify: cryptoHealth(),
-        ...secretHealth(),
+        ...secretFlags,
       });
     }
 
@@ -1009,9 +1020,11 @@ export function createHandler(deps = {}) {
     if (trk && req.method === "POST") {
       const op = await operatorContext();
       if (!op.ok) return json(401, { error: "unauthorized" });
+      // audit 2026-10-02 (pay-core-22): the order is read AFTER the body arrived. Read before, a status update written while the body was
+      // still coming in was overwritten by this whole-order upsert. From here to upsertOrder there is no await.
+      const body = await readBody(req).catch(() => ({}));
       const order = db.getOrder(decodeURIComponent(trk[1])) || db.getOrderByRef(decodeURIComponent(trk[1]));
       if (!order) return json(404, { ok: false, error: "not_found" });
-      const body = await readBody(req).catch(() => ({}));
       const number = String(body.trackingNumber || body.tracking_number || "").replace(/[^A-Za-z0-9 -]/g, "").trim().slice(0, 60);
       if (!number) return json(400, { ok: false, error: "tracking_number_required" });
       if (!isPaidOrder(order)) return json(409, { ok: false, error: "not_paid" });
@@ -1209,6 +1222,14 @@ export function createHandler(deps = {}) {
     if (path === "/api/psp/dry-run" && req.method === "POST") {
       if (await denyUnlessOperator()) return;
       const body = await readBody(req);
+      // audit 2026-10-02 (pay-core-21, sec-pay-24): an existing key is replayed by chargeCart. On a real order that meant the mock processor
+      // could approve a real declined order and the order was then flagged dryRun (invisible to shipping, deletable). A key that already
+      // belongs to a non-dry-run order is refused before anything runs; a dry-run order can still be repeated under its own key.
+      const dryKey = String(body.idempotencyKey || "").trim();
+      const dryExisting = dryKey ? db.getOrderByIdempotency(dryKey) : null;
+      if (dryExisting && dryExisting.dryRun !== true) {
+        return json(409, { ok: false, error: "key_belongs_to_real_order", dryRun: true });
+      }
       const scenario = body.scenario || "soft";
       const cards = {
         approved: "4242424242424242",
@@ -1341,10 +1362,14 @@ export function createHandler(deps = {}) {
 
 const handler = createHandler();
 
+// audit 2026-10-02 (pay-cleffo-crypto-12 and 5 duplicates): nginx, ops-watch and the internal lookup all reach this service on loopback;
+// it must not depend on the firewall alone to stay away from the internet.
+const LISTEN_HOST = "127.0.0.1";
+
 export function startCrmServer(port = PORT, deps = {}) {
   const server = createServer(createHandler(deps));
   return new Promise((resolve) => {
-    server.listen(port, "127.0.0.1", () => resolve(server));
+    server.listen(port, LISTEN_HOST, () => resolve(server));
   });
 }
 
@@ -1386,7 +1411,7 @@ if (isMain) {
     }, Number.isFinite(digestMs) && digestMs > 0 ? digestMs : 6 * 60 * 60 * 1000);
   }
   const server = createServer(handler);
-  server.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, LISTEN_HOST, () => {
     process.stdout.write(`crm-psp listening on :${PORT} mode=${paymentsMode()}\n`);
   });
 }

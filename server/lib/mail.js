@@ -5,7 +5,7 @@
  *   MAIL_WEBHOOK_URL + optional MAIL_WEBHOOK_TOKEN
  *   CIO_TRANSACTIONAL_URL + CIO_API_KEY
  *
- * If neither is set, the send is recorded as queued/none and the quote still persists.
+ * If neither is set the send fails with "no_transport" (quote.js then stores emailSent:false); the quote still persists.
  * Never log tokens, Authorization headers, or card data.
  */
 
@@ -53,14 +53,19 @@ export function formatQuoteEmail(quote) {
 async function defaultTransport(message) {
   const url = process.env.MAIL_WEBHOOK_URL || process.env.CIO_TRANSACTIONAL_URL || "";
   const token = process.env.MAIL_WEBHOOK_TOKEN || process.env.CIO_API_KEY || "";
+  // audit 2026-10-02 (r2-sec-outbound-injection-10 / pay-rest-18): with no transport the notification used to be reported as sent
+  // (quote.js then stored emailSent:true although nothing left the host). Now it fails like a transport error: emailSent:false.
   if (!url) {
-    return { ok: true, queued: true, transport: "none" };
+    throw new Error("no_transport");
   }
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  // audit 2026-10-02 (concurrency-data-27): a webhook that never answers held the buyer's quote request open for minutes.
+  const timeoutMs = Number(process.env.MAIL_WEBHOOK_TIMEOUT_MS) > 0 ? Number(process.env.MAIL_WEBHOOK_TIMEOUT_MS) : 8000;
   const res = await fetch(url, {
     method: "POST",
     headers,
+    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({
       to: message.to,
       subject: message.subject,

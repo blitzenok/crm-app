@@ -13,6 +13,7 @@ import { PAY, OPEN_STATUSES, cryptoVerifyConfig, isTokenAccepted, paymentDeadlin
 import { PAYMENT_SUBMITTED, normalizeTxid, findTxOwner, checkTx, checkSummary } from "./crypto-launch.js";
 import { createChainAdapters, explorerTxUrl, explorerAddressUrl, amountToUnits } from "./crypto-chains.js";
 import { createSanctionsScreener } from "./crypto-sanctions.js";
+import { logSafe } from "./sanitize.js";
 import { sendCancelEmail, sendInternalAlert, sendGa4Purchase } from "./crypto-notify.js";
 
 const NETWORKS = ["trc20", "erc20"];
@@ -165,6 +166,23 @@ export function createCryptoVerifier({
     const st = store.getCryptoState();
     store.saveCryptoState({ alerts: [...st.alerts, { type, orderId, orderRef: ref, message, at, ...extra }] });
     sendInternalAlert({ type, orderId, orderRef: ref, message }, mailDeps).catch(() => {});
+  }
+
+  // audit 2026-10-02 (#708 / #392): one [pay-alert] per key per 30 minutes (ops-watch -> Telegram); the tick runs every ~90 s and a
+  // persistent problem must not message at that pace.
+  const alertedAt = new Map();
+  function payAlertOnce(key, text) {
+    const t = nowMs();
+    if (t - (alertedAt.get(key) || 0) < 30 * 60000) return;
+    alertedAt.set(key, t);
+    process.stdout.write(`[pay-alert] ${text}\n`);
+  }
+
+  /** An exception on ONE order (evaluation or timeout pass) is logged and alerted; the loop goes on with the other orders. */
+  function orderPassFailed(orderId, err, where) {
+    const msg = String(err?.message || err).slice(0, 160);
+    log(`[crypto] ${orderId} ${where} failed: ${msg}`);
+    payAlertOnce(`${where}:${orderId}`, `CRYPTO_EVALUATE_FAILED ${logSafe(orderId, 40)} ${where} ${logSafe(msg, 120)}`);
   }
 
   function watched(orders, t) {
@@ -337,22 +355,40 @@ export function createCryptoVerifier({
     sendInternalAlert({ type: "unmatched_deposit", message: `${t.amount} ${t.token} ${t.network} tx ${String(t.txHash).slice(0, 14)}… could not be matched to one order (${why}).` }, mailDeps).catch(() => {});
   }
 
+  // audit 2026-10-02 (#361 / #707 / #590 / #625): ERC-20 is read in chunks of at most this many blocks per tick.
+  const ERC_CHUNK_BLOCKS = 3000;
+
+  /** -> { complete }: false while the read has not reached the head / the newest rows yet (the cursor then stays at what WAS read). */
   async function scanNetwork(network, netOrders, scanState, latest) {
     const w = walletFor(network, wallets());
     const earliest = Math.min(...netOrders.map((o) => Date.parse(o.cryptoPayment.createdAt || o.createdAt))) - cfg.clockSkewMs;
     let incoming;
+    let complete = true;
     if (network === "trc20") {
-      const since = Math.max(earliest, (scanState.cursorMs || 0) - 10 * 60000);
+      // after a cut read the overlap is dropped: resuming 10 minutes back could not move forward when one page-limit of rows lies inside it
+      const since = Math.max(earliest, (scanState.cursorMs || 0) - (scanState.partial ? 0 : 10 * 60000));
       incoming = await adapters.trc20.listIncoming(w, { sinceMs: since });
-      scanState.cursorMs = nowMs();
+      if (incoming?.truncated) {
+        // audit 2026-10-02 (#392): the page limit ended the read before the newest rows: resume from the newest row read, never from "now"
+        complete = false;
+        scanState.cursorMs = Math.max(since, Number(incoming.lastTimestamp) || since);
+        scanState.partial = true;
+        payAlertOnce("trc20_truncated", "CRYPTO_SCAN_TRUNCATED trc20 incoming transfers exceed the page limit; resuming next tick");
+      } else {
+        scanState.cursorMs = nowMs();
+        scanState.partial = false;
+      }
     } else {
       const blocksBack = Math.ceil((nowMs() - earliest) / 12000) + 20;
       let from = Math.max(latest - blocksBack, 0);
       if (scanState.cursorBlock && scanState.cursorBlock + 1 > from) from = scanState.cursorBlock - 5; // small overlap
-      if (latest - from > 3000) from = latest - 3000; // cap per tick
-      const r = await adapters.erc20.listIncoming(w, { fromBlock: from, toBlock: latest });
+      // audit 2026-10-02: the old code jumped to `latest - 3000` when more than 3000 blocks were due, skipping the older part for good
+      // (a payment there was never seen, and the scan still counted as complete). Now: the next chunk from the cursor, the cursor moves to the end of what was read.
+      const to = Math.min(latest, from + ERC_CHUNK_BLOCKS);
+      const r = await adapters.erc20.listIncoming(w, { fromBlock: from, toBlock: to });
       incoming = r.transfers;
-      scanState.cursorBlock = r.toBlock;
+      scanState.cursorBlock = Number.isFinite(r.toBlock) ? Math.min(r.toBlock, to) : to;
+      complete = to >= latest;
     }
     for (const t of incoming) {
       const owner = store.cryptoTxOwner(`${network}:${lc(t.txHash).replace(/^0x/, "")}`);
@@ -369,6 +405,7 @@ export function createCryptoVerifier({
       } else if (m.ambiguous) noteUnmatched(t, "ambiguous_amount");
       else if (!m.dust) noteUnmatched(t, "no_matching_order");
     }
+    return { complete };
   }
 
   async function screenOrder(order) {
@@ -483,26 +520,28 @@ export function createCryptoVerifier({
     const t = nowMs();
     const w = wallets();
     for (const o of store.listOrders()) {
-      const cp = o.cryptoPayment;
-      if (o.paymentMethod !== "crypto" || !cp || cp.status !== PAY.AWAITING || (cp.transfers || []).length || cp.customerTx) continue;
-      const deadline = paymentDeadline(cp, cfg);
-      if (!deadline || t <= deadline) continue;
-      // Only cancel after a successful chain scan that ran after the deadline (a chain API outage never cancels a payer).
-      const nets = orderNetworks(o, w);
-      if (!nets.length || !nets.every((n) => Date.parse(scanState[n]?.lastOkAt || 0) >= deadline)) continue;
-      const cancelled = update(o.id, (x) => {
-        const c = x.cryptoPayment;
-        c.status = PAY.CANCELLED;
-        c.cancelledAt = nowIso(t);
-        c.cancelReason = "payment_timeout";
-        x.paymentStatus = PAY.CANCELLED;
-        x.status = CRYPTO_CANCELLED;
-        x.paymentConfirmed = false;
-        x.fulfillment = blockedFulfillment("cancelled_unpaid");
-      });
-      log(`[crypto] ${o.id} cancelled: no payment within ${cfg.timeoutMin} min${cp.customerConfirmedAt ? ` (+${cfg.graceMin} grace)` : ""}`);
-      const mail = await sendCancelEmail(cancelled, mailDeps);
-      update(o.id, (x) => { x.cryptoPayment.cancelEmail = mail; });
+      try { // audit 2026-10-02 (#708): an exception on one order must not stop the others
+        const cp = o.cryptoPayment;
+        if (o.paymentMethod !== "crypto" || !cp || cp.status !== PAY.AWAITING || (cp.transfers || []).length || cp.customerTx) continue;
+        const deadline = paymentDeadline(cp, cfg);
+        if (!deadline || t <= deadline) continue;
+        // Only cancel after a successful chain scan that ran after the deadline (a chain API outage never cancels a payer).
+        const nets = orderNetworks(o, w);
+        if (!nets.length || !nets.every((n) => Date.parse(scanState[n]?.lastOkAt || 0) >= deadline)) continue;
+        const cancelled = update(o.id, (x) => {
+          const c = x.cryptoPayment;
+          c.status = PAY.CANCELLED;
+          c.cancelledAt = nowIso(t);
+          c.cancelReason = "payment_timeout";
+          x.paymentStatus = PAY.CANCELLED;
+          x.status = CRYPTO_CANCELLED;
+          x.paymentConfirmed = false;
+          x.fulfillment = blockedFulfillment("cancelled_unpaid");
+        });
+        log(`[crypto] ${o.id} cancelled: no payment within ${cfg.timeoutMin} min${cp.customerConfirmedAt ? ` (+${cfg.graceMin} grace)` : ""}`);
+        const mail = await sendCancelEmail(cancelled, mailDeps);
+        update(o.id, (x) => { x.cryptoPayment.cancelEmail = mail; });
+      } catch (err) { orderPassFailed(o.id, err, "timeout"); }
     }
   }
 
@@ -530,10 +569,11 @@ export function createCryptoVerifier({
               if ((h.network || o.cryptoPayment.network || network) === network) await lookupHint(o.id, h, latestByNet);
             }
           }
-          await scanNetwork(network, netOrders, s, latest);
+          const sc = await scanNetwork(network, netOrders, s, latest);
           for (const o of netOrders) await refreshTransfers(o.id, network, latest);
-          Object.assign(s, { lastOkAt: nowIso(nowMs()), fails: 0, nextTryAt: null, lastError: null, idle: false, latestBlock: latest });
-          summary.networks[network] = "ok";
+          // lastOkAt = "a scan reached the head after this moment": the timeout pass only cancels on that, so a scan that is still catching up never does
+          Object.assign(s, { ...(sc.complete ? { lastOkAt: nowIso(nowMs()) } : {}), catchingUp: !sc.complete, fails: 0, nextTryAt: null, lastError: null, idle: false, latestBlock: latest });
+          summary.networks[network] = sc.complete ? "ok" : "catching_up";
         } catch (err) {
           s.fails = (s.fails || 0) + 1;
           s.lastError = String(err?.message || err).slice(0, 200);
@@ -545,7 +585,10 @@ export function createCryptoVerifier({
         scan[network] = s;
       }
       store.saveCryptoState({ scan });
-      for (const o of list) { await evaluateAndApply(o.id); summary.checked += 1; }
+      for (const o of list) {
+        try { await evaluateAndApply(o.id); } catch (err) { orderPassFailed(o.id, err, "evaluate"); } // audit 2026-10-02 (#708)
+        summary.checked += 1;
+      }
       await processTimeouts(scan);
     } finally {
       running = false;

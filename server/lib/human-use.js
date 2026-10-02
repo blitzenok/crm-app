@@ -75,6 +75,12 @@ export function classifyHits(hits) {
 
 // ---- read-only sources --------------------------------------------------------------------------------------------------
 function readJsonSafe(path) { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } }
+// audit 2026-10-02 (pay-rest-14): a source file that is there but cannot be parsed, or a required one that is missing, used to read as "no items" and
+// nothing said so. These throw instead; scan() reports the source as failed and raises a [pay-alert] (one source failing does not stop the others).
+function readJsonSource(path, { optional = false } = {}) {
+  if (!existsSync(path)) { if (optional) return null; throw new Error("source_missing"); }
+  return JSON.parse(readFileSync(path, "utf8"));
+}
 const arr = (x) => (Array.isArray(x) ? x : x && typeof x === "object" ? Object.values(x) : []);
 
 export function defaultSources(env = process.env, db = null) {
@@ -83,21 +89,30 @@ export function defaultSources(env = process.env, db = null) {
   const shopOrders = env.HUMAN_USE_SHOP_ORDERS_PATH || "/var/www/mastersol/html/MSOLPEPTIDES/orders.json";
   const convDir = env.HUMAN_USE_CHAT_DIR || "/opt/shop-chat/data/conversations";
   const emailPath = env.HUMAN_USE_EMAIL_PATH || "/var/lib/crm-umg/human-use-email-lookback.json";
+  const chatCache = new Map();
   return [
     { id: "order_note", list: () => (db ? db.listOrders() : []).map((o) => ({ ref: o.id, email: o.customer?.email, at: o.createdAt, test: o.test === true, parts: [{ text: o.notes, at: o.createdAt }] })) },
     { id: "quote_note", list: () => (db && db.listQuotes ? db.listQuotes() : []).map((q) => ({ ref: q.id, email: q.customer?.email, at: q.createdAt, test: q.test === true, parts: [{ text: q.notes, at: q.createdAt }] })) },
-    { id: "lead_note", list: () => arr(readJsonSafe(leads)).map((l) => ({ ref: `lead:${l.id}`, email: l.email, at: l.updated_at || l.created_at, parts: [{ text: l.notes, at: l.updated_at || l.created_at }] })) },
-    { id: "contact_message", list: () => arr(readJsonSafe(msgs)).map((m) => ({ ref: `msg:${m.id}`, email: m.email, at: m.receivedAt, parts: [{ text: `${m.subject || ""}\n${m.message || ""}`, at: m.receivedAt }] })) },
-    { id: "shop_order_note", list: () => arr(readJsonSafe(shopOrders)).map((o) => ({ ref: `shop:${o.ref}`, email: o.customer?.email, at: o.timestamp || o.savedAt, test: o.test === true, parts: [{ text: o.notes, at: o.timestamp || o.savedAt }] })) },
+    { id: "lead_note", list: () => arr(readJsonSource(leads)).map((l) => ({ ref: `lead:${l.id}`, email: l.email, at: l.updated_at || l.created_at, parts: [{ text: l.notes, at: l.updated_at || l.created_at }] })) },
+    { id: "contact_message", list: () => arr(readJsonSource(msgs)).map((m) => ({ ref: `msg:${m.id}`, email: m.email, at: m.receivedAt, parts: [{ text: `${m.subject || ""}\n${m.message || ""}`, at: m.receivedAt }] })) },
+    { id: "shop_order_note", list: () => arr(readJsonSource(shopOrders)).map((o) => ({ ref: `shop:${o.ref}`, email: o.customer?.email, at: o.timestamp || o.savedAt, test: o.test === true, parts: [{ text: o.notes, at: o.timestamp || o.savedAt }] })) },
     {
       id: "shop_chat",
       list: () => {
         let files = [];
-        try { files = readdirSync(convDir).filter((f) => f.endsWith(".json")); } catch { return []; }
+        try { files = readdirSync(convDir).filter((f) => f.endsWith(".json")); } catch { throw new Error("source_missing"); }
         const out = [];
+        // audit 2026-10-02 (pay-rest-14): every minute all conversation files were read and parsed again; a file whose mtime and size did not
+        // change since the last pass is taken from the cache (the cache is per defaultSources() instance and is trimmed to the files still there).
+        const live = new Set(files);
+        for (const k of chatCache.keys()) if (!live.has(k)) chatCache.delete(k);
         for (const f of files) {
-          const c = readJsonSafe(join(convDir, f));
+          let st = null;
+          try { st = statSync(join(convDir, f)); } catch { continue; }
+          const hit = chatCache.get(f);
+          const c = hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size ? hit.conv : readJsonSafe(join(convDir, f));
           if (!c) continue;
+          if (!hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size) chatCache.set(f, { mtimeMs: st.mtimeMs, size: st.size, conv: c });
           const parts = (c.messages || []).filter((m) => m && (m.role === "user" || m.role === "visitor" || m.role === "customer")).map((m) => ({ text: m.text, at: m.at }));
           out.push({ ref: `chat:${c.cid || f.replace(/\.json$/, "")}`, email: c.email, at: c.lastAt || c.createdAt, parts, chatFlag: Boolean(c.flags && c.flags.humanUse) });
         }
@@ -105,7 +120,7 @@ export function defaultSources(env = process.env, db = null) {
       },
     },
     // Read-only mail export (see lib header). Own / newsletter / system / partner mail is never screened for flags.
-    { id: "email", list: () => arr(readJsonSafe(emailPath)?.messages).filter((m) => m && m.category === "customer").map((m) => ({ ref: `email:${m.mailbox}:${m.messageId}`, email: m.sender, at: m.date, parts: [{ text: `${m.subject || ""}\n${m.text || ""}`, at: m.date }], meta: { mailbox: m.mailbox, messageId: m.messageId, date: m.date } })) },
+    { id: "email", list: () => arr(readJsonSource(emailPath, { optional: true })?.messages).filter((m) => m && m.category === "customer").map((m) => ({ ref: `email:${m.mailbox}:${m.messageId}`, email: m.sender, at: m.date, parts: [{ text: `${m.subject || ""}\n${m.text || ""}`, at: m.date }], meta: { mailbox: m.mailbox, messageId: m.messageId, date: m.date } })) },
   ];
 }
 export function readEmailLookback(env = process.env) {
@@ -120,6 +135,16 @@ export function createHumanUse({ db, env = process.env, sources = null, now = ()
   const tp = termsPath ?? env.HUMAN_USE_TERMS_PATH ?? "/etc/crm-umg/human-use-terms.json";
   const srcs = sources || defaultSources(env, db);
   const iso = () => now().toISOString();
+  // audit 2026-10-02 (pay-rest-14): the module used to go quiet without a word when its term list or a source could not be read.
+  // ops-watch reads [pay-alert] lines; one line per kind every 30 minutes, not one per scan.
+  const payAlertAt = {};
+  function payAlert(kind, msg) {
+    const t = now().getTime();
+    if (t - (payAlertAt[kind] || 0) < 30 * 60 * 1000) return;
+    payAlertAt[kind] = t;
+    log(`[pay-alert] HUMAN_USE_${kind} ${String(msg).slice(0, 200)}`);
+  }
+  if (!sp || !ap) log(`[pay-alert] HUMAN_USE_PATHS_UNSET ${!sp ? "HUMAN_USE_STATE_PATH " : ""}${!ap ? "HUMAN_USE_AUDIT_PATH " : ""}not set: flags / seen state ${!sp ? "are lost on restart" : ""}${!sp && !ap ? " and " : ""}${!ap ? "no audit trail is written" : ""}`);
   let state = { version: 1, flags: {}, seen: {}, alerts: [], unlinked: [], reviews: [], lastScan: null, backfill: null, backfills: [] };
   if (sp && existsSync(sp)) { const s = readJsonSafe(sp); if (s && s.flags) state = { ...state, ...s }; else if (s === null) throw new Error(`human-use state unreadable: ${sp}`); }
   let terms = { version: null, terms: [], invalid: 0, snippetChars: 60 }, termsMtime = -1, termsError = null;
@@ -236,13 +261,17 @@ export function createHumanUse({ db, env = process.env, sources = null, now = ()
   /** One pass over every source. Only items whose content changed since the last pass are scanned again. */
   function scan({ backfill = false } = {}) {
     loadTerms();
-    if (!terms.terms.length) return { ok: false, error: termsError || "no_terms" };
+    if (!terms.terms.length) {
+      payAlert("NO_TERMS", `term list empty or unreadable (${tp}: ${termsError || "no terms"}); nothing is being screened`);
+      return { ok: false, error: termsError || "no_terms" };
+    }
+    if (termsError) payAlert("TERMS_ERROR", `term list ${tp} cannot be read now (${termsError}); screening with the last good version`);
     const res = { at: iso(), backfill, termsVersion: terms.version || null, items: 0, scanned: 0, hits: 0, newlyFlagged: [], held: [], unlinked: 0, bySource: {},
       tiers: { strongItems: 0, weakOnlyItems: 0, strongHits: 0, weakHits: 0, weakEscalatedByCooccurrence: 0, reviewsOpened: 0, unlinkedStrong: 0 } };
     const tv = terms.version || "";
     for (const src of srcs) {
       let items = [];
-      try { items = src.list() || []; } catch (err) { res.bySource[src.id] = { error: String(err.message).slice(0, 80) }; continue; }
+      try { items = src.list() || []; } catch (err) { res.bySource[src.id] = { error: String(err.message).slice(0, 80) }; payAlert(`SOURCE_${String(src.id).toUpperCase()}`, `source ${src.id} cannot be read (${String(err.message).slice(0, 80)}); it is not being screened`); continue; }
       const bs = (res.bySource[src.id] = { items: items.length, hits: 0 });
       for (const it of items) {
         res.items += 1;

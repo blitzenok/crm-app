@@ -310,7 +310,9 @@ export async function pushSyntheticTestOrder({ client, cfg, now = () => new Date
 }
 
 function shippedAtIso(shipDate, fallback) {
-  const d = shipDate ? new Date(`${String(shipDate).slice(0, 10)}T20:00:00-08:00`) : null;
+  // audit 2026-10-02 (r2-time-dates-timezones-20): Rapid sends a calendar date (US Pacific). 20:00-08:00 is 04:00 UTC of the NEXT day, and the
+  // delivery window of the shipping email counts business days in UTC, so it started a day late. 12:00-08:00 is 20:00 UTC of the same date.
+  const d = shipDate ? new Date(`${String(shipDate).slice(0, 10)}T12:00:00-08:00`) : null;
   return d && Number.isFinite(d.getTime()) ? d.toISOString() : fallback;
 }
 

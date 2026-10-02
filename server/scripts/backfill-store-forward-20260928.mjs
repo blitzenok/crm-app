@@ -1,5 +1,11 @@
+// audit 2026-10-02 (pay-rest-22): ONE-OFF from 2026-09-28. It rewrites the live orders.json and store.json from a snapshot read a moment before, so a rerun
+// would erase whatever the services wrote in between. It refuses to run unless this exact variable is set on purpose.
+if (process.env.CONFIRM_BACKFILL_STORE_FORWARD_20260928 !== "yes-rewrite-live-files") {
+  console.error("refusing to run: one-off backfill of 2026-09-28 that rewrites the live orders.json and store.json (see docs/CRYPTO_CHECKOUT.md)");
+  process.exit(1);
+}
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
-import { buildNotifyPayload, isDryRunOrder } from "/opt/crm-umg/server/lib/store-forward.js";
+const { buildNotifyPayload, isDryRunOrder } = await import("/opt/crm-umg/server/lib/store-forward.js");
 const SP = "/var/lib/crm-umg/store.json", OP = "/var/www/mastersol/html/MSOLPEPTIDES/orders.json";
 const store = JSON.parse(readFileSync(SP, "utf8"));
 const list = Array.isArray(store.orders) ? store.orders : Object.values(store.orders);

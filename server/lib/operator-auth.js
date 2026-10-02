@@ -72,9 +72,11 @@ export async function fetchCrmSession(token, opts = {}) {
   const base = String(env.CRM_AUTH_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
   const path = String(env.CRM_SESSION_PATH || "/api/session");
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
-  const timeoutMs = Number(env.CRM_AUTH_TIMEOUT_MS || 800);
+  // audit 2026-10-02 (r2-crash-restart-recovery-3): 0.8 s was shorter than a busy blitz-api needs, and a timeout is answered 401, which
+  // throws the staff member back to the login page. 3 s default (CRM_AUTH_TIMEOUT_MS still overrides).
+  const timeoutMs = Number(env.CRM_AUTH_TIMEOUT_MS || 3000);
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 800);
+  const timer = setTimeout(() => ctrl.abort(), Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 3000);
   try {
     const res = await fetchImpl(url, {
       method: "GET",

@@ -227,6 +227,21 @@ export async function createPaymentLink(input, deps = {}) {
   return { ok: false, error: errorSummary(r.body) || `http_${r.httpStatus}`, httpStatus: r.httpStatus, unknown: r.httpStatus >= 200 && r.httpStatus < 300 };
 }
 
+/**
+ * audit 2026-10-02 (#595): the page only follows a payment link that is https on cleffo.com / *.cleffo.com (no credentials, no port;
+ * checkout-charge.js isCleffoUrl). Same rule here, so the server can say when Cleffo hands out a link the page will refuse.
+ */
+export function isTrustedPaymentLink(url) {
+  try {
+    const u = new URL(String(url || ""));
+    if (u.protocol !== "https:" || u.username || u.password || u.port) return false;
+    const h = u.hostname.toLowerCase();
+    return h === "cleffo.com" || h.endsWith(".cleffo.com");
+  } catch {
+    return false;
+  }
+}
+
 export function mapPaymentStatus(s) {
   const v = String(s || "").trim().toLowerCase();
   if (v === "completed") return "PAID";

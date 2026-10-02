@@ -111,6 +111,7 @@ curl -sS -X POST http://127.0.0.1:8787/api/store-orders/CR-XXXXXXXX/mark-paid \
 (`BLR-…`), customer, shipping address, items (`slug`/`mg` split from the storefront sku) and totals. notify-order recomputes
 `subtotal_server` / `price_mismatch` from the catalog and sends the existing Customer.io transactional manager + customer emails.
 
+- **DEAD PATH, do not enable (audit 2026-10-02):** products-api `notify-order` answers 400 `ref prefix reserved` to every `BLR-` ref from this sender, so with the flag on each approved order only produces failed attempts in the log. Card orders reach the CRM through card-import (since 28.09), letters through order-letters. Delete-or-bypass is an open owner decision.
 - Host env: `STORE_FORWARD_ENABLED=true`, `STORE_FORWARD_SINCE=<ISO>` (sweep ignores older orders). Off by default, so tests never post to the live service.
 - Once per order: `order.storeForward.sentAt`; notify-order is also idempotent by `ref`.
 - Failures never touch the charge response; they are logged (`[store-forward]`) and retried by a 60 s sweep with backoff (max 20 tries). The sweep also catches approvals that arrive via webhook/poll.

@@ -54,12 +54,12 @@ test("no store file at all = a fresh install (empty), no alert", () => {
   assert.ok(existsSync(file));
 });
 
-test("write keeps the permissions of the file it replaces; a first write is 0644", () => {
+test("write keeps the permissions of the file it replaces; a first write is 0600 (audit 2026-10-02 sec-pay-22)", () => {
   const dir = mkdtempSync(join(tmpdir(), "store-atomic-"));
   const file = join(dir, "store.json");
   const s = createStore({ filePath: file });
   s.nextOrderId();
-  assert.equal(statSync(file).mode & 0o777, 0o644);
+  assert.equal(statSync(file).mode & 0o777, 0o600);
   chmodSync(file, 0o640);
   s.nextOrderId();
   assert.equal(statSync(file).mode & 0o777, 0o640);
